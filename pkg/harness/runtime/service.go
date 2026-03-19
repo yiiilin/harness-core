@@ -6,6 +6,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -25,6 +26,7 @@ type Info struct {
 	HasPlanner          bool   `json:"has_planner"`
 	HasContextAssembler bool   `json:"has_context_assembler"`
 	HasEventSink        bool   `json:"has_event_sink"`
+	HasMetrics          bool   `json:"has_metrics"`
 }
 
 type Service struct {
@@ -38,6 +40,8 @@ type Service struct {
 	ContextAssembler ContextAssembler
 	Planner          Planner
 	EventSink        EventSink
+	Metrics          Metrics
+	MetricsRecorder  *observability.MemoryRecorder
 }
 
 func New(opts Options) *Service {
@@ -53,6 +57,8 @@ func New(opts Options) *Service {
 		ContextAssembler: opts.ContextAssembler,
 		Planner:          opts.Planner,
 		EventSink:        opts.EventSink,
+		Metrics:          metricsOrNoop(opts.Metrics),
+		MetricsRecorder:  opts.MetricsRecorder,
 	}
 }
 
@@ -100,6 +106,7 @@ func (s *Service) RuntimeInfo() Info {
 		HasPlanner:          s.Planner != nil,
 		HasContextAssembler: s.ContextAssembler != nil,
 		HasEventSink:        s.EventSink != nil,
+		HasMetrics:          s.Metrics != nil,
 	}
 }
 
@@ -178,6 +185,10 @@ func (s *Service) ListAuditEvents(sessionID string) []audit.Event {
 		return nil
 	}
 	return s.Audit.List(sessionID)
+}
+
+func (s *Service) MetricsSnapshot() observability.Snapshot {
+	return SnapshotMetrics(s.MetricsRecorder)
 }
 
 func (s *Service) EnsureTool(name string) error {

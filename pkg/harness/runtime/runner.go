@@ -67,6 +67,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	appendEvent(audit.EventStepStarted, step.StepID, map[string]any{"title": step.Title})
 
 	if decision.Action == permission.Deny {
+		s.Metrics.Record("step.run", map[string]any{"success": false, "policy_denied": true, "verify_failed": false, "action_failed": false, "duration_ms": int64(0)})
 		step.Status = plan.StepFailed
 		step.FinishedAt = time.Now().UnixMilli()
 		next := TransitionDecision{From: state.Phase, To: TransitionFailed, StepID: step.StepID, Reason: "policy denied action"}
@@ -119,6 +120,13 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		return StepRunOutput{}, err
 	}
 	s.emitEvents(ctx, events)
+	s.Metrics.Record("step.run", map[string]any{
+		"success":       verified,
+		"policy_denied": false,
+		"verify_failed": !verified,
+		"action_failed": !actResult.OK,
+		"duration_ms":   time.Now().UnixMilli() - now,
+	})
 
 	return StepRunOutput{
 		Session:     state,

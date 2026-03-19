@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -21,6 +22,8 @@ type Options struct {
 	ContextAssembler ContextAssembler
 	Planner          Planner
 	EventSink        EventSink
+	Metrics          Metrics
+	MetricsRecorder  *observability.MemoryRecorder
 }
 
 func WithDefaults(opts Options) Options {
@@ -53,6 +56,12 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.EventSink == nil {
 		opts.EventSink = AuditStoreSink{Store: opts.Audit}
+	}
+	if opts.MetricsRecorder == nil {
+		opts.MetricsRecorder = observability.NewMemoryRecorder()
+	}
+	if opts.Metrics == nil {
+		opts.Metrics = opts.MetricsRecorder
 	}
 	return opts
 }

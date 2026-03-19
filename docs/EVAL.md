@@ -95,6 +95,7 @@ When evolving the runtime, track:
 - deny-path overhead
 - event emission overhead
 - memory allocations (`-benchmem`)
+- step-run counters and outcome ratios (via runtime metrics snapshot)
 
 A useful rule of thumb:
 - deny path should stay the cheapest
@@ -110,6 +111,7 @@ A useful rule of thumb:
 3. add event volume benchmark
 4. add table-driven transition correctness tests
 5. add golden-output tests for protocol responses
+6. expose richer runtime metrics hooks beyond the in-memory recorder
 
 ---
 
