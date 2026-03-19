@@ -37,7 +37,7 @@ func TestHappyPathRunStep(t *testing.T) {
 		verify.OutputContainsChecker{},
 	)
 
-	rt := hruntime.New(sessions, tasks, plans, tools, verifiers, audits)
+	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
 
 	sess := rt.CreateSession("test session", "run a shell command")
 	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "execute one verified shell step"})

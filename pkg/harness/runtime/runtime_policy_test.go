@@ -29,7 +29,7 @@ func TestRunStepPolicyDenied(t *testing.T) {
 	verifiers := verify.NewRegistry()
 	audits := audit.NewMemoryStore()
 
-	rt := hruntime.New(sessions, tasks, plans, tools, verifiers, audits).WithPolicyEvaluator(denyAllPolicy{})
+	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits}).WithPolicyEvaluator(denyAllPolicy{})
 
 	sess := rt.CreateSession("deny session", "deny path")
 	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "denied action should fail safely"})
