@@ -33,7 +33,7 @@ We will **not** prioritize P2 at this time.
 - [x] Add initial Postgres schema / migration skeleton
 - [x] Implement Postgres-backed session repository
 - [x] Implement Postgres-backed task repository
-- [ ] Implement Postgres-backed plan repository
+- [x] Implement Postgres-backed plan repository
 - [ ] Implement Postgres-backed audit repository
 - [ ] Implement Postgres-backed `TxManager`
 - [ ] Implement Postgres-backed `TxRepositoryFactory`
