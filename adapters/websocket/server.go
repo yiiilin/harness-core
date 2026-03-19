@@ -204,6 +204,10 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTools()})
 	case "verify.list":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListVerifiers()})
+	case "audit.list":
+		var payload protocol.AuditListPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListAuditEvents(payload.SessionID)})
 	case "verify.evaluate":
 		var payload struct {
 			SessionID string        `json:"session_id"`

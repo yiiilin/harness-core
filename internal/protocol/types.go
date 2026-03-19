@@ -69,3 +69,7 @@ type StepRunPayload struct {
 	SessionID string          `json:"session_id"`
 	Step      json.RawMessage `json:"step"`
 }
+
+type AuditListPayload struct {
+	SessionID string `json:"session_id,omitempty"`
+}

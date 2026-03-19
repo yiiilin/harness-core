@@ -79,6 +79,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		if err := s.Sessions.Update(state); err != nil {
 			return StepRunOutput{}, err
 		}
+		s.emitEvents(ctx, events)
 		return StepRunOutput{Session: state, Execution: execResult, Transitions: transitions, Events: events, UpdatedPlan: updatedPlan, UpdatedTask: updatedTask}, nil
 	}
 
@@ -117,6 +118,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	if err := s.Sessions.Update(state); err != nil {
 		return StepRunOutput{}, err
 	}
+	s.emitEvents(ctx, events)
 
 	return StepRunOutput{
 		Session:     state,
@@ -194,4 +196,14 @@ func actionErrorMessage(result action.Result) string {
 		return result.Error.Message
 	}
 	return "tool failed"
+}
+
+func (s *Service) emitEvents(ctx context.Context, events []audit.Event) {
+	if s.Audit == nil {
+		return
+	}
+	for _, event := range events {
+		_ = s.Audit.Emit(event)
+	}
+	_ = ctx
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -29,11 +30,12 @@ type Service struct {
 	Plans     plan.Store
 	Tools     *tool.Registry
 	Verifiers *verify.Registry
+	Audit     audit.Store
 	Policy    permission.DefaultEvaluator
 }
 
-func New(sessions session.Store, tasks task.Store, plans plan.Store, tools *tool.Registry, verifiers *verify.Registry) *Service {
-	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Policy: permission.DefaultEvaluator{}}
+func New(sessions session.Store, tasks task.Store, plans plan.Store, tools *tool.Registry, verifiers *verify.Registry, audits audit.Store) *Service {
+	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits, Policy: permission.DefaultEvaluator{}}
 }
 
 func (s *Service) Ping() map[string]any {
@@ -120,6 +122,13 @@ func (s *Service) ListTools() []tool.Definition {
 
 func (s *Service) ListVerifiers() []verify.Definition {
 	return s.Verifiers.List()
+}
+
+func (s *Service) ListAuditEvents(sessionID string) []audit.Event {
+	if s.Audit == nil {
+		return nil
+	}
+	return s.Audit.List(sessionID)
 }
 
 func (s *Service) EnsureTool(name string) error {

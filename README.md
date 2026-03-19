@@ -21,30 +21,19 @@ It is designed for builders who want a **small, composable, high-leverage core**
 - not a UI product
 - not a provider-specific framework
 
-## Current repository status
+## Current scaffold status
 
-This repository currently contains the first scaffold and will be reshaped toward a library-first layout.
-
-Near-term goals:
-1. stabilize contracts
-2. stabilize runtime state machine
-3. add minimal shell executor example
-4. add WebSocket adapter example
-5. add event/audit hooks
-
-## Current scaffold
-
-Implemented so far:
-- Go module and repository skeleton
-- minimal WebSocket server scaffold
-- shared-token auth handshake
-- in-memory session store for development
-- protocol type placeholders
-- tool/verify contract placeholders
-- shell executor placeholder
-- Go sample client
-
-This scaffold is a temporary stepping stone toward the library-first architecture described in `docs/ARCHITECTURE.md`.
+Implemented today:
+- task / session / plan object model
+- shared state-machine transitions
+- tool registry
+- verifier registry
+- default policy evaluator
+- shell pipe executor
+- step runner (`policy -> action -> verify -> transition -> state update`)
+- in-memory audit/event sink
+- WebSocket adapter
+- Go example clients
 
 ## Read first
 
@@ -53,44 +42,21 @@ This scaffold is a temporary stepping stone toward the library-first architectur
 - `docs/RUNTIME.md`
 - `docs/POLICY.md`
 
-## Temporary local run
-
-```bash
-go run ./cmd/harness-core
-```
-
-Environment variables:
+## Run temporary WebSocket adapter
 
 ```bash
 export HARNESS_ADDR=127.0.0.1:8787
 export HARNESS_SHARED_TOKEN=dev-token
+go run ./cmd/harness-core
 ```
 
-## Temporary WebSocket test
+## Run minimal happy-path example
 
-Connect to:
-
-```text
-ws://127.0.0.1:8787/ws
+```bash
+go run ./examples/minimal-agent
 ```
 
-Authenticate first:
-
-```json
-{
-  "id": "1",
-  "type": "auth",
-  "token": "dev-token"
-}
-```
-
-Currently supported placeholder actions:
-- `session.ping`
-- `session.create`
-- `session.get`
-- `tool.list`
-
-## Example client
+## Run Go WebSocket client example
 
 ```bash
 cd examples/go-client
@@ -98,10 +64,3 @@ export HARNESS_URL=ws://127.0.0.1:8787/ws
 export HARNESS_TOKEN=dev-token
 go run .
 ```
-
-## Philosophy
-
-`harness-core` should be to agent systems what a small runtime kernel is to a larger platform:
-- opinionated where contracts matter
-- minimal where product concerns begin
-- extensible through adapters and executors
