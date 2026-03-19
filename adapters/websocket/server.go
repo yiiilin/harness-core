@@ -1,4 +1,4 @@
-package server
+package websocket
 
 import (
 	"encoding/json"
@@ -6,27 +6,24 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gorilla/websocket"
+	gorillaws "github.com/gorilla/websocket"
 	"github.com/yiiilin/harness-core/internal/auth"
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
-	"github.com/yiiilin/harness-core/internal/runtime"
-	"github.com/yiiilin/harness-core/internal/tool"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
 
 type Server struct {
 	cfg      config.Config
-	store    *runtime.Store
-	registry *tool.Registry
-	upgrader websocket.Upgrader
+	runtime  *hruntime.Service
+	upgrader gorillaws.Upgrader
 }
 
-func New(cfg config.Config, store *runtime.Store, registry *tool.Registry) *Server {
+func New(cfg config.Config, runtime *hruntime.Service) *Server {
 	return &Server{
-		cfg:      cfg,
-		store:    store,
-		registry: registry,
-		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		cfg:     cfg,
+		runtime: runtime,
+		upgrader: gorillaws.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 }
 
@@ -34,7 +31,7 @@ func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/ws", s.ws)
-	log.Printf("harness-core listening on %s", s.cfg.Addr)
+	log.Printf("harness-core websocket adapter listening on %s", s.cfg.Addr)
 	return http.ListenAndServe(s.cfg.Addr, mux)
 }
 
@@ -75,26 +72,26 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handle(conn *websocket.Conn, env protocol.Envelope) {
+func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	switch env.Action {
 	case "session.ping":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: map[string]any{"pong": true}})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: s.runtime.Ping()})
 	case "session.create":
 		var payload protocol.SessionCreatePayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		sess := s.store.Create(payload.Title, payload.Goal)
+		sess := s.runtime.CreateSession(payload.Title, payload.Goal)
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: sess})
 	case "session.get":
 		var payload struct{ ID string `json:"id"` }
 		_ = json.Unmarshal(env.Payload, &payload)
-		sess, err := s.store.Get(payload.ID)
+		sess, err := s.runtime.GetSession(payload.ID)
 		if err != nil {
 			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
 			return
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: sess})
 	case "tool.list":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: s.registry.List()})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: s.runtime.ListTools()})
 	default:
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "UNKNOWN_ACTION", Message: "unknown action"}})
 	}
