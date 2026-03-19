@@ -67,4 +67,7 @@ func main() {
 
 	mustSend(conn, Envelope{ID: "6", Type: "request", Action: "tool.list"})
 	fmt.Printf("tool.list => %#v\n", mustRecv(conn))
+
+	mustSend(conn, Envelope{ID: "7", Type: "request", Action: "verify.list"})
+	fmt.Printf("verify.list => %#v\n", mustRecv(conn))
 }
