@@ -112,6 +112,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		state.RetryCount++
 	}
 	step.FinishedAt = time.Now().UnixMilli()
+	execResult.Step = step
 
 	updatedPlan, _ := s.updateLatestPlanStep(sessionID, step)
 	updatedTask, _ := s.updateTaskForTerminal(state)
