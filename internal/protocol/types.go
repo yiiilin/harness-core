@@ -2,6 +2,13 @@ package protocol
 
 import "encoding/json"
 
+const (
+	EnvelopeTypeAuth     = "auth"
+	EnvelopeTypeRequest  = "request"
+	EnvelopeTypeResponse = "response"
+	EnvelopeTypeEvent    = "event"
+)
+
 type Envelope struct {
 	ID      string          `json:"id,omitempty"`
 	Type    string          `json:"type"`
@@ -26,4 +33,8 @@ type Response struct {
 type SessionCreatePayload struct {
 	Title string `json:"title"`
 	Goal  string `json:"goal,omitempty"`
+}
+
+type SessionGetPayload struct {
+	ID string `json:"id"`
 }

@@ -7,17 +7,35 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 )
 
+type Info struct {
+	Name        string `json:"name"`
+	Mode        string `json:"mode"`
+	Transport   string `json:"transport"`
+	AuthMode    string `json:"auth_mode"`
+	StorageMode string `json:"storage_mode"`
+}
+
 type Service struct {
-	Sessions *session.MemoryStore
+	Sessions session.Store
 	Tools    *tool.Registry
 }
 
-func New(sessions *session.MemoryStore, tools *tool.Registry) *Service {
+func New(sessions session.Store, tools *tool.Registry) *Service {
 	return &Service{Sessions: sessions, Tools: tools}
 }
 
 func (s *Service) Ping() map[string]any {
 	return map[string]any{"pong": true}
+}
+
+func (s *Service) RuntimeInfo() Info {
+	return Info{
+		Name:        "harness-core",
+		Mode:        "kernel-first",
+		Transport:   "adapter-defined",
+		AuthMode:    "shared-token-v1",
+		StorageMode: "in-memory-dev",
+	}
 }
 
 func (s *Service) CreateSession(title, goal string) session.State {
@@ -26,6 +44,10 @@ func (s *Service) CreateSession(title, goal string) session.State {
 
 func (s *Service) GetSession(id string) (session.State, error) {
 	return s.Sessions.Get(id)
+}
+
+func (s *Service) ListSessions() []session.State {
+	return s.Sessions.List()
 }
 
 func (s *Service) ListTools() []tool.Definition {

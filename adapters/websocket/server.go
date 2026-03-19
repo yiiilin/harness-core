@@ -56,16 +56,16 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 		}
 		var env protocol.Envelope
 		if err := json.Unmarshal(data, &env); err != nil {
-			_ = conn.WriteJSON(protocol.Response{Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "BAD_JSON", Message: err.Error()}})
+			_ = conn.WriteJSON(protocol.Response{Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_JSON", Message: err.Error()}})
 			continue
 		}
 		if !authed {
-			if env.Type == "auth" && auth.ValidToken(env.Token, s.cfg.SharedToken) {
+			if env.Type == protocol.EnvelopeTypeAuth && auth.ValidToken(env.Token, s.cfg.SharedToken) {
 				authed = true
-				_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: map[string]any{"authenticated": true}})
+				_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: map[string]any{"authenticated": true}})
 				continue
 			}
-			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "UNAUTHENTICATED", Message: "authenticate first"}})
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "UNAUTHENTICATED", Message: "authenticate first"}})
 			continue
 		}
 		s.handle(conn, env)
@@ -74,25 +74,29 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	switch env.Action {
+	case "runtime.info":
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.RuntimeInfo()})
 	case "session.ping":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: s.runtime.Ping()})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.Ping()})
 	case "session.create":
 		var payload protocol.SessionCreatePayload
 		_ = json.Unmarshal(env.Payload, &payload)
 		sess := s.runtime.CreateSession(payload.Title, payload.Goal)
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: sess})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
 	case "session.get":
-		var payload struct{ ID string `json:"id"` }
+		var payload protocol.SessionGetPayload
 		_ = json.Unmarshal(env.Payload, &payload)
 		sess, err := s.runtime.GetSession(payload.ID)
 		if err != nil {
-			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
 			return
 		}
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: sess})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
+	case "session.list":
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListSessions()})
 	case "tool.list":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: true, Result: s.runtime.ListTools()})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTools()})
 	default:
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: "response", OK: false, Error: &protocol.ErrorBody{Code: "UNKNOWN_ACTION", Message: "unknown action"}})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "UNKNOWN_ACTION", Message: "unknown action"}})
 	}
 }

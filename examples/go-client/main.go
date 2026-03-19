@@ -53,12 +53,18 @@ func main() {
 	mustSend(conn, Envelope{ID: "1", Type: "auth", Token: token})
 	fmt.Printf("auth => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "2", Type: "request", Action: "session.ping"})
+	mustSend(conn, Envelope{ID: "2", Type: "request", Action: "runtime.info"})
+	fmt.Printf("runtime.info => %#v\n", mustRecv(conn))
+
+	mustSend(conn, Envelope{ID: "3", Type: "request", Action: "session.ping"})
 	fmt.Printf("ping => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "3", Type: "request", Action: "session.create", Payload: map[string]any{"title": "demo", "goal": "verify harness-core ws"}})
+	mustSend(conn, Envelope{ID: "4", Type: "request", Action: "session.create", Payload: map[string]any{"title": "demo", "goal": "verify harness-core ws"}})
 	fmt.Printf("create => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "4", Type: "request", Action: "tool.list"})
-	fmt.Printf("tools => %#v\n", mustRecv(conn))
+	mustSend(conn, Envelope{ID: "5", Type: "request", Action: "session.list"})
+	fmt.Printf("session.list => %#v\n", mustRecv(conn))
+
+	mustSend(conn, Envelope{ID: "6", Type: "request", Action: "tool.list"})
+	fmt.Printf("tool.list => %#v\n", mustRecv(conn))
 }
