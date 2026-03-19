@@ -12,12 +12,26 @@ import (
 type PipeExecutor struct{}
 
 func (PipeExecutor) Invoke(ctx context.Context, args map[string]any) (action.Result, error) {
-	command, _ := args["command"].(string)
+	req := Request{
+		Command: func() string { v, _ := args["command"].(string); return v }(),
+		CWD:     func() string { v, _ := args["cwd"].(string); return v }(),
+		TimeoutMS: func() int {
+			v, _ := asInt(args["timeout_ms"])
+			return v
+		}(),
+	}
+	mode, _ := args["mode"].(string)
+	req.Mode = mode
+	return PipeExecutor{}.Execute(ctx, req)
+}
+
+func (PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, error) {
+	command := req.Command
 	if command == "" {
 		return action.Result{OK: false, Error: &action.Error{Code: "MISSING_COMMAND", Message: "command is required"}}, nil
 	}
-	cwd, _ := args["cwd"].(string)
-	timeoutMS, _ := asInt(args["timeout_ms"])
+	cwd := req.CWD
+	timeoutMS := req.TimeoutMS
 	if timeoutMS <= 0 {
 		timeoutMS = 30000
 	}
