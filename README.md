@@ -47,6 +47,7 @@ Implemented today:
 - `docs/RUNTIME.md`
 - `docs/POLICY.md`
 - `docs/MODULES.md`
+- `docs/EXTENSIBILITY.md`
 - `docs/API.zh-CN.md` (中文快速理解与接入说明)
 - `README.zh-CN.md` (中文仓库说明)
 - `CONTRIBUTING.md`

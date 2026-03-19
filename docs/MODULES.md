@@ -86,7 +86,13 @@ func Register(tools *tool.Registry, verifiers *verify.Registry)
 func DefaultPolicyRules() []permission.Rule
 ```
 
-This keeps module wiring consistent across the ecosystem.
+If a capability needs customization, prefer a second explicit constructor such as:
+
+```go
+func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts Options)
+```
+
+This keeps module wiring consistent across the ecosystem while still allowing controlled extension.
 
 ---
 
