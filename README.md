@@ -55,6 +55,7 @@ Implemented today:
 - `docs/EVENTS.md`
 - `docs/STATUS.md`
 - `docs/PERSISTENCE.md`
+- `docs/ROADMAP.md`
 - `docs/EVAL.md`
 
 ## Default construction style

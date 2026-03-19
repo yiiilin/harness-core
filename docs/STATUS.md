@@ -38,3 +38,13 @@ Use it for:
 - experimenting with execution / verify / policy patterns
 
 Do not assume it is production-ready infrastructure yet.
+
+## Current execution plan
+
+The active execution plan for the repository is tracked in `docs/ROADMAP.md`.
+
+Current instruction set:
+- complete P0
+- complete P1
+- complete advanced planner/context work
+- defer P2 for now
