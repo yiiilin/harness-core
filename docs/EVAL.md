@@ -17,6 +17,10 @@ This project currently uses three complementary validation layers:
 
 ## Current correctness coverage
 
+### WebSocket integration
+- `TestWebSocketHappyPath`
+- `TestWebSocketStepRunHappyPath`
+
 ### Runtime integration
 - `TestHappyPathRunStep`
 - `TestRunStepPolicyDenied`
@@ -52,6 +56,12 @@ Measures action success but verification failure:
 - action executes
 - verifier fails
 - transition to recover/failed path
+
+### `BenchmarkRunStepActionFailure`
+Measures tool execution failure before a successful verification path:
+- action invoked
+- tool returns failure status
+- runtime still produces a structured failure path
 
 ---
 
