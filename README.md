@@ -46,6 +46,7 @@ Implemented today:
 - `docs/PROTOCOL.md`
 - `docs/RUNTIME.md`
 - `docs/POLICY.md`
+- `docs/API.zh-CN.md` (中文快速理解与接入说明)
 
 ## Default construction style
 
