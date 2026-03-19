@@ -141,3 +141,7 @@ func (s *Service) InvokeAction(ctx context.Context, spec action.Spec) (action.Re
 func (s *Service) EvaluateVerify(ctx context.Context, spec verify.Spec, result action.Result, state session.State) (verify.Result, error) {
 	return s.Verifiers.Evaluate(ctx, spec, result, state)
 }
+
+func (s *Service) RunStep(ctx context.Context, sessionID string, step plan.StepSpec) (StepRunOutput, error) {
+	return s.runStep(ctx, sessionID, step)
+}

@@ -64,3 +64,8 @@ type PlanGetPayload struct {
 type PlanListPayload struct {
 	SessionID string `json:"session_id"`
 }
+
+type StepRunPayload struct {
+	SessionID string          `json:"session_id"`
+	Step      json.RawMessage `json:"step"`
+}

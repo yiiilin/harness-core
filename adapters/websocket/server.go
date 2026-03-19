@@ -157,6 +157,20 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		var payload protocol.PlanListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListPlans(payload.SessionID)})
+	case "step.run":
+		var payload protocol.StepRunPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		var step plan.StepSpec
+		if err := json.Unmarshal(payload.Step, &step); err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_STEP", Message: err.Error()}})
+			return
+		}
+		out, err := s.runtime.RunStep(context.Background(), payload.SessionID, step)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "STEP_RUN_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: out})
 	case "action.invoke":
 		var spec action.Spec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
