@@ -41,8 +41,8 @@ We will **not** prioritize P2 at this time.
 ### Runtime consistency
 - [x] Make `RunStep()` aware of persistence boundary semantics
 - [x] Route key state updates through `Runner.Within(...)`
-- [ ] Route **all** step-related state mutations through `Runner.Within(...)`
-- [ ] Ensure audit writes are included in the same persistence boundary
+- [x] Route **all** step-related state mutations through `Runner.Within(...)`
+- [x] Ensure audit writes are included in the same persistence boundary
 - [ ] Add tests for transaction success and rollback behavior through runtime paths
 
 ### Recovery baseline

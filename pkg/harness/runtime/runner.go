@@ -89,7 +89,17 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 					return err
 				}
 				updatedTask = taskRec
-				return repos.Sessions.Update(state)
+				if err := repos.Sessions.Update(state); err != nil {
+					return err
+				}
+				for _, event := range events {
+					if repos.Audits != nil {
+						if err := repos.Audits.Emit(event); err != nil {
+							return err
+						}
+					}
+				}
+				return nil
 			}); err != nil {
 				return StepRunOutput{}, err
 			}
@@ -100,7 +110,9 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 				return StepRunOutput{}, err
 			}
 		}
-		s.emitEvents(ctx, events)
+		if s.Runner == nil {
+			s.emitEvents(ctx, events)
+		}
 		return StepRunOutput{Session: state, Execution: execResult, Transitions: transitions, Events: events, UpdatedPlan: updatedPlan, UpdatedTask: updatedTask}, nil
 	}
 
@@ -149,7 +161,17 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 				return err
 			}
 			updatedTask = taskRec
-			return repos.Sessions.Update(state)
+			if err := repos.Sessions.Update(state); err != nil {
+				return err
+			}
+			for _, event := range events {
+				if repos.Audits != nil {
+					if err := repos.Audits.Emit(event); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
 		}); err != nil {
 			return StepRunOutput{}, err
 		}
@@ -160,7 +182,9 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 			return StepRunOutput{}, err
 		}
 	}
-	s.emitEvents(ctx, events)
+	if s.Runner == nil {
+		s.emitEvents(ctx, events)
+	}
 	s.Metrics.Record("step.run", map[string]any{
 		"success":       verified,
 		"policy_denied": false,
