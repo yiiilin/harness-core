@@ -15,16 +15,16 @@ const (
 )
 
 type State struct {
-	SessionID      string         `json:"session_id"`
-	TaskID         string         `json:"task_id,omitempty"`
-	ParentSessionID string        `json:"parent_session_id,omitempty"`
-	Title          string         `json:"title"`
-	Goal           string         `json:"goal,omitempty"`
-	Phase          Phase          `json:"phase"`
-	CurrentStepID  string         `json:"current_step_id,omitempty"`
-	Summary        string         `json:"summary,omitempty"`
-	RetryCount     int            `json:"retry_count"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      int64          `json:"created_at"`
-	UpdatedAt      int64          `json:"updated_at"`
+	SessionID       string         `json:"session_id"`
+	TaskID          string         `json:"task_id,omitempty"`
+	ParentSessionID string         `json:"parent_session_id,omitempty"`
+	Title           string         `json:"title"`
+	Goal            string         `json:"goal,omitempty"`
+	Phase           Phase          `json:"phase"`
+	CurrentStepID   string         `json:"current_step_id,omitempty"`
+	Summary         string         `json:"summary,omitempty"`
+	RetryCount      int            `json:"retry_count"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedAt       int64          `json:"created_at"`
+	UpdatedAt       int64          `json:"updated_at"`
 }

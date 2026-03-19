@@ -21,8 +21,8 @@ type Server struct {
 
 func New(cfg config.Config, runtime *hruntime.Service) *Server {
 	return &Server{
-		cfg:     cfg,
-		runtime: runtime,
+		cfg:      cfg,
+		runtime:  runtime,
 		upgrader: gorillaws.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 }

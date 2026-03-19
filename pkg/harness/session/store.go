@@ -27,13 +27,13 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) Create(title, goal string) State {
 	now := time.Now().UnixMilli()
 	st := State{
-		SessionID: uuid.NewString(),
-		Title:     title,
-		Goal:      goal,
-		Phase:     PhaseReceived,
+		SessionID:  uuid.NewString(),
+		Title:      title,
+		Goal:       goal,
+		Phase:      PhaseReceived,
 		RetryCount: 0,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

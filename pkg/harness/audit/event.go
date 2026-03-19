@@ -1,18 +1,18 @@
 package audit
 
 const (
-	EventTaskCreated      = "task.created"
-	EventSessionCreated   = "session.created"
-	EventPlanGenerated    = "plan.generated"
-	EventStepStarted      = "step.started"
-	EventToolCalled       = "tool.called"
-	EventToolCompleted    = "tool.completed"
-	EventToolFailed       = "tool.failed"
-	EventVerifyCompleted  = "verify.completed"
-	EventStateChanged     = "state.changed"
-	EventPolicyDenied     = "policy.denied"
-	EventTaskCompleted    = "task.completed"
-	EventTaskFailed       = "task.failed"
+	EventTaskCreated     = "task.created"
+	EventSessionCreated  = "session.created"
+	EventPlanGenerated   = "plan.generated"
+	EventStepStarted     = "step.started"
+	EventToolCalled      = "tool.called"
+	EventToolCompleted   = "tool.completed"
+	EventToolFailed      = "tool.failed"
+	EventVerifyCompleted = "verify.completed"
+	EventStateChanged    = "state.changed"
+	EventPolicyDenied    = "policy.denied"
+	EventTaskCompleted   = "task.completed"
+	EventTaskFailed      = "task.failed"
 )
 
 type Event struct {
