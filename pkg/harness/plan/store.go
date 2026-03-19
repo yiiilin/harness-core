@@ -1,7 +1,6 @@
 package plan
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -59,7 +58,7 @@ func (s *MemoryStore) Get(id string) (Spec, error) {
 	defer s.mu.RUnlock()
 	p, ok := s.plans[id]
 	if !ok {
-		return Spec{}, errors.New("plan not found")
+		return Spec{}, ErrPlanNotFound
 	}
 	return p, nil
 }
@@ -94,7 +93,7 @@ func (s *MemoryStore) Update(next Spec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.plans[next.PlanID]; !ok {
-		return errors.New("plan not found")
+		return ErrPlanNotFound
 	}
 	next.UpdatedAt = time.Now().UnixMilli()
 	s.plans[next.PlanID] = next

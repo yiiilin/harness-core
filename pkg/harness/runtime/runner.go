@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -28,7 +27,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		return StepRunOutput{}, err
 	}
 	if state.Phase == session.PhaseComplete || state.Phase == session.PhaseFailed || state.Phase == session.PhaseAborted {
-		return StepRunOutput{}, errors.New("session is terminal")
+		return StepRunOutput{}, ErrSessionTerminal
 	}
 
 	now := time.Now().UnixMilli()

@@ -1,7 +1,6 @@
 package session
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -46,7 +45,7 @@ func (s *MemoryStore) Get(id string) (State, error) {
 	defer s.mu.RUnlock()
 	st, ok := s.sessions[id]
 	if !ok {
-		return State{}, errors.New("session not found")
+		return State{}, ErrSessionNotFound
 	}
 	return st, nil
 }
@@ -55,7 +54,7 @@ func (s *MemoryStore) Update(next State) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.sessions[next.SessionID]; !ok {
-		return errors.New("session not found")
+		return ErrSessionNotFound
 	}
 	next.UpdatedAt = time.Now().UnixMilli()
 	s.sessions[next.SessionID] = next

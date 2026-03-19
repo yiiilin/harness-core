@@ -1,7 +1,6 @@
 package task
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -51,7 +50,7 @@ func (s *MemoryStore) Get(id string) (Record, error) {
 	defer s.mu.RUnlock()
 	rec, ok := s.tasks[id]
 	if !ok {
-		return Record{}, errors.New("task not found")
+		return Record{}, ErrTaskNotFound
 	}
 	return rec, nil
 }
@@ -60,7 +59,7 @@ func (s *MemoryStore) Update(next Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.tasks[next.TaskID]; !ok {
-		return errors.New("task not found")
+		return ErrTaskNotFound
 	}
 	next.UpdatedAt = time.Now().UnixMilli()
 	s.tasks[next.TaskID] = next
