@@ -5,6 +5,8 @@
 `harness-core` is currently a **pre-1.0 runtime kernel prototype**.
 
 It already has:
+- a minimal demo planner example
+- a default context assembler
 - stable-enough domain objects for `task / session / plan / step`
 - a tool registry
 - a verifier registry

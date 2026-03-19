@@ -151,6 +151,7 @@ rt := harness.New(opts)
 ### 默认组件
 - `DefaultContextAssembler`
 - `NoopPlanner`
+- `DemoPlanner`（最小可运行 planner 样例）
 - `AuditStoreSink`
 - `DefaultEvaluator`
 

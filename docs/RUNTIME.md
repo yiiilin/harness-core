@@ -222,6 +222,27 @@ This should happen under explicit runtime control, not hidden model magic.
 
 ---
 
+
+## Default runtime components
+
+The current runtime ships with small, explicitly limited defaults:
+
+- `DefaultContextAssembler`
+  - returns a minimal structured context view of task + session + metadata
+- `NoopPlanner`
+  - returns `ErrNoPlannerConfigured` and is safe by default
+- `DemoPlanner`
+  - a tiny example planner that can derive a shell step for trivial goals such as `echo hello`
+- `AuditStoreSink`
+  - bridges runtime events into the in-memory audit store
+
+These defaults are intentionally simple. Their purpose is to:
+- demonstrate composition
+- support tests/examples
+- remain replaceable by embedding applications
+
+They are not intended to be feature-complete production planning systems.
+
 ## Recommended v1 runtime scope
 
 Include:
