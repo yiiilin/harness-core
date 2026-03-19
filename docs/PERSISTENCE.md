@@ -84,6 +84,13 @@ Should at least include:
 ### UnitOfWork / Runner
 A transaction-like boundary for a runtime step.
 
+The project now also defines a generic `TransactionalRunner` shape, built around:
+- `TxManager`
+- `TxRepositoryFactory`
+- `Tx`
+
+This keeps the transaction abstraction reusable before committing to a specific SQL backend.
+
 Should support:
 - executing a function with repository access
 - committing atomically where supported
