@@ -15,32 +15,71 @@ import (
 )
 
 type Info struct {
-	Name          string `json:"name"`
-	Mode          string `json:"mode"`
-	Transport     string `json:"transport"`
-	AuthMode      string `json:"auth_mode"`
-	StorageMode   string `json:"storage_mode"`
-	ToolCount     int    `json:"tool_count"`
-	VerifierCount int    `json:"verifier_count"`
+	Name                string `json:"name"`
+	Mode                string `json:"mode"`
+	Transport           string `json:"transport"`
+	AuthMode            string `json:"auth_mode"`
+	StorageMode         string `json:"storage_mode"`
+	ToolCount           int    `json:"tool_count"`
+	VerifierCount       int    `json:"verifier_count"`
+	HasPlanner          bool   `json:"has_planner"`
+	HasContextAssembler bool   `json:"has_context_assembler"`
+	HasEventSink        bool   `json:"has_event_sink"`
 }
 
 type Service struct {
-	Sessions  session.Store
-	Tasks     task.Store
-	Plans     plan.Store
-	Tools     *tool.Registry
-	Verifiers *verify.Registry
-	Audit     audit.Store
-	Policy    permission.Evaluator
+	Sessions         session.Store
+	Tasks            task.Store
+	Plans            plan.Store
+	Tools            *tool.Registry
+	Verifiers        *verify.Registry
+	Audit            audit.Store
+	Policy           permission.Evaluator
+	ContextAssembler ContextAssembler
+	Planner          Planner
+	EventSink        EventSink
 }
 
-func New(sessions session.Store, tasks task.Store, plans plan.Store, tools *tool.Registry, verifiers *verify.Registry, audits audit.Store) *Service {
-	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits, Policy: permission.DefaultEvaluator{}}
+func New(opts Options) *Service {
+	opts = WithDefaults(opts)
+	return &Service{
+		Sessions:         opts.Sessions,
+		Tasks:            opts.Tasks,
+		Plans:            opts.Plans,
+		Tools:            opts.Tools,
+		Verifiers:        opts.Verifiers,
+		Audit:            opts.Audit,
+		Policy:           opts.Policy,
+		ContextAssembler: opts.ContextAssembler,
+		Planner:          opts.Planner,
+		EventSink:        opts.EventSink,
+	}
 }
 
 func (s *Service) WithPolicyEvaluator(policy permission.Evaluator) *Service {
 	if policy != nil {
 		s.Policy = policy
+	}
+	return s
+}
+
+func (s *Service) WithContextAssembler(assembler ContextAssembler) *Service {
+	if assembler != nil {
+		s.ContextAssembler = assembler
+	}
+	return s
+}
+
+func (s *Service) WithPlanner(planner Planner) *Service {
+	if planner != nil {
+		s.Planner = planner
+	}
+	return s
+}
+
+func (s *Service) WithEventSink(sink EventSink) *Service {
+	if sink != nil {
+		s.EventSink = sink
 	}
 	return s
 }
@@ -51,13 +90,16 @@ func (s *Service) Ping() map[string]any {
 
 func (s *Service) RuntimeInfo() Info {
 	return Info{
-		Name:          "harness-core",
-		Mode:          "kernel-first",
-		Transport:     "adapter-defined",
-		AuthMode:      "shared-token-v1",
-		StorageMode:   "in-memory-dev",
-		ToolCount:     len(s.Tools.List()),
-		VerifierCount: len(s.Verifiers.List()),
+		Name:                "harness-core",
+		Mode:                "kernel-first",
+		Transport:           "adapter-defined",
+		AuthMode:            "shared-token-v1",
+		StorageMode:         "in-memory-dev",
+		ToolCount:           len(s.Tools.List()),
+		VerifierCount:       len(s.Verifiers.List()),
+		HasPlanner:          s.Planner != nil,
+		HasContextAssembler: s.ContextAssembler != nil,
+		HasEventSink:        s.EventSink != nil,
 	}
 }
 
