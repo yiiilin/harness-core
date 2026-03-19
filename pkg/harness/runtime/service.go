@@ -31,11 +31,18 @@ type Service struct {
 	Tools     *tool.Registry
 	Verifiers *verify.Registry
 	Audit     audit.Store
-	Policy    permission.DefaultEvaluator
+	Policy    permission.Evaluator
 }
 
 func New(sessions session.Store, tasks task.Store, plans plan.Store, tools *tool.Registry, verifiers *verify.Registry, audits audit.Store) *Service {
 	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits, Policy: permission.DefaultEvaluator{}}
+}
+
+func (s *Service) WithPolicyEvaluator(policy permission.Evaluator) *Service {
+	if policy != nil {
+		s.Policy = policy
+	}
+	return s
 }
 
 func (s *Service) Ping() map[string]any {
