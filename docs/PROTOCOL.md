@@ -296,3 +296,13 @@ The core contracts are:
 - `ToolDefinition`
 - `ExecutionResult`
 - `Event`
+
+
+## Metrics and observability notes
+
+The protocol does not currently expose a full metrics streaming API, but runtime operations should remain compatible with event and metrics hooks.
+
+Current direction:
+- structured runtime events are first-class
+- metrics are collected via in-process hooks
+- transport adapters may expose metrics later, but should not force kernel contract changes

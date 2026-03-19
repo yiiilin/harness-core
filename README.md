@@ -50,6 +50,8 @@ Implemented today:
 - `docs/API.zh-CN.md` (中文快速理解与接入说明)
 - `README.zh-CN.md` (中文仓库说明)
 - `CONTRIBUTING.md`
+- `docs/PACKAGE_BOUNDARIES.md`
+- `docs/EVAL.md`
 
 ## Default construction style
 

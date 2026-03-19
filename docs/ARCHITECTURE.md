@@ -93,6 +93,7 @@ caller
     -> verifier registry
     -> policy engine
     -> event sink / audit hooks
+    -> metrics hook
 ```
 
 The runtime kernel should own:
@@ -142,3 +143,15 @@ Important: storage concerns should sit behind interfaces so the kernel is not co
 - a small execution kernel
 
 It should not try to be the entire agent product.
+
+
+## Public API boundary
+
+The runtime kernel should remain small and generic.
+
+Preferred long-term structure:
+- core contracts live in `pkg/harness/*`
+- capability packs live in `modules/*`
+- transport bindings live in `adapters/*`
+
+See `docs/PACKAGE_BOUNDARIES.md` for guidance on which packages consumers should import directly.
