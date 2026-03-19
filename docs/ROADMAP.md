@@ -43,7 +43,7 @@ We will **not** prioritize P2 at this time.
 - [x] Route key state updates through `Runner.Within(...)`
 - [x] Route **all** step-related state mutations through `Runner.Within(...)`
 - [x] Ensure audit writes are included in the same persistence boundary
-- [ ] Add tests for transaction success and rollback behavior through runtime paths
+- [x] Add tests for transaction success and rollback behavior through runtime paths
 
 ### Recovery baseline
 - [ ] Define interrupted / in-flight step semantics
