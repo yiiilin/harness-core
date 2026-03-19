@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   current_step_id TEXT,
   summary TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
+  execution_state TEXT NOT NULL DEFAULT 'idle',
+  in_flight_step_id TEXT,
+  last_heartbeat_at BIGINT,
+  interrupted_at BIGINT,
   metadata_json TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL

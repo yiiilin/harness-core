@@ -46,10 +46,10 @@ We will **not** prioritize P2 at this time.
 - [x] Add tests for transaction success and rollback behavior through runtime paths
 
 ### Recovery baseline
-- [ ] Define interrupted / in-flight step semantics
-- [ ] Persist enough metadata to identify interrupted sessions after restart
-- [ ] Add recovery-oriented runtime read path
-- [ ] Add restart-safe integration tests
+- [x] Define interrupted / in-flight step semantics
+- [x] Persist enough metadata to identify interrupted sessions after restart
+- [x] Add recovery-oriented runtime read path
+- [x] Add restart-safe integration tests
 
 ### End-to-end project-usable alpha checks
 - [ ] Add Postgres-backed WebSocket happy-path E2E

@@ -67,6 +67,11 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	}
 	appendEvent(audit.EventStepStarted, step.StepID, map[string]any{"title": step.Title})
 
+	if _, err := s.MarkSessionInFlight(ctx, sessionID, step.StepID); err != nil {
+		return StepRunOutput{}, err
+	}
+	state, _ = s.GetSession(sessionID)
+
 	if decision.Action == permission.Deny {
 		s.Metrics.Record("step.run", map[string]any{"success": false, "policy_denied": true, "verify_failed": false, "action_failed": false, "duration_ms": int64(0)})
 		step.Status = plan.StepFailed
@@ -75,6 +80,8 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		transitions = append(transitions, next)
 		appendEvent(audit.EventPolicyDenied, step.StepID, map[string]any{"reason": decision.Reason, "matched_rule": decision.MatchedRule})
 		state = ApplyTransition(state, next)
+		state.ExecutionState = session.ExecutionIdle
+		state.InFlightStepID = ""
 		var updatedPlan *plan.Spec
 		var updatedTask *task.Record
 		if s.Runner != nil {
@@ -137,6 +144,8 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	transitions = append(transitions, next)
 	appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason})
 	state = ApplyTransition(state, next)
+	state.ExecutionState = session.ExecutionIdle
+	state.InFlightStepID = ""
 
 	if verified {
 		step.Status = plan.StepCompleted
