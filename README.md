@@ -52,6 +52,8 @@ Implemented today:
 - `README.zh-CN.md` (中文仓库说明)
 - `CONTRIBUTING.md`
 - `docs/PACKAGE_BOUNDARIES.md`
+- `docs/EVENTS.md`
+- `docs/STATUS.md`
 - `docs/EVAL.md`
 
 ## Default construction style

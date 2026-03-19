@@ -85,6 +85,8 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	switch env.Action {
 	case "runtime.info":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.RuntimeInfo()})
+	case "runtime.metrics":
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.MetricsSnapshot()})
 	case "session.ping":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.Ping()})
 	case "session.create":
