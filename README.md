@@ -56,6 +56,7 @@ Implemented today:
 - `docs/STATUS.md`
 - `docs/PERSISTENCE.md`
 - `docs/ROADMAP.md`
+- `internal/postgres/README.md` (durable storage scaffold)
 - `docs/EVAL.md`
 
 ## Default construction style

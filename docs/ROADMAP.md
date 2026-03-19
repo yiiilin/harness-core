@@ -29,8 +29,8 @@ We will **not** prioritize P2 at this time.
 - [x] Introduce `RepositorySet`
 - [x] Introduce `UnitOfWork` / `Runner`
 - [x] Introduce generic `TransactionalRunner`
-- [ ] Create `internal/postgres/` package layout
-- [ ] Add initial Postgres schema / migration skeleton
+- [x] Create `internal/postgres/` package layout
+- [x] Add initial Postgres schema / migration skeleton
 - [ ] Implement Postgres-backed session repository
 - [ ] Implement Postgres-backed task repository
 - [ ] Implement Postgres-backed plan repository
