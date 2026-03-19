@@ -32,7 +32,7 @@ We will **not** prioritize P2 at this time.
 - [x] Create `internal/postgres/` package layout
 - [x] Add initial Postgres schema / migration skeleton
 - [x] Implement Postgres-backed session repository
-- [ ] Implement Postgres-backed task repository
+- [x] Implement Postgres-backed task repository
 - [ ] Implement Postgres-backed plan repository
 - [ ] Implement Postgres-backed audit repository
 - [ ] Implement Postgres-backed `TxManager`
