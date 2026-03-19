@@ -62,6 +62,7 @@ Minimal execution loop:
 load state
 -> assemble context
 -> decide next step
+-> evaluate policy
 -> execute tool
 -> verify result
 -> update state
@@ -140,6 +141,36 @@ create session
 -> complete or fail
 -> optionally persist summary
 ```
+
+---
+
+## Transition decisions
+
+The runtime should expose a small, explicit transition model.
+
+Example:
+
+```json
+{
+  "from": "verify",
+  "to": "recover",
+  "step_id": "step_01",
+  "reason": "verification failed"
+}
+```
+
+This gives the runtime a stable internal language for:
+- audit logs
+- traces
+- replay
+- unit tests
+- policy reasoning
+
+A simple kernel can own deterministic transitions such as:
+- `RECEIVED -> PREPARE`
+- `PREPARE -> PLAN`
+- `EXECUTE -> VERIFY`
+- `VERIFY -> COMPLETE|RECOVER`
 
 ---
 
