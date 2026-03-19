@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,9 +11,11 @@ import (
 	"github.com/yiiilin/harness-core/internal/auth"
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
+	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
+	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
 type Server struct {
@@ -154,10 +157,57 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		var payload protocol.PlanListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListPlans(payload.SessionID)})
+	case "action.invoke":
+		var spec action.Spec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_ACTION", Message: err.Error()}})
+			return
+		}
+		result, err := s.runtime.InvokeAction(context.Background(), spec)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "ACTION_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: result})
+	case "policy.evaluate":
+		var payload struct {
+			SessionID string        `json:"session_id"`
+			Step      plan.StepSpec `json:"step"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		state, err := s.runtime.GetSession(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		decision, err := s.runtime.EvaluatePolicy(context.Background(), state, payload.Step)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "POLICY_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: decision})
 	case "tool.list":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTools()})
 	case "verify.list":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListVerifiers()})
+	case "verify.evaluate":
+		var payload struct {
+			SessionID string        `json:"session_id"`
+			Spec      verify.Spec   `json:"spec"`
+			Result    action.Result `json:"result"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		state, err := s.runtime.GetSession(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		res, err := s.runtime.EvaluateVerify(context.Background(), payload.Spec, payload.Result, state)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "VERIFY_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: res})
 	default:
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "UNKNOWN_ACTION", Message: "unknown action"}})
 	}

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
+	"github.com/yiiilin/harness-core/pkg/harness/action"
+	shellexec "github.com/yiiilin/harness-core/pkg/harness/executor/shell"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -12,6 +15,12 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
+
+type shellHandler struct{ exec shellexec.PipeExecutor }
+
+func (h shellHandler) Invoke(ctx context.Context, args map[string]any) (action.Result, error) {
+	return h.exec.Invoke(ctx, args)
+}
 
 func main() {
 	cfg := config.Load()
@@ -21,7 +30,7 @@ func main() {
 	tools := tool.NewRegistry()
 	verifiers := verify.NewRegistry()
 
-	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true}, nil)
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true}, shellHandler{exec: shellexec.PipeExecutor{}})
 	tools.Register(tool.Definition{ToolName: "windows.native", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: false}, nil)
 
 	verifiers.Register(verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."}, verify.ExitCodeChecker{})

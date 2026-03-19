@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -28,10 +29,11 @@ type Service struct {
 	Plans     plan.Store
 	Tools     *tool.Registry
 	Verifiers *verify.Registry
+	Policy    permission.DefaultEvaluator
 }
 
 func New(sessions session.Store, tasks task.Store, plans plan.Store, tools *tool.Registry, verifiers *verify.Registry) *Service {
-	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers}
+	return &Service{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Policy: permission.DefaultEvaluator{}}
 }
 
 func (s *Service) Ping() map[string]any {
@@ -128,6 +130,14 @@ func (s *Service) EnsureTool(name string) error {
 	return nil
 }
 
+func (s *Service) EvaluatePolicy(ctx context.Context, state session.State, step plan.StepSpec) (permission.Decision, error) {
+	return s.Policy.Evaluate(ctx, state, step)
+}
+
 func (s *Service) InvokeAction(ctx context.Context, spec action.Spec) (action.Result, error) {
 	return s.Tools.Invoke(ctx, spec)
+}
+
+func (s *Service) EvaluateVerify(ctx context.Context, spec verify.Spec, result action.Result, state session.State) (verify.Result, error) {
+	return s.Verifiers.Evaluate(ctx, spec, result, state)
 }
