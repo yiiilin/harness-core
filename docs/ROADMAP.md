@@ -35,8 +35,8 @@ We will **not** prioritize P2 at this time.
 - [x] Implement Postgres-backed task repository
 - [x] Implement Postgres-backed plan repository
 - [x] Implement Postgres-backed audit repository
-- [ ] Implement Postgres-backed `TxManager`
-- [ ] Implement Postgres-backed `TxRepositoryFactory`
+- [x] Implement Postgres-backed `TxManager`
+- [x] Implement Postgres-backed `TxRepositoryFactory`
 
 ### Runtime consistency
 - [x] Make `RunStep()` aware of persistence boundary semantics
