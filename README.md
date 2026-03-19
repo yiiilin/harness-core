@@ -49,6 +49,7 @@ Implemented today:
 - `docs/MODULES.md`
 - `docs/API.zh-CN.md` (中文快速理解与接入说明)
 - `README.zh-CN.md` (中文仓库说明)
+- `CONTRIBUTING.md`
 
 ## Default construction style
 
