@@ -54,6 +54,7 @@ Implemented today:
 - `docs/PACKAGE_BOUNDARIES.md`
 - `docs/EVENTS.md`
 - `docs/STATUS.md`
+- `docs/PERSISTENCE.md`
 - `docs/EVAL.md`
 
 ## Default construction style

@@ -57,6 +57,7 @@ It is about **consistent step-level commits**.
 Keep domain-specific store interfaces, but introduce a higher-level boundary:
 - `RepositorySet`
 - `UnitOfWork`
+- `Runner`
 
 ### Phase 2
 Use an in-memory implementation of `UnitOfWork` to validate semantics.
@@ -80,7 +81,7 @@ Should at least include:
 - `Plans`
 - `Audits`
 
-### UnitOfWork
+### UnitOfWork / Runner
 A transaction-like boundary for a runtime step.
 
 Should support:
@@ -120,6 +121,22 @@ Redis can come later for:
 
 ---
 
+## Design note
+
+The next persistence milestone is not just “add database code”.
+It is:
+
+> make the runtime capable of executing a step through a grouped persistence boundary.
+
+That means the runtime should eventually be able to route critical updates through:
+- a `RepositorySet`
+- a `Runner`
+- a step-level commit point
+
+Before durable storage exists, this semantic boundary should still be visible in the codebase.
+
+---
+
 ## Summary
 
 The next persistence milestone for `harness-core` is not "add a database package".
@@ -127,4 +144,4 @@ It is:
 
 > define and enforce a step-level persistence boundary.
 
-That is the job of `RepositorySet` + `UnitOfWork`.
+That is the job of `RepositorySet` + `UnitOfWork` / `Runner`.
