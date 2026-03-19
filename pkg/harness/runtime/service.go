@@ -8,6 +8,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -36,6 +37,7 @@ type Service struct {
 	Tools            *tool.Registry
 	Verifiers        *verify.Registry
 	Audit            audit.Store
+	Runner           persistence.Runner
 	Policy           permission.Evaluator
 	ContextAssembler ContextAssembler
 	Planner          Planner
@@ -53,6 +55,7 @@ func New(opts Options) *Service {
 		Tools:            opts.Tools,
 		Verifiers:        opts.Verifiers,
 		Audit:            opts.Audit,
+		Runner:           opts.Runner,
 		Policy:           opts.Policy,
 		ContextAssembler: opts.ContextAssembler,
 		Planner:          opts.Planner,

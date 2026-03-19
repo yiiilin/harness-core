@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -74,10 +75,30 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		transitions = append(transitions, next)
 		appendEvent(audit.EventPolicyDenied, step.StepID, map[string]any{"reason": decision.Reason, "matched_rule": decision.MatchedRule})
 		state = ApplyTransition(state, next)
-		updatedPlan, _ := s.updateLatestPlanStep(sessionID, step)
-		updatedTask, _ := s.updateTaskForTerminal(state)
-		if err := s.Sessions.Update(state); err != nil {
-			return StepRunOutput{}, err
+		var updatedPlan *plan.Spec
+		var updatedTask *task.Record
+		if s.Runner != nil {
+			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+				pl, err := updateLatestPlanStepInStore(repos.Plans, sessionID, step)
+				if err != nil {
+					return err
+				}
+				updatedPlan = pl
+				taskRec, err := updateTaskForTerminalInStore(repos.Tasks, state)
+				if err != nil {
+					return err
+				}
+				updatedTask = taskRec
+				return repos.Sessions.Update(state)
+			}); err != nil {
+				return StepRunOutput{}, err
+			}
+		} else {
+			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+			if err := s.Sessions.Update(state); err != nil {
+				return StepRunOutput{}, err
+			}
 		}
 		s.emitEvents(ctx, events)
 		return StepRunOutput{Session: state, Execution: execResult, Transitions: transitions, Events: events, UpdatedPlan: updatedPlan, UpdatedTask: updatedTask}, nil
@@ -114,10 +135,30 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	step.FinishedAt = time.Now().UnixMilli()
 	execResult.Step = step
 
-	updatedPlan, _ := s.updateLatestPlanStep(sessionID, step)
-	updatedTask, _ := s.updateTaskForTerminal(state)
-	if err := s.Sessions.Update(state); err != nil {
-		return StepRunOutput{}, err
+	var updatedPlan *plan.Spec
+	var updatedTask *task.Record
+	if s.Runner != nil {
+		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			pl, err := updateLatestPlanStepInStore(repos.Plans, sessionID, step)
+			if err != nil {
+				return err
+			}
+			updatedPlan = pl
+			taskRec, err := updateTaskForTerminalInStore(repos.Tasks, state)
+			if err != nil {
+				return err
+			}
+			updatedTask = taskRec
+			return repos.Sessions.Update(state)
+		}); err != nil {
+			return StepRunOutput{}, err
+		}
+	} else {
+		updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+		updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+		if err := s.Sessions.Update(state); err != nil {
+			return StepRunOutput{}, err
+		}
 	}
 	s.emitEvents(ctx, events)
 	s.Metrics.Record("step.run", map[string]any{
@@ -138,8 +179,8 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	}, nil
 }
 
-func (s *Service) updateLatestPlanStep(sessionID string, step plan.StepSpec) (*plan.Spec, error) {
-	latest, ok := s.Plans.LatestBySession(sessionID)
+func updateLatestPlanStepInStore(store plan.Store, sessionID string, step plan.StepSpec) (*plan.Spec, error) {
+	latest, ok := store.LatestBySession(sessionID)
 	if !ok {
 		return nil, nil
 	}
@@ -169,17 +210,17 @@ func (s *Service) updateLatestPlanStep(sessionID string, step plan.StepSpec) (*p
 	if step.Status == plan.StepFailed {
 		latest.Status = plan.StatusActive
 	}
-	if err := s.Plans.Update(latest); err != nil {
+	if err := store.Update(latest); err != nil {
 		return nil, err
 	}
 	return &latest, nil
 }
 
-func (s *Service) updateTaskForTerminal(state session.State) (*task.Record, error) {
+func updateTaskForTerminalInStore(store task.Store, state session.State) (*task.Record, error) {
 	if state.TaskID == "" {
 		return nil, nil
 	}
-	rec, err := s.Tasks.Get(state.TaskID)
+	rec, err := store.Get(state.TaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -193,12 +234,11 @@ func (s *Service) updateTaskForTerminal(state session.State) (*task.Record, erro
 	default:
 		return &rec, nil
 	}
-	if err := s.Tasks.Update(rec); err != nil {
+	if err := store.Update(rec); err != nil {
 		return nil, err
 	}
 	return &rec, nil
 }
-
 func actionErrorMessage(result action.Result) string {
 	if result.Error != nil && result.Error.Message != "" {
 		return result.Error.Message

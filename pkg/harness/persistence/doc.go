@@ -7,8 +7,8 @@
 // The most important concept here is not a database driver. It is the step-level
 // persistence boundary:
 //
-//   one logical runtime step
-//     -> updates session/task/plan/audit together
+//	one logical runtime step
+//	  -> updates session/task/plan/audit together
 //
 // Today the project provides an in-memory UnitOfWork implementation to validate
 // the semantics. Durable implementations (for example Postgres-backed) should
