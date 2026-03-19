@@ -56,18 +56,25 @@ func main() {
 	mustSend(conn, Envelope{ID: "2", Type: "request", Action: "runtime.info"})
 	fmt.Printf("runtime.info => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "3", Type: "request", Action: "session.ping"})
-	fmt.Printf("ping => %#v\n", mustRecv(conn))
+	mustSend(conn, Envelope{ID: "3", Type: "request", Action: "session.create", Payload: map[string]any{"title": "demo", "goal": "verify harness-core ws"}})
+	createResp := mustRecv(conn)
+	fmt.Printf("session.create => %#v\n", createResp)
+	sessionID := createResp["result"].(map[string]any)["session_id"]
 
-	mustSend(conn, Envelope{ID: "4", Type: "request", Action: "session.create", Payload: map[string]any{"title": "demo", "goal": "verify harness-core ws"}})
-	fmt.Printf("create => %#v\n", mustRecv(conn))
+	mustSend(conn, Envelope{ID: "4", Type: "request", Action: "task.create", Payload: map[string]any{"task_type": "demo", "goal": "validate task/session wiring"}})
+	taskResp := mustRecv(conn)
+	fmt.Printf("task.create => %#v\n", taskResp)
+	taskID := taskResp["result"].(map[string]any)["task_id"]
 
-	mustSend(conn, Envelope{ID: "5", Type: "request", Action: "session.list"})
-	fmt.Printf("session.list => %#v\n", mustRecv(conn))
+	mustSend(conn, Envelope{ID: "5", Type: "request", Action: "session.attach_task", Payload: map[string]any{"session_id": sessionID, "task_id": taskID}})
+	fmt.Printf("session.attach_task => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "6", Type: "request", Action: "tool.list"})
+	mustSend(conn, Envelope{ID: "6", Type: "request", Action: "task.list"})
+	fmt.Printf("task.list => %#v\n", mustRecv(conn))
+
+	mustSend(conn, Envelope{ID: "7", Type: "request", Action: "tool.list"})
 	fmt.Printf("tool.list => %#v\n", mustRecv(conn))
 
-	mustSend(conn, Envelope{ID: "7", Type: "request", Action: "verify.list"})
+	mustSend(conn, Envelope{ID: "8", Type: "request", Action: "verify.list"})
 	fmt.Printf("verify.list => %#v\n", mustRecv(conn))
 }

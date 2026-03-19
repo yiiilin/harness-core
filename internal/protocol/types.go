@@ -38,3 +38,29 @@ type SessionCreatePayload struct {
 type SessionGetPayload struct {
 	ID string `json:"id"`
 }
+
+type TaskCreatePayload struct {
+	TaskType    string         `json:"task_type"`
+	Goal        string         `json:"goal"`
+	Constraints map[string]any `json:"constraints,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+type SessionAttachTaskPayload struct {
+	SessionID string `json:"session_id"`
+	TaskID    string `json:"task_id"`
+}
+
+type PlanCreatePayload struct {
+	SessionID    string            `json:"session_id"`
+	ChangeReason string            `json:"change_reason,omitempty"`
+	Steps        []json.RawMessage `json:"steps"`
+}
+
+type PlanGetPayload struct {
+	PlanID string `json:"plan_id"`
+}
+
+type PlanListPayload struct {
+	SessionID string `json:"session_id"`
+}

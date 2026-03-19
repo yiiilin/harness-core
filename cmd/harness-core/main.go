@@ -5,8 +5,10 @@ import (
 
 	"github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
+	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
@@ -14,6 +16,8 @@ import (
 func main() {
 	cfg := config.Load()
 	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
 	tools := tool.NewRegistry()
 	verifiers := verify.NewRegistry()
 
@@ -23,7 +27,7 @@ func main() {
 	verifiers.Register(verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."}, verify.ExitCodeChecker{})
 	verifiers.Register(verify.Definition{Kind: "output_contains", Description: "Verify that stdout or stderr contains a target substring."}, verify.OutputContainsChecker{})
 
-	rt := hruntime.New(sessions, tools, verifiers)
+	rt := hruntime.New(sessions, tasks, plans, tools, verifiers)
 	srv := websocket.New(cfg, rt)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)

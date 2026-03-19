@@ -10,7 +10,9 @@ import (
 	"github.com/yiiilin/harness-core/internal/auth"
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
+	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
 
 type Server struct {
@@ -94,6 +96,64 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
 	case "session.list":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListSessions()})
+	case "task.create":
+		var payload protocol.TaskCreatePayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		tsk := s.runtime.CreateTask(task.Spec{TaskType: payload.TaskType, Goal: payload.Goal, Constraints: payload.Constraints, Metadata: payload.Metadata})
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: tsk})
+	case "task.get":
+		var payload struct {
+			TaskID string `json:"task_id"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		tsk, err := s.runtime.GetTask(payload.TaskID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: tsk})
+	case "task.list":
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTasks()})
+	case "session.attach_task":
+		var payload protocol.SessionAttachTaskPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		sess, err := s.runtime.AttachTaskToSession(payload.SessionID, payload.TaskID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "ATTACH_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
+	case "plan.create":
+		var payload protocol.PlanCreatePayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		steps := make([]plan.StepSpec, 0, len(payload.Steps))
+		for _, raw := range payload.Steps {
+			var step plan.StepSpec
+			if err := json.Unmarshal(raw, &step); err != nil {
+				_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_STEP", Message: err.Error()}})
+				return
+			}
+			steps = append(steps, step)
+		}
+		pl, err := s.runtime.CreatePlan(payload.SessionID, payload.ChangeReason, steps)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "PLAN_CREATE_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: pl})
+	case "plan.get":
+		var payload protocol.PlanGetPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		pl, err := s.runtime.GetPlan(payload.PlanID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: pl})
+	case "plan.list":
+		var payload protocol.PlanListPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListPlans(payload.SessionID)})
 	case "tool.list":
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTools()})
 	case "verify.list":
