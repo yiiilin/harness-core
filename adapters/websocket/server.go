@@ -32,12 +32,16 @@ func New(cfg config.Config, runtime *hruntime.Service) *Server {
 	}
 }
 
-func (s *Server) ListenAndServe() error {
+func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/ws", s.ws)
+	return mux
+}
+
+func (s *Server) ListenAndServe() error {
 	log.Printf("harness-core websocket adapter listening on %s", s.cfg.Addr)
-	return http.ListenAndServe(s.cfg.Addr, mux)
+	return http.ListenAndServe(s.cfg.Addr, s.Handler())
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
