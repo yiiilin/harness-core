@@ -2,7 +2,10 @@ package harness
 
 import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -32,6 +35,24 @@ type StepStatus = plan.StepStatus
 
 type ActionSpec = action.Spec
 type ActionResult = action.Result
+
+type ApprovalRequest = approval.Request
+type ApprovalResponse = approval.Response
+type ApprovalRecord = approval.Record
+type ApprovalReply = approval.Reply
+type ApprovalStatus = approval.Status
+
+type CapabilitySnapshot = capability.Snapshot
+type CapabilityResolution = capability.Resolution
+
+type ExecutionAttempt = execution.Attempt
+type ExecutionAttemptStatus = execution.AttemptStatus
+type ExecutionActionRecord = execution.ActionRecord
+type ExecutionActionStatus = execution.ActionStatus
+type ExecutionVerificationRecord = execution.VerificationRecord
+type ExecutionVerificationStatus = execution.VerificationStatus
+type ExecutionArtifact = execution.Artifact
+type ExecutionRuntimeHandle = execution.RuntimeHandle
 
 type VerifySpec = verify.Spec
 type VerifyResult = verify.Result

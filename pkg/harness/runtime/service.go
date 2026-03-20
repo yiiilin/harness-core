@@ -143,7 +143,7 @@ func (s *Service) RuntimeInfo() Info {
 }
 
 func (s *Service) CreateSession(title, goal string) session.State {
-	return s.Sessions.Create(title, goal)
+	return s.createSessionWithAudit(title, goal)
 }
 
 func (s *Service) GetSession(id string) (session.State, error) {
@@ -155,7 +155,7 @@ func (s *Service) ListSessions() []session.State {
 }
 
 func (s *Service) CreateTask(spec task.Spec) task.Record {
-	return s.Tasks.Create(spec)
+	return s.createTaskWithAudit(spec)
 }
 
 func (s *Service) GetTask(id string) (task.Record, error) {
@@ -167,33 +167,11 @@ func (s *Service) ListTasks() []task.Record {
 }
 
 func (s *Service) AttachTaskToSession(sessionID, taskID string) (session.State, error) {
-	sess, err := s.Sessions.Get(sessionID)
-	if err != nil {
-		return session.State{}, err
-	}
-	tsk, err := s.Tasks.Get(taskID)
-	if err != nil {
-		return session.State{}, err
-	}
-	sess.TaskID = tsk.TaskID
-	sess.Goal = tsk.Goal
-	sess.Phase = session.PhaseReceived
-	if err := s.Sessions.Update(sess); err != nil {
-		return session.State{}, err
-	}
-	tsk.SessionID = sess.SessionID
-	tsk.Status = task.StatusRunning
-	if err := s.Tasks.Update(tsk); err != nil {
-		return session.State{}, err
-	}
-	return sess, nil
+	return s.attachTaskToSession(sessionID, taskID)
 }
 
 func (s *Service) CreatePlan(sessionID, changeReason string, steps []plan.StepSpec) (plan.Spec, error) {
-	if _, err := s.Sessions.Get(sessionID); err != nil {
-		return plan.Spec{}, err
-	}
-	return s.Plans.Create(sessionID, changeReason, steps), nil
+	return s.createPlanWithAudit(sessionID, changeReason, steps)
 }
 
 func (s *Service) GetPlan(planID string) (plan.Spec, error) {
@@ -272,7 +250,7 @@ func (s *Service) ListAuditEvents(sessionID string) []audit.Event {
 	if s.Audit == nil {
 		return nil
 	}
-	return s.Audit.List(sessionID)
+	return s.listRelatedAuditEvents(sessionID)
 }
 
 func (s *Service) MetricsSnapshot() observability.Snapshot {
@@ -299,14 +277,14 @@ func (s *Service) ResolveCapability(ctx context.Context, req capability.Request)
 }
 
 func (s *Service) InvokeAction(ctx context.Context, spec action.Spec) (action.Result, error) {
-	resolution, err := s.ResolveCapability(ctx, capability.Request{Action: spec})
-	if err != nil {
-		return capabilityErrorResult(spec, err), err
-	}
-	if resolution.Handler == nil {
-		return action.Result{OK: false, Error: &action.Error{Code: "TOOL_NOT_IMPLEMENTED", Message: spec.ToolName}}, nil
-	}
-	return resolution.Handler.Invoke(ctx, spec.Args)
+	_ = ctx
+	return action.Result{
+		OK: false,
+		Error: &action.Error{
+			Code:    "DIRECT_ACTION_INVOKE_UNSUPPORTED",
+			Message: spec.ToolName,
+		},
+	}, ErrDirectActionInvokeUnsupported
 }
 
 func (s *Service) EvaluateVerify(ctx context.Context, spec verify.Spec, result action.Result, state session.State) (verify.Result, error) {

@@ -2,7 +2,9 @@ package planrepo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,9 +48,9 @@ RETURNING plan_id, session_id, revision, status, change_reason, created_at, upda
 		metadataJSON, _ := json.Marshal(steps[i].Metadata)
 		_, err := r.db.ExecContext(ctx, `
 INSERT INTO plan_steps (
-  plan_id, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-`, created.PlanID, steps[i].StepID, steps[i].Title, string(actionJSON), string(verifyJSON), nullableJSON(onFailJSON), string(steps[i].Status), steps[i].Attempt, nullable(steps[i].Reason), nullableJSON(metadataJSON), nullableInt64(steps[i].StartedAt), nullableInt64(steps[i].FinishedAt))
+  plan_id, step_index, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+`, created.PlanID, i, steps[i].StepID, steps[i].Title, string(actionJSON), string(verifyJSON), nullableJSON(onFailJSON), string(steps[i].Status), steps[i].Attempt, nullable(steps[i].Reason), nullableJSON(metadataJSON), nullableInt64(steps[i].StartedAt), nullableInt64(steps[i].FinishedAt))
 		if err != nil {
 			panic(err)
 		}
@@ -73,7 +75,7 @@ FROM plans WHERE plan_id = $1
 	stepsRows, err := r.db.QueryContext(ctx, `
 SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
 FROM plan_steps WHERE plan_id = $1
-ORDER BY step_id ASC
+ORDER BY step_index ASC
 `, id)
 	if err != nil {
 		return plan.Spec{}, err
@@ -158,9 +160,9 @@ WHERE plan_id = $1
 		metadataJSON, _ := json.Marshal(next.Steps[i].Metadata)
 		_, err := r.db.ExecContext(ctx, `
 INSERT INTO plan_steps (
-  plan_id, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-`, next.PlanID, next.Steps[i].StepID, next.Steps[i].Title, string(actionJSON), string(verifyJSON), nullableJSON(onFailJSON), string(next.Steps[i].Status), next.Steps[i].Attempt, nullable(next.Steps[i].Reason), nullableJSON(metadataJSON), nullableInt64(next.Steps[i].StartedAt), nullableInt64(next.Steps[i].FinishedAt))
+  plan_id, step_index, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+`, next.PlanID, i, next.Steps[i].StepID, next.Steps[i].Title, string(actionJSON), string(verifyJSON), nullableJSON(onFailJSON), string(next.Steps[i].Status), next.Steps[i].Attempt, nullable(next.Steps[i].Reason), nullableJSON(metadataJSON), nullableInt64(next.Steps[i].StartedAt), nullableInt64(next.Steps[i].FinishedAt))
 		if err != nil {
 			return err
 		}
@@ -283,5 +285,8 @@ func translateErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return plan.ErrPlanNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return plan.ErrPlanNotFound
+	}
+	return err
 }

@@ -186,6 +186,12 @@ A step is the smallest executable unit in the runtime.
 - `replan`
 - `abort`
 
+### Runtime semantics
+- effective retry budget is bounded by both runtime `max_retries_per_step` and step-local `max_retries`
+- `abort` fails the session when verification fails
+- `replan` routes back to planning after verification failure
+- `retry` and `reinspect` keep the session in recovery only while retry budget remains
+
 ---
 
 ## Tool contract

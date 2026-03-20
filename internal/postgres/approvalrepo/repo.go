@@ -2,7 +2,9 @@ package approvalrepo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"sort"
 	"time"
 
@@ -222,5 +224,8 @@ func translateErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return approval.ErrApprovalNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return approval.ErrApprovalNotFound
+	}
+	return err
 }

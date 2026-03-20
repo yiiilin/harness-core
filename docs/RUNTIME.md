@@ -210,7 +210,13 @@ Recommended controls:
 These should be configurable, but present in v1.
 
 The current runtime exposes these via `runtime.Options.LoopBudgets`.
-Today they are used for planner step bounds, compactor input, and tool-output truncation boundaries.
+Today they are used for:
+- planner step bounds
+- plan revision caps
+- step retry caps
+- total runtime preflight guards
+- compactor input
+- tool-output truncation boundaries
 
 ---
 
@@ -224,6 +230,10 @@ Current runtime behavior:
 - expose `RespondApproval(...)`
 - expose `ResumePendingApproval(...)`
 - support `once`, `always`, and `reject`
+- scope `always` reuse to the recorded approval request shape, matched rule, and resolved capability version
+
+Direct `action.invoke` style execution is intentionally unsupported at the kernel level.
+All governed tool execution should pass through the step runtime path so policy, approval, execution facts, and audit stay in one chain.
 
 WebSocket adapters surface the same kernel path through:
 - `approval.get`

@@ -41,6 +41,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	if state.PendingApprovalID != "" && (activeApproval == nil || state.PendingApprovalID != activeApproval.ApprovalID) {
 		return StepRunOutput{}, ErrSessionAwaitingApproval
 	}
+	if err := ensureRuntimeBudget(state, s.LoopBudgets); err != nil {
+		return StepRunOutput{}, err
+	}
+	if err := ensureStepRetryBudget(step, s.LoopBudgets); err != nil {
+		return StepRunOutput{}, err
+	}
 
 	now := time.Now().UnixMilli()
 	attemptRecord := execution.Attempt{
@@ -86,14 +92,15 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	if forcedDecision != nil {
 		decision = *forcedDecision
 	} else {
-		reusableDecision, reusableApproval := s.findReusableApprovalDecision(sessionID, step)
-		if reusableDecision != nil {
-			decision = *reusableDecision
-			activeApproval = reusableApproval
-		} else {
-			decision, err = s.EvaluatePolicy(ctx, state, step)
-			if err != nil {
-				return StepRunOutput{}, err
+		decision, err = s.EvaluatePolicy(ctx, state, step)
+		if err != nil {
+			return StepRunOutput{}, err
+		}
+		if decision.Action == permission.Ask {
+			reusableDecision, reusableApproval := s.findReusableApprovalDecision(ctx, state, step, decision)
+			if reusableDecision != nil {
+				decision = *reusableDecision
+				activeApproval = reusableApproval
 			}
 		}
 	}
@@ -103,6 +110,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	}
 
 	if decision.Action == permission.Ask && forcedDecision == nil {
+		requestScope := s.buildApprovalReuseScope(ctx, state, step, decision)
+		step.Status = plan.StepBlocked
+		state.ExecutionState = session.ExecutionAwaitingApproval
+		state.PendingApprovalID = ""
+		state.CurrentStepID = step.StepID
 		request := approval.Request{
 			SessionID:   sessionID,
 			TaskID:      state.TaskID,
@@ -111,11 +123,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			Reason:      decision.Reason,
 			MatchedRule: decision.MatchedRule,
 			Step:        step,
+			Metadata:    approvalMetadataForRequest(requestScope),
 		}
-		step.Status = plan.StepBlocked
-		state.ExecutionState = session.ExecutionAwaitingApproval
-		state.PendingApprovalID = ""
-		state.CurrentStepID = step.StepID
 		appendEvent(audit.EventApprovalRequested, step.StepID, map[string]any{
 			"tool_name":    step.Action.ToolName,
 			"reason":       decision.Reason,
@@ -125,6 +134,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		var updatedTask *task.Record
 		var pendingApproval *approval.Record
 		attemptRecord.Status = execution.AttemptBlocked
+		attemptRecord.Step = step
 		attemptRecord.FinishedAt = time.Now().UnixMilli()
 		if s.Runner != nil {
 			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
@@ -356,7 +366,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		verificationRecord.Status = execution.VerificationFailed
 	}
 
-	next := DecideNextTransition(state, step.StepID, decision, verified)
+	next := nextTransitionAfterVerification(state, step, decision, verified, s.LoopBudgets)
 	if verified && latestPlanHasRemainingSteps(s.Plans, sessionID, step.StepID) {
 		next = TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "step completed, continue plan"}
 	}

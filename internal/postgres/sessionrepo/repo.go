@@ -2,7 +2,9 @@ package sessionrepo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -197,5 +199,8 @@ func translateErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return session.ErrSessionNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return session.ErrSessionNotFound
+	}
+	return err
 }

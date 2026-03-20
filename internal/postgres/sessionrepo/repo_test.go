@@ -1,6 +1,7 @@
 package sessionrepo_test
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -82,5 +83,25 @@ ORDER BY updated_at DESC
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestSessionRepoGetReturnsStorageError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := sessionrepo.New(db)
+	boom := errors.New("storage unavailable")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+FROM sessions WHERE session_id = $1
+`)).WithArgs("sess1").WillReturnError(boom)
+
+	_, err = repo.Get("sess1")
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected underlying storage error, got %v", err)
 	}
 }

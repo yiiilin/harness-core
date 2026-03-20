@@ -2,7 +2,9 @@ package taskrepo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -161,5 +163,8 @@ func translateErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return task.ErrTaskNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return task.ErrTaskNotFound
+	}
+	return err
 }

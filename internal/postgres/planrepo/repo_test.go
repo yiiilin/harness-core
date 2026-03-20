@@ -35,8 +35,8 @@ RETURNING plan_id, session_id, revision, status, change_reason, created_at, upda
 `)).WillReturnRows(createPlanRows)
 	mock.ExpectExec(regexp.QuoteMeta(`
 INSERT INTO plan_steps (
-  plan_id, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  plan_id, step_index, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `)).WillReturnResult(sqlmock.NewResult(0, 1))
 	createdPlanRows := sqlmock.NewRows([]string{"plan_id", "session_id", "revision", "status", "change_reason", "created_at", "updated_at"}).
 		AddRow("plan1", "sess1", 1, "active", "initial", int64(1), int64(1))
@@ -49,7 +49,7 @@ FROM plans WHERE plan_id = $1
 	mock.ExpectQuery(regexp.QuoteMeta(`
 SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
 FROM plan_steps WHERE plan_id = $1
-ORDER BY step_id ASC
+ORDER BY step_index ASC
 `)).WithArgs("plan1").WillReturnRows(createdStepRows)
 
 	pl := repo.Create("sess1", "initial", []plan.StepSpec{{
@@ -74,7 +74,7 @@ FROM plans WHERE plan_id = $1
 	mock.ExpectQuery(regexp.QuoteMeta(`
 SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
 FROM plan_steps WHERE plan_id = $1
-ORDER BY step_id ASC
+ORDER BY step_index ASC
 `)).WithArgs("plan1").WillReturnRows(getStepRows)
 	got, err := repo.Get("plan1")
 	if err != nil {
@@ -96,8 +96,8 @@ WHERE plan_id = $1
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM plan_steps WHERE plan_id = $1`)).WithArgs("plan1").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(regexp.QuoteMeta(`
 INSERT INTO plan_steps (
-  plan_id, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  plan_id, step_index, step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `)).WillReturnResult(sqlmock.NewResult(0, 1))
 	got.Status = plan.StatusCompleted
 	got.Steps[0].Status = plan.StepCompleted
@@ -123,11 +123,50 @@ FROM plans WHERE plan_id = $1
 	mock.ExpectQuery(regexp.QuoteMeta(`
 SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
 FROM plan_steps WHERE plan_id = $1
-ORDER BY step_id ASC
+ORDER BY step_index ASC
 `)).WithArgs("plan1").WillReturnRows(listStepRows)
 	items := repo.ListBySession("sess1")
 	if len(items) != 1 || items[0].Status != plan.StatusCompleted {
 		t.Fatalf("unexpected list result: %#v", items)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestPlanRepoGetPreservesStoredStepOrder(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := planrepo.New(db)
+	planRows := sqlmock.NewRows([]string{"plan_id", "session_id", "revision", "status", "change_reason", "created_at", "updated_at"}).
+		AddRow("plan1", "sess1", 1, "active", "ordered", int64(1), int64(1))
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT plan_id, session_id, revision, status, change_reason, created_at, updated_at
+FROM plans WHERE plan_id = $1
+`)).WithArgs("plan1").WillReturnRows(planRows)
+	stepRows := sqlmock.NewRows([]string{"step_id", "title", "action_json", "verify_json", "on_fail_json", "status", "attempt", "reason", "metadata_json", "started_at", "finished_at"}).
+		AddRow("step_10", "ten", `{"tool_name":"shell.exec","args":{}}`, `{"mode":"all","checks":[]}`, `{"strategy":"abort"}`, "pending", 0, nil, "{}", nil, nil).
+		AddRow("step_2", "two", `{"tool_name":"shell.exec","args":{}}`, `{"mode":"all","checks":[]}`, `{"strategy":"abort"}`, "pending", 0, nil, "{}", nil, nil)
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, reason, metadata_json, started_at, finished_at
+FROM plan_steps WHERE plan_id = $1
+ORDER BY step_index ASC
+`)).WithArgs("plan1").WillReturnRows(stepRows)
+
+	got, err := repo.Get("plan1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Steps) != 2 {
+		t.Fatalf("expected two steps, got %#v", got.Steps)
+	}
+	if got.Steps[0].StepID != "step_10" || got.Steps[1].StepID != "step_2" {
+		t.Fatalf("expected persisted order to be preserved, got %#v", got.Steps)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

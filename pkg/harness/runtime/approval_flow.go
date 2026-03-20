@@ -2,11 +2,14 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
@@ -25,7 +28,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 
 	now := time.Now().UnixMilli()
 	rec.Reply = response.Reply
-	rec.Metadata = response.Metadata
+	rec.Metadata = mergeApprovalResponseMetadata(rec.Metadata, response)
 	rec.RespondedAt = now
 
 	events := []audit.Event{}
@@ -88,6 +91,15 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 				return err
 			}
 			if response.Reply == approval.ReplyReject {
+				if err := finalizeBlockedAttemptInStore(repos.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
+					return err
+				}
+			} else if response.Reply == approval.ReplyOnce || response.Reply == approval.ReplyAlways {
+				if err := finalizeBlockedAttemptInStore(repos.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptCompleted, rec.Step, string(response.Reply)); err != nil {
+					return err
+				}
+			}
+			if response.Reply == approval.ReplyReject {
 				pl, err := updateLatestPlanStepInStore(repos.Plans, rec.SessionID, step)
 				if err != nil {
 					return err
@@ -112,6 +124,15 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		}
 		if err := s.Approvals.Update(rec); err != nil {
 			return approval.Record{}, session.State{}, err
+		}
+		if response.Reply == approval.ReplyReject {
+			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
+				return approval.Record{}, session.State{}, err
+			}
+		} else if response.Reply == approval.ReplyOnce || response.Reply == approval.ReplyAlways {
+			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptCompleted, rec.Step, string(response.Reply)); err != nil {
+				return approval.Record{}, session.State{}, err
+			}
 		}
 		if response.Reply == approval.ReplyReject {
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, rec.SessionID, step)
@@ -156,14 +177,148 @@ func (s *Service) ResumePendingApproval(ctx context.Context, sessionID string) (
 	return s.runStepWithDecision(ctx, sessionID, rec.Step, &decision, &rec)
 }
 
-func (s *Service) findReusableApprovalDecision(sessionID string, step plan.StepSpec) (*permission.Decision, *approval.Record) {
-	for _, rec := range s.ListApprovals(sessionID) {
-		decision, ok := s.ResumePolicy.Resolve(rec, step)
-		if !ok || decision.Action != "allow" || rec.Reply != approval.ReplyAlways {
+func (s *Service) findReusableApprovalDecision(ctx context.Context, state session.State, step plan.StepSpec, decision permission.Decision) (*permission.Decision, *approval.Record) {
+	scope := s.buildApprovalReuseScope(ctx, state, step, decision)
+	for _, rec := range s.ListApprovals(state.SessionID) {
+		if rec.Status != approval.StatusApproved || rec.Reply != approval.ReplyAlways {
+			continue
+		}
+		if !approvalReuseScopeMatches(rec.Metadata, scope) {
 			continue
 		}
 		copyRec := rec
-		return &decision, &copyRec
+		allow := permission.Decision{
+			Action:      permission.Allow,
+			Reason:      "approval previously granted",
+			MatchedRule: "approval/always",
+		}
+		return &allow, &copyRec
 	}
 	return nil, nil
+}
+
+const (
+	approvalRequestScopeKey = "request_scope"
+	approvalResponseKey     = "response"
+)
+
+type approvalReuseScope struct {
+	ToolName               string `json:"tool_name"`
+	RequestedToolVersion   string `json:"requested_tool_version,omitempty"`
+	ResolvedToolVersion    string `json:"resolved_tool_version,omitempty"`
+	MatchedRule            string `json:"matched_rule,omitempty"`
+	ArgsJSON               string `json:"args_json,omitempty"`
+	CapabilityType         string `json:"capability_type,omitempty"`
+	RiskLevel              string `json:"risk_level,omitempty"`
+	DefinitionMetadataJSON string `json:"definition_metadata_json,omitempty"`
+}
+
+func (s *Service) buildApprovalReuseScope(ctx context.Context, state session.State, step plan.StepSpec, decision permission.Decision) approvalReuseScope {
+	scope := approvalReuseScope{
+		ToolName:             step.Action.ToolName,
+		RequestedToolVersion: step.Action.ToolVersion,
+		MatchedRule:          decision.MatchedRule,
+		ArgsJSON:             marshalApprovalScopeValue(step.Action.Args),
+	}
+	resolution, err := s.ResolveCapability(ctx, capability.Request{
+		SessionID: state.SessionID,
+		TaskID:    state.TaskID,
+		StepID:    step.StepID,
+		Action:    step.Action,
+	})
+	if err != nil {
+		return scope
+	}
+	scope.ResolvedToolVersion = resolution.Definition.Version
+	scope.CapabilityType = resolution.Definition.CapabilityType
+	scope.RiskLevel = string(resolution.Definition.RiskLevel)
+	scope.DefinitionMetadataJSON = marshalApprovalScopeValue(resolution.Definition.Metadata)
+	return scope
+}
+
+func approvalReuseScopeMatches(metadata map[string]any, current approvalReuseScope) bool {
+	stored, ok := approvalScopeFromMetadata(metadata)
+	if !ok {
+		return false
+	}
+	return stored == current
+}
+
+func approvalScopeFromMetadata(metadata map[string]any) (approvalReuseScope, bool) {
+	raw, ok := metadata[approvalRequestScopeKey]
+	if !ok {
+		return approvalReuseScope{}, false
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return approvalReuseScope{}, false
+	}
+	var scope approvalReuseScope
+	if err := json.Unmarshal(b, &scope); err != nil {
+		return approvalReuseScope{}, false
+	}
+	if scope.ToolName == "" {
+		return approvalReuseScope{}, false
+	}
+	return scope, true
+}
+
+func approvalMetadataForRequest(scope approvalReuseScope) map[string]any {
+	return map[string]any{
+		approvalRequestScopeKey: scope,
+	}
+}
+
+func mergeApprovalResponseMetadata(existing map[string]any, response approval.Response) map[string]any {
+	merged := cloneAnyMap(existing)
+	if response.Metadata == nil {
+		return merged
+	}
+	merged[approvalResponseKey] = cloneAnyMap(response.Metadata)
+	return merged
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func marshalApprovalScopeValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	b, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string, status execution.AttemptStatus, step plan.StepSpec, reply string) error {
+	if store == nil || approvalID == "" {
+		return nil
+	}
+	attempts := store.List(sessionID)
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if attempts[i].ApprovalID != approvalID || attempts[i].Status != execution.AttemptBlocked {
+			continue
+		}
+		attempts[i].Status = status
+		attempts[i].Step = step
+		if attempts[i].Metadata == nil {
+			attempts[i].Metadata = map[string]any{}
+		}
+		attempts[i].Metadata["approval_reply"] = reply
+		if attempts[i].FinishedAt == 0 {
+			attempts[i].FinishedAt = time.Now().UnixMilli()
+		}
+		return store.Update(attempts[i])
+	}
+	return nil
 }

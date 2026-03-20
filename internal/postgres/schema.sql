@@ -48,6 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_session_revision
 
 CREATE TABLE IF NOT EXISTS plan_steps (
   plan_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL DEFAULT 0,
   step_id TEXT NOT NULL,
   title TEXT NOT NULL,
   action_json TEXT NOT NULL,
@@ -62,6 +63,9 @@ CREATE TABLE IF NOT EXISTS plan_steps (
   PRIMARY KEY(plan_id, step_id),
   FOREIGN KEY(plan_id) REFERENCES plans(plan_id) ON DELETE CASCADE
 );
+
+ALTER TABLE plan_steps
+  ADD COLUMN IF NOT EXISTS step_index INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS audit_events (
   event_id TEXT PRIMARY KEY,

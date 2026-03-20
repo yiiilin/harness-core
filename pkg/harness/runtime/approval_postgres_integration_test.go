@@ -143,7 +143,14 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 	}
 
 	events := rt2.ListAuditEvents(sess.SessionID)
-	if len(events) == 0 || events[0].AttemptID == "" || events[0].TaskID == "" || events[0].TraceID == "" {
+	foundRichEnvelope := false
+	for _, event := range events {
+		if event.AttemptID != "" && event.TaskID != "" && event.TraceID != "" {
+			foundRichEnvelope = true
+			break
+		}
+	}
+	if !foundRichEnvelope {
 		t.Fatalf("expected durable rich audit envelope after reinit, got %#v", events)
 	}
 }

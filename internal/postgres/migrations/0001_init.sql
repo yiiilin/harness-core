@@ -48,6 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_session_revision
 
 CREATE TABLE IF NOT EXISTS plan_steps (
   plan_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL DEFAULT 0,
   step_id TEXT NOT NULL,
   title TEXT NOT NULL,
   action_json TEXT NOT NULL,

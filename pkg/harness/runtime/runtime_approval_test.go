@@ -22,6 +22,17 @@ func (askPolicy) Evaluate(_ context.Context, _ session.State, _ plan.StepSpec) (
 	return permission.Decision{Action: permission.Ask, Reason: "approval required", MatchedRule: "test/ask"}, nil
 }
 
+type scopedAskPolicy struct{}
+
+func (scopedAskPolicy) Evaluate(_ context.Context, _ session.State, step plan.StepSpec) (permission.Decision, error) {
+	path, _ := step.Action.Args["path"].(string)
+	return permission.Decision{
+		Action:      permission.Ask,
+		Reason:      "approval required",
+		MatchedRule: "test/ask:" + path,
+	}, nil
+}
+
 type countingHandler struct {
 	calls int
 }
@@ -320,8 +331,8 @@ func TestReplyAlwaysAllowsFutureMatchingToolWithoutAnotherApproval(t *testing.T)
 		},
 		{
 			StepID: "step_always_2",
-			Title:  "second shell action should reuse approval",
-			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo second", "timeout_ms": 5000}},
+			Title:  "second identical shell action should reuse approval",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo first", "timeout_ms": 5000}},
 			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
 				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
 			}},
@@ -370,5 +381,147 @@ func TestReplyAlwaysAllowsFutureMatchingToolWithoutAnotherApproval(t *testing.T)
 	}
 	if storedApproval.Status != approval.StatusApproved {
 		t.Fatalf("expected always approval to remain approved for reuse, got %#v", storedApproval)
+	}
+}
+
+func TestReplyAlwaysDoesNotReuseApprovalAcrossDifferentArgsOrVersion(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handlerV1 := &countingHandler{}
+	handlerV2 := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "fs.write", Version: "v1", CapabilityType: "filesystem", RiskLevel: tool.RiskMedium, Enabled: true},
+		handlerV1,
+	)
+	tools.Register(
+		tool.Definition{ToolName: "fs.write", Version: "v2", CapabilityType: "filesystem", RiskLevel: tool.RiskMedium, Enabled: true},
+		handlerV2,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+	}).WithPolicyEvaluator(scopedAskPolicy{})
+
+	sess := rt.CreateSession("always scoped", "approval scope must stay narrow")
+	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "avoid overly broad always approvals"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "scoped always", []plan.StepSpec{
+		{
+			StepID: "step_first",
+			Title:  "write alpha with v1",
+			Action: action.Spec{ToolName: "fs.write", ToolVersion: "v1", Args: map[string]any{"path": "/tmp/alpha.txt", "content": "alpha"}},
+			Verify: verify.Spec{},
+		},
+		{
+			StepID: "step_second",
+			Title:  "write beta with v2",
+			Action: action.Spec{ToolName: "fs.write", ToolVersion: "v2", Args: map[string]any{"path": "/tmp/beta.txt", "content": "beta"}},
+			Verify: verify.Spec{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	first, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step 1: %v", err)
+	}
+	if first.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval on first step")
+	}
+	if _, _, err := rt.RespondApproval(first.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyAlways}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+	if _, err := rt.ResumePendingApproval(context.Background(), sess.SessionID); err != nil {
+		t.Fatalf("resume pending approval: %v", err)
+	}
+	if handlerV1.calls != 1 {
+		t.Fatalf("expected v1 handler to run once after approved resume, got %d", handlerV1.calls)
+	}
+
+	second, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[1])
+	if err != nil {
+		t.Fatalf("run step 2: %v", err)
+	}
+	if second.Execution.PendingApproval == nil {
+		t.Fatalf("expected second step to require a fresh approval instead of reusing reply-always approval")
+	}
+	if handlerV2.calls != 0 {
+		t.Fatalf("expected v2 handler not to execute before fresh approval, got %d", handlerV2.calls)
+	}
+}
+
+func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := rt.CreateSession("reject blocked attempt", "blocked attempt should be finalized on reject")
+	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "reject approval and reconcile attempt"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "reject blocked attempt", []plan.StepSpec{{
+		StepID: "step_blocked",
+		Title:  "blocked",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo blocked", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+	attempts := rt.ListAttempts(sess.SessionID)
+	if len(attempts) != 1 || attempts[0].Status != "blocked" {
+		t.Fatalf("expected one blocked attempt after ask path, got %#v", attempts)
+	}
+
+	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyReject}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+	attempts = rt.ListAttempts(sess.SessionID)
+	if len(attempts) != 1 {
+		t.Fatalf("expected one attempt after reject, got %#v", attempts)
+	}
+	if attempts[0].Status == "blocked" || attempts[0].FinishedAt == 0 {
+		t.Fatalf("expected blocked attempt to be finalized after reject, got %#v", attempts[0])
 	}
 }

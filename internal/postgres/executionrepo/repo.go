@@ -2,7 +2,9 @@ package executionrepo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"sort"
 
 	"github.com/yiiilin/harness-core/internal/postgres"
@@ -639,5 +641,8 @@ func translateErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return execution.ErrRecordNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return execution.ErrRecordNotFound
+	}
+	return err
 }

@@ -77,13 +77,6 @@ func (DefaultResumePolicy) Resolve(record Record, step plan.StepSpec) (permissio
 	if record.Status != StatusApproved {
 		return permission.Decision{}, false
 	}
-	if record.Reply == ReplyAlways && record.ToolName == step.Action.ToolName {
-		return permission.Decision{
-			Action:      permission.Allow,
-			Reason:      "approval previously granted",
-			MatchedRule: "approval/always",
-		}, true
-	}
 	if record.StepID != step.StepID || record.ToolName != step.Action.ToolName {
 		return permission.Decision{}, false
 	}
