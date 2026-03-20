@@ -18,6 +18,11 @@ Non-goals for v1:
 - multi-tenant product surface
 - giant built-in tool ecosystem
 
+Boundary rule:
+- if a concern is not transport-neutral and identity-neutral, it should not become a kernel concept
+
+See `docs/KERNEL_SCOPE.md` for the hard boundary.
+
 ---
 
 ## Recommended shape
@@ -119,6 +124,9 @@ The embedding application should own:
 - UI / operator experience
 - multi-user / tenant ownership and projections
 
+Do not move those concerns into `pkg/harness/*`.
+See `docs/KERNEL_SCOPE.md`.
+
 ---
 
 ## Storage direction
@@ -165,3 +173,4 @@ Preferred long-term structure:
 - transport bindings live in `adapters/*`
 
 See `docs/PACKAGE_BOUNDARIES.md` for guidance on which packages consumers should import directly.
+See `docs/KERNEL_SCOPE.md` for the rule set that decides whether a new concept belongs in the kernel at all.

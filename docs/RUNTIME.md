@@ -25,6 +25,12 @@ That means:
 - deterministic transitions where possible
 - model involvement only at cognition-heavy decision points
 
+Boundary rule:
+- the runtime may own execution semantics
+- the runtime may not own tenant, user, auth, UI, or transport concepts
+
+See `docs/KERNEL_SCOPE.md`.
+
 ---
 
 ## Main state machine
@@ -261,6 +267,9 @@ WebSocket adapters surface the same kernel path through:
 - persistence backend implementation details
 - tenant/business-specific policy
 
+Those are not deferred kernel features.
+They are intentionally outside kernel scope.
+
 ---
 
 ## Compaction and summarization
@@ -341,6 +350,8 @@ Exclude from v1:
 - long-lived public tenant runtime controls
 - multi-user ownership / session listing / UI projections
 - deeply coupled model-provider logic
+
+See `docs/KERNEL_SCOPE.md` for the stronger invariant behind this exclusion list.
 
 ---
 

@@ -10,6 +10,11 @@ The main entry point should be:
 import "github.com/yiiilin/harness-core/pkg/harness"
 ```
 
+Scope rule:
+- `pkg/harness` exposes the execution kernel, not transport/auth/tenant/product APIs
+
+See `docs/KERNEL_SCOPE.md`.
+
 ## Recommended public surface
 
 ### Top-level constructor path
@@ -38,6 +43,7 @@ Intent:
 - keep the top-level facade small
 - prefer additive changes over reshaping constructor ergonomics
 - use this as the default embedding entry point
+- avoid turning the facade into a product platform SDK
 
 ### Public but still evolving
 - `pkg/harness/runtime`
@@ -106,5 +112,8 @@ The project is still early, but this is the intended direction:
 - keep the top-level facade small and stable
 - let subpackages evolve more freely
 - avoid forcing consumers to understand every internal package before getting started
+
+That stability intent applies only to kernel concepts.
+Identity, transport, and platform concerns should stay out of the public kernel surface entirely.
 
 Versioning and deprecation expectations are documented in `VERSIONING.md`.

@@ -21,6 +21,8 @@ That means:
 - modules may expose optional hooks or replaceable backends
 - embedding applications compose the pieces they need
 
+Before adding a new core hook, read `docs/KERNEL_SCOPE.md`.
+
 ---
 
 ## Extension layers
@@ -40,6 +42,9 @@ Examples:
 
 Rule of thumb:
 > If a concern changes how the runtime loop behaves globally, it belongs in the core.
+
+Hard constraint:
+> If a concern is transport-specific, identity-specific, or product-specific, it does not belong in the core even if it is convenient to add there.
 
 ---
 
@@ -155,6 +160,7 @@ Do **not** add a hook just because:
 - one current application needs one special behavior
 - a temporary workaround is convenient
 - a product-specific policy is easier to cram into the kernel
+- auth, tenant, or UI logic feels "close enough" to runtime state
 
 In these cases, prefer:
 - a module-specific option
@@ -171,6 +177,7 @@ Before adding an extension point, check:
 - [ ] Is the default behavior still simple?
 - [ ] Is there at least one test for the hook path?
 - [ ] Does the hook avoid leaking transport/product concerns into the kernel?
+- [ ] Does the hook pass the admission test in `docs/KERNEL_SCOPE.md`?
 
 ---
 
