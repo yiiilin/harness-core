@@ -75,32 +75,48 @@ func TestLifecycleEntryPointsEmitCreationEventsAndAttachUsesRunner(t *testing.T)
 	}
 }
 
-func TestLifecycleEntryPointsPropagateEventEmissionErrors(t *testing.T) {
-	t.Run("session create returns emit error without runner", func(t *testing.T) {
+func TestLifecycleEntryPointsBestEffortWithoutRunnerAndTransactionalWithRunner(t *testing.T) {
+	t.Run("session create stays successful when emit fails without runner", func(t *testing.T) {
 		boom := errors.New("emit session.created failed")
 		rt := hruntime.New(hruntime.Options{
 			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventSessionCreated: boom}},
 		})
 		rt.Runner = nil
 
-		if _, err := rt.CreateSession("broken session", "emit errors must surface"); !errors.Is(err, boom) {
-			t.Fatalf("expected session create to surface emit error, got %v", err)
+		created, err := rt.CreateSession("broken session", "emit errors are best effort without a runner")
+		if err != nil {
+			t.Fatalf("expected session create to succeed without runner compensation, got %v", err)
+		}
+		sessions, err := rt.ListSessions()
+		if err != nil {
+			t.Fatalf("list sessions: %v", err)
+		}
+		if len(sessions) != 1 || sessions[0].SessionID != created.SessionID {
+			t.Fatalf("expected created session to remain visible, got %#v", sessions)
 		}
 	})
 
-	t.Run("task create returns emit error without runner", func(t *testing.T) {
+	t.Run("task create stays successful when emit fails without runner", func(t *testing.T) {
 		boom := errors.New("emit task.created failed")
 		rt := hruntime.New(hruntime.Options{
 			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventTaskCreated: boom}},
 		})
 		rt.Runner = nil
 
-		if _, err := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "emit task failure"}); !errors.Is(err, boom) {
-			t.Fatalf("expected task create to surface emit error, got %v", err)
+		created, err := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "emit task failure"})
+		if err != nil {
+			t.Fatalf("expected task create to succeed without runner compensation, got %v", err)
+		}
+		tasks, err := rt.ListTasks()
+		if err != nil {
+			t.Fatalf("list tasks: %v", err)
+		}
+		if len(tasks) != 1 || tasks[0].TaskID != created.TaskID {
+			t.Fatalf("expected created task to remain visible, got %#v", tasks)
 		}
 	})
 
-	t.Run("plan create returns emit error without runner", func(t *testing.T) {
+	t.Run("plan create stays successful when emit fails without runner", func(t *testing.T) {
 		boom := errors.New("emit plan.generated failed")
 		rt := hruntime.New(hruntime.Options{
 			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventPlanGenerated: boom}},
@@ -114,8 +130,16 @@ func TestLifecycleEntryPointsPropagateEventEmissionErrors(t *testing.T) {
 			t.Fatalf("attach task: %v", err)
 		}
 
-		if _, err := rt.CreatePlan(attached.SessionID, "emit fail", []plan.StepSpec{{StepID: "step_1", Title: "noop"}}); !errors.Is(err, boom) {
-			t.Fatalf("expected plan create to surface emit error, got %v", err)
+		created, err := rt.CreatePlan(attached.SessionID, "emit fail", []plan.StepSpec{{StepID: "step_1", Title: "noop"}})
+		if err != nil {
+			t.Fatalf("expected plan create to succeed without runner compensation, got %v", err)
+		}
+		plans, err := rt.ListPlans(attached.SessionID)
+		if err != nil {
+			t.Fatalf("list plans: %v", err)
+		}
+		if len(plans) != 1 || plans[0].PlanID != created.PlanID {
+			t.Fatalf("expected created plan to remain visible, got %#v", plans)
 		}
 	})
 

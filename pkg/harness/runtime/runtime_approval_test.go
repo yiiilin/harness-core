@@ -186,6 +186,14 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 	if initial.Execution.PendingApproval == nil {
 		t.Fatalf("expected pending approval in execution result")
 	}
+	attempts := mustListAttempts(t, rt, sess.SessionID)
+	if len(attempts) != 1 || attempts[0].Status != "blocked" {
+		t.Fatalf("expected one blocked attempt before approval resume, got %#v", attempts)
+	}
+	if attempts[0].FinishedAt != 0 {
+		t.Fatalf("expected blocked attempt to stay open until resume, got %#v", attempts[0])
+	}
+	blockedAttemptID := attempts[0].AttemptID
 
 	approvalRec, stateAfterReply, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce})
 	if err != nil {
@@ -196,6 +204,10 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 	}
 	if stateAfterReply.PendingApprovalID == "" {
 		t.Fatalf("expected session to keep approval handle until resume")
+	}
+	attempts = mustListAttempts(t, rt, sess.SessionID)
+	if len(attempts) != 1 || attempts[0].AttemptID != blockedAttemptID || attempts[0].Status != "blocked" {
+		t.Fatalf("expected approval response to keep the original blocked attempt pending, got %#v", attempts)
 	}
 
 	resumed, err := rt.ResumePendingApproval(context.Background(), sess.SessionID)
@@ -210,6 +222,13 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 	}
 	if resumed.Session.Phase != session.PhaseComplete {
 		t.Fatalf("expected session complete after resumed execution, got %s", resumed.Session.Phase)
+	}
+	attempts = mustListAttempts(t, rt, sess.SessionID)
+	if len(attempts) != 1 {
+		t.Fatalf("expected resume to reuse the original attempt, got %#v", attempts)
+	}
+	if attempts[0].AttemptID != blockedAttemptID || attempts[0].Status != "completed" || attempts[0].Step.Status != plan.StepCompleted {
+		t.Fatalf("expected original blocked attempt to become the completed execution attempt, got %#v", attempts[0])
 	}
 
 	storedApproval, err := rt.GetApproval(approvalRec.ApprovalID)

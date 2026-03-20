@@ -44,12 +44,10 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 	if err != nil {
 		return session.State{}, err
 	}
-	if err := s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
 		"title": created.Title,
 		"goal":  created.Goal,
-	})}); err != nil {
-		return session.State{}, err
-	}
+	})})
 	return created, nil
 }
 
@@ -86,13 +84,11 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 	if err != nil {
 		return task.Record{}, err
 	}
-	if err := s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
 		"task_type": created.TaskType,
 		"goal":      created.Goal,
 		"status":    created.Status,
-	})}); err != nil {
-		return task.Record{}, err
-	}
+	})})
 	return created, nil
 }
 
@@ -183,8 +179,20 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 		return created, err
 	}
 
-	err = create(s.Plans, s.EventSink)
-	return created, err
+	if err := ensurePlanRevisionBudgetInStore(s.Plans, sessionID, s.LoopBudgets); err != nil {
+		return plan.Spec{}, err
+	}
+	created, err = s.Plans.Create(sessionID, changeReason, steps)
+	if err != nil {
+		return plan.Spec{}, err
+	}
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		"plan_id":       created.PlanID,
+		"revision":      created.Revision,
+		"change_reason": created.ChangeReason,
+		"step_count":    len(created.Steps),
+	})})
+	return created, nil
 }
 
 func (s *Service) listRelatedAuditEvents(sessionID string) ([]audit.Event, error) {

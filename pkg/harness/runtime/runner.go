@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,15 +50,41 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	}
 
 	now := time.Now().UnixMilli()
-	attemptRecord := execution.Attempt{
-		AttemptID: "att_" + uuid.NewString(),
-		SessionID: sessionID,
-		TaskID:    state.TaskID,
-		StepID:    step.StepID,
-		TraceID:   "trc_" + uuid.NewString(),
-		Step:      step,
-		StartedAt: now,
+	attemptRecord := execution.Attempt{}
+	reuseBlockedAttempt := false
+	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
+		existingAttempt, ok, err := findLatestBlockedAttemptInStore(s.Attempts, sessionID, activeApproval.ApprovalID)
+		if err != nil {
+			return StepRunOutput{}, err
+		}
+		if ok {
+			attemptRecord = existingAttempt
+			reuseBlockedAttempt = true
+		}
 	}
+	if !reuseBlockedAttempt {
+		attemptRecord = execution.Attempt{
+			AttemptID: "att_" + uuid.NewString(),
+			SessionID: sessionID,
+			TaskID:    state.TaskID,
+			StepID:    step.StepID,
+			TraceID:   "trc_" + uuid.NewString(),
+			Step:      step,
+			StartedAt: now,
+		}
+	}
+	if attemptRecord.AttemptID == "" {
+		attemptRecord.AttemptID = "att_" + uuid.NewString()
+	}
+	if attemptRecord.TraceID == "" {
+		attemptRecord.TraceID = "trc_" + uuid.NewString()
+	}
+	if attemptRecord.StartedAt == 0 {
+		attemptRecord.StartedAt = now
+	}
+	attemptRecord.SessionID = sessionID
+	attemptRecord.TaskID = state.TaskID
+	attemptRecord.StepID = step.StepID
 	var actionRecord *execution.ActionRecord
 	var verificationRecord *execution.VerificationRecord
 	artifactRecords := []execution.Artifact{}
@@ -136,7 +163,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		var pendingApproval *approval.Record
 		attemptRecord.Status = execution.AttemptBlocked
 		attemptRecord.Step = step
-		attemptRecord.FinishedAt = time.Now().UnixMilli()
+		attemptRecord.FinishedAt = 0
 		if s.Runner != nil {
 			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 				if repos.Approvals == nil {
@@ -163,7 +190,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				if err := repos.Sessions.Update(state); err != nil {
 					return err
 				}
-				if err := persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil); err != nil {
+				if err := persistExecutionFactsInRepos(repos, attemptRecord, false, nil, nil, nil); err != nil {
 					return err
 				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
@@ -190,7 +217,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
-			if err := s.persistExecutionFacts(attemptRecord, nil, nil, nil); err != nil {
+			if err := s.persistExecutionFacts(attemptRecord, false, nil, nil, nil); err != nil {
 				return StepRunOutput{}, err
 			}
 		}
@@ -234,6 +261,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		attemptRecord.FinishedAt = step.FinishedAt
 		if activeApproval != nil {
 			attemptRecord.ApprovalID = activeApproval.ApprovalID
+			if attemptRecord.Metadata == nil {
+				attemptRecord.Metadata = map[string]any{}
+			}
+			attemptRecord.Metadata["approval_reply"] = string(activeApproval.Reply)
 		}
 		next := TransitionDecision{From: state.Phase, To: TransitionFailed, StepID: step.StepID, Reason: "policy denied action"}
 		transitions = append(transitions, next)
@@ -259,7 +290,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				if err := repos.Sessions.Update(state); err != nil {
 					return err
 				}
-				if err := persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil); err != nil {
+				if err := persistExecutionFactsInRepos(repos, attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
 					return err
 				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
@@ -275,7 +306,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
-			if err := s.persistExecutionFacts(attemptRecord, nil, nil, nil); err != nil {
+			if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
 				return StepRunOutput{}, err
 			}
 		}
@@ -412,6 +443,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	}
 	if activeApproval != nil {
 		attemptRecord.ApprovalID = activeApproval.ApprovalID
+		if attemptRecord.Metadata == nil {
+			attemptRecord.Metadata = map[string]any{}
+		}
+		attemptRecord.Metadata["approval_reply"] = string(activeApproval.Reply)
 	}
 
 	var updatedPlan *plan.Spec
@@ -444,7 +479,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := repos.Sessions.Update(state); err != nil {
 				return err
 			}
-			if err := persistExecutionFactsInRepos(repos, attemptRecord, actionRecord, verificationRecord, artifactRecords); err != nil {
+			if err := persistExecutionFactsInRepos(repos, attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
 				return err
 			}
 			if err := persistCapabilitySnapshotInRepos(repos, capabilitySnapshot); err != nil {
@@ -471,7 +506,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		if err := s.Sessions.Update(state); err != nil {
 			return StepRunOutput{}, err
 		}
-		if err := s.persistExecutionFacts(attemptRecord, actionRecord, verificationRecord, artifactRecords); err != nil {
+		if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
 			return StepRunOutput{}, err
 		}
 		if err := s.persistCapabilitySnapshot(capabilitySnapshot); err != nil {
@@ -600,10 +635,16 @@ func actionErrorMessage(result action.Result) string {
 	return "tool failed"
 }
 
-func persistExecutionFactsInRepos(repos persistence.RepositorySet, attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
+func persistExecutionFactsInRepos(repos persistence.RepositorySet, attempt execution.Attempt, updateAttempt bool, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
 	if repos.Attempts != nil {
-		if _, err := repos.Attempts.Create(attempt); err != nil {
-			return err
+		if updateAttempt {
+			if err := repos.Attempts.Update(attempt); err != nil {
+				return err
+			}
+		} else {
+			if _, err := repos.Attempts.Create(attempt); err != nil {
+				return err
+			}
 		}
 	}
 	if actionRecord != nil && repos.Actions != nil {
@@ -646,10 +687,16 @@ func persistRuntimeHandlesInRepos(repos persistence.RepositorySet, handles []exe
 	return nil
 }
 
-func (s *Service) persistExecutionFacts(attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
+func (s *Service) persistExecutionFacts(attempt execution.Attempt, updateAttempt bool, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
 	if s.Attempts != nil {
-		if _, err := s.Attempts.Create(attempt); err != nil {
-			return err
+		if updateAttempt {
+			if err := s.Attempts.Update(attempt); err != nil {
+				return err
+			}
+		} else {
+			if _, err := s.Attempts.Create(attempt); err != nil {
+				return err
+			}
 		}
 	}
 	if actionRecord != nil && s.Actions != nil {
@@ -771,15 +818,34 @@ func extractRuntimeHandles(result action.Result, attempt execution.Attempt, acti
 		if raw, ok := container["runtime_handle"]; ok {
 			appendHandle(raw)
 		}
-		if raw, ok := container["runtime_handles"].([]any); ok {
-			for _, item := range raw {
-				appendHandle(item)
-			}
+		if raw, ok := container["runtime_handles"]; ok {
+			appendRuntimeHandleSlice(raw, appendHandle)
 		}
 	}
 	collect(result.Data)
 	collect(result.Meta)
 	return out
+}
+
+func appendRuntimeHandleSlice(raw any, appendHandle func(any)) {
+	switch items := raw.(type) {
+	case []any:
+		for _, item := range items {
+			appendHandle(item)
+		}
+	case []map[string]any:
+		for _, item := range items {
+			appendHandle(item)
+		}
+	default:
+		value := reflect.ValueOf(raw)
+		if !value.IsValid() || value.Kind() != reflect.Slice {
+			return
+		}
+		for i := 0; i < value.Len(); i++ {
+			appendHandle(value.Index(i).Interface())
+		}
+	}
 }
 
 func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *execution.ActionRecord) (execution.RuntimeHandle, bool) {

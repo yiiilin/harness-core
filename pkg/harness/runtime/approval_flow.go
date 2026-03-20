@@ -92,10 +92,6 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 				if err := finalizeBlockedAttemptInStore(repos.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
 					return err
 				}
-			} else if response.Reply == approval.ReplyOnce || response.Reply == approval.ReplyAlways {
-				if err := finalizeBlockedAttemptInStore(repos.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptCompleted, rec.Step, string(response.Reply)); err != nil {
-					return err
-				}
 			}
 			if response.Reply == approval.ReplyReject {
 				pl, err := updateLatestPlanStepInStore(repos.Plans, rec.SessionID, step)
@@ -125,10 +121,6 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		}
 		if response.Reply == approval.ReplyReject {
 			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
-				return approval.Record{}, session.State{}, err
-			}
-		} else if response.Reply == approval.ReplyOnce || response.Reply == approval.ReplyAlways {
-			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptCompleted, rec.Step, string(response.Reply)); err != nil {
 				return approval.Record{}, session.State{}, err
 			}
 		}
@@ -303,27 +295,35 @@ func marshalApprovalScopeValue(value any) string {
 }
 
 func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string, status execution.AttemptStatus, step plan.StepSpec, reply string) error {
+	attempt, ok, err := findLatestBlockedAttemptInStore(store, sessionID, approvalID)
+	if err != nil || !ok {
+		return err
+	}
+	attempt.Status = status
+	attempt.Step = step
+	if attempt.Metadata == nil {
+		attempt.Metadata = map[string]any{}
+	}
+	attempt.Metadata["approval_reply"] = reply
+	if attempt.FinishedAt == 0 {
+		attempt.FinishedAt = time.Now().UnixMilli()
+	}
+	return store.Update(attempt)
+}
+
+func findLatestBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string) (execution.Attempt, bool, error) {
 	if store == nil || approvalID == "" {
-		return nil
+		return execution.Attempt{}, false, nil
 	}
 	attempts, err := store.List(sessionID)
 	if err != nil {
-		return err
+		return execution.Attempt{}, false, err
 	}
 	for i := len(attempts) - 1; i >= 0; i-- {
 		if attempts[i].ApprovalID != approvalID || attempts[i].Status != execution.AttemptBlocked {
 			continue
 		}
-		attempts[i].Status = status
-		attempts[i].Step = step
-		if attempts[i].Metadata == nil {
-			attempts[i].Metadata = map[string]any{}
-		}
-		attempts[i].Metadata["approval_reply"] = reply
-		if attempts[i].FinishedAt == 0 {
-			attempts[i].FinishedAt = time.Now().UnixMilli()
-		}
-		return store.Update(attempts[i])
+		return attempts[i], true, nil
 	}
-	return nil
+	return execution.Attempt{}, false, nil
 }
