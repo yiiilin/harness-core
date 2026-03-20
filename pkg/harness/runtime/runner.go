@@ -166,10 +166,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		attemptRecord.FinishedAt = 0
 		if s.Runner != nil {
 			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
-				if repos.Approvals == nil {
+				repoSet := s.repositoriesWithFallback(repos)
+				if repoSet.Approvals == nil {
 					return approval.ErrApprovalNotFound
 				}
-				rec, err := repos.Approvals.CreatePending(request)
+				rec, err := repoSet.Approvals.CreatePending(request)
 				if err != nil {
 					return err
 				}
@@ -177,20 +178,20 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				attemptRecord.ApprovalID = rec.ApprovalID
 				state.PendingApprovalID = rec.ApprovalID
 				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-				pl, err := updateLatestPlanStepInStore(repos.Plans, sessionID, step)
+				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
 				if err != nil {
 					return err
 				}
 				updatedPlan = pl
-				taskRec, err := updateTaskForTerminalInStore(repos.Tasks, state)
+				taskRec, err := updateTaskForTerminalInStore(repoSet.Tasks, state)
 				if err != nil {
 					return err
 				}
 				updatedTask = taskRec
-				if err := repos.Sessions.Update(state); err != nil {
+				if err := repoSet.Sessions.Update(state); err != nil {
 					return err
 				}
-				if err := persistExecutionFactsInRepos(repos, attemptRecord, false, nil, nil, nil); err != nil {
+				if err := persistExecutionFactsInRepos(repoSet, attemptRecord, false, nil, nil, nil); err != nil {
 					return err
 				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
@@ -225,9 +226,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			execResult.PendingApproval = pendingApproval
 		}
 		if s.Runner == nil {
-			if err := s.emitEvents(ctx, events); err != nil {
-				return StepRunOutput{}, err
-			}
+			_ = s.emitEvents(ctx, events)
 		}
 		return StepRunOutput{
 			Session:     state,
@@ -277,20 +276,21 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		var updatedTask *task.Record
 		if s.Runner != nil {
 			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
-				pl, err := updateLatestPlanStepInStore(repos.Plans, sessionID, step)
+				repoSet := s.repositoriesWithFallback(repos)
+				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
 				if err != nil {
 					return err
 				}
 				updatedPlan = pl
-				taskRec, err := updateTaskForTerminalInStore(repos.Tasks, state)
+				taskRec, err := updateTaskForTerminalInStore(repoSet.Tasks, state)
 				if err != nil {
 					return err
 				}
 				updatedTask = taskRec
-				if err := repos.Sessions.Update(state); err != nil {
+				if err := repoSet.Sessions.Update(state); err != nil {
 					return err
 				}
-				if err := persistExecutionFactsInRepos(repos, attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
+				if err := persistExecutionFactsInRepos(repoSet, attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
 					return err
 				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
@@ -311,9 +311,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			}
 		}
 		if s.Runner == nil {
-			if err := s.emitEvents(ctx, events); err != nil {
-				return StepRunOutput{}, err
-			}
+			_ = s.emitEvents(ctx, events)
 		}
 		return StepRunOutput{Session: state, Execution: execResult, Transitions: transitions, Events: events, UpdatedPlan: updatedPlan, UpdatedTask: updatedTask}, nil
 	}
@@ -466,30 +464,31 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	}
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
-			pl, err := updateLatestPlanStepInStore(repos.Plans, sessionID, step)
+			repoSet := s.repositoriesWithFallback(repos)
+			pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
 			if err != nil {
 				return err
 			}
 			updatedPlan = pl
-			taskRec, err := updateTaskForTerminalInStore(repos.Tasks, state)
+			taskRec, err := updateTaskForTerminalInStore(repoSet.Tasks, state)
 			if err != nil {
 				return err
 			}
 			updatedTask = taskRec
-			if err := repos.Sessions.Update(state); err != nil {
+			if err := repoSet.Sessions.Update(state); err != nil {
 				return err
 			}
-			if err := persistExecutionFactsInRepos(repos, attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
+			if err := persistExecutionFactsInRepos(repoSet, attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
 				return err
 			}
-			if err := persistCapabilitySnapshotInRepos(repos, capabilitySnapshot); err != nil {
+			if err := persistCapabilitySnapshotInRepos(repoSet, capabilitySnapshot); err != nil {
 				return err
 			}
-			if err := persistRuntimeHandlesInRepos(repos, runtimeHandles); err != nil {
+			if err := persistRuntimeHandlesInRepos(repoSet, runtimeHandles); err != nil {
 				return err
 			}
-			if finalizedApproval != nil && repos.Approvals != nil {
-				if err := repos.Approvals.Update(*finalizedApproval); err != nil {
+			if finalizedApproval != nil && repoSet.Approvals != nil {
+				if err := repoSet.Approvals.Update(*finalizedApproval); err != nil {
 					return err
 				}
 			}
@@ -522,9 +521,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		}
 	}
 	if s.Runner == nil {
-		if err := s.emitEvents(ctx, events); err != nil {
-			return StepRunOutput{}, err
-		}
+		_ = s.emitEvents(ctx, events)
 	}
 	s.Metrics.Record("step.run", map[string]any{
 		"success":       verified,
@@ -768,6 +765,43 @@ func (s *Service) eventSinkForRepos(repos persistence.RepositorySet) EventSink {
 	return FanoutEventSink{Sinks: []EventSink{s.EventSink, AuditStoreSink{Store: repos.Audits}}}
 }
 
+func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) persistence.RepositorySet {
+	if repos.Sessions == nil {
+		repos.Sessions = s.Sessions
+	}
+	if repos.Tasks == nil {
+		repos.Tasks = s.Tasks
+	}
+	if repos.Plans == nil {
+		repos.Plans = s.Plans
+	}
+	if repos.Audits == nil {
+		repos.Audits = s.Audit
+	}
+	if repos.Attempts == nil {
+		repos.Attempts = s.Attempts
+	}
+	if repos.Actions == nil {
+		repos.Actions = s.Actions
+	}
+	if repos.Verifications == nil {
+		repos.Verifications = s.Verifications
+	}
+	if repos.Artifacts == nil {
+		repos.Artifacts = s.Artifacts
+	}
+	if repos.RuntimeHandles == nil {
+		repos.RuntimeHandles = s.RuntimeHandles
+	}
+	if repos.Approvals == nil {
+		repos.Approvals = s.Approvals
+	}
+	if repos.CapabilitySnapshots == nil {
+		repos.CapabilitySnapshots = s.CapabilitySnapshots
+	}
+	return repos
+}
+
 func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.State, step plan.StepSpec) (*capability.Resolution, action.Result, error) {
 	resolution, err := s.ResolveCapability(ctx, capability.Request{
 		SessionID: state.SessionID,
@@ -849,59 +883,103 @@ func appendRuntimeHandleSlice(raw any, appendHandle func(any)) {
 }
 
 func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *execution.ActionRecord) (execution.RuntimeHandle, bool) {
-	item, ok := raw.(map[string]any)
-	if !ok {
-		return execution.RuntimeHandle{}, false
+	var handle execution.RuntimeHandle
+	switch item := raw.(type) {
+	case execution.RuntimeHandle:
+		handle = item
+	case *execution.RuntimeHandle:
+		if item == nil {
+			return execution.RuntimeHandle{}, false
+		}
+		handle = *item
+	default:
+		mapItem, ok := raw.(map[string]any)
+		if !ok {
+			return execution.RuntimeHandle{}, false
+		}
+
+		now := time.Now().UnixMilli()
+		handle = execution.RuntimeHandle{
+			SessionID: attempt.SessionID,
+			TaskID:    attempt.TaskID,
+			AttemptID: attempt.AttemptID,
+			TraceID:   attempt.TraceID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if actionRecord != nil {
+			if handle.Metadata == nil {
+				handle.Metadata = map[string]any{}
+			}
+			handle.Metadata["action_id"] = actionRecord.ActionID
+		}
+		if v, _ := mapItem["handle_id"].(string); v != "" {
+			handle.HandleID = v
+		} else {
+			handle.HandleID = "hdl_" + uuid.NewString()
+		}
+		if v, _ := mapItem["session_id"].(string); v != "" {
+			handle.SessionID = v
+		}
+		if v, _ := mapItem["task_id"].(string); v != "" {
+			handle.TaskID = v
+		}
+		if v, _ := mapItem["attempt_id"].(string); v != "" {
+			handle.AttemptID = v
+		}
+		if v, _ := mapItem["trace_id"].(string); v != "" {
+			handle.TraceID = v
+		}
+		if v, _ := mapItem["kind"].(string); v != "" {
+			handle.Kind = v
+		}
+		if v, _ := mapItem["value"].(string); v != "" {
+			handle.Value = v
+		}
+		if metadata, ok := mapItem["metadata"].(map[string]any); ok {
+			handle.Metadata = mergeMaps(handle.Metadata, metadata)
+		}
+		if createdAt, ok := asInt64(mapItem["created_at"]); ok && createdAt > 0 {
+			handle.CreatedAt = createdAt
+		}
+		if updatedAt, ok := asInt64(mapItem["updated_at"]); ok && updatedAt > 0 {
+			handle.UpdatedAt = updatedAt
+		} else {
+			handle.UpdatedAt = handle.CreatedAt
+		}
+		if handle.Kind == "" && handle.Value == "" {
+			return execution.RuntimeHandle{}, false
+		}
+		return handle, true
 	}
 
 	now := time.Now().UnixMilli()
-	handle := execution.RuntimeHandle{
-		SessionID: attempt.SessionID,
-		TaskID:    attempt.TaskID,
-		AttemptID: attempt.AttemptID,
-		TraceID:   attempt.TraceID,
-		CreatedAt: now,
-		UpdatedAt: now,
+	if handle.HandleID == "" {
+		handle.HandleID = "hdl_" + uuid.NewString()
+	}
+	if handle.SessionID == "" {
+		handle.SessionID = attempt.SessionID
+	}
+	if handle.TaskID == "" {
+		handle.TaskID = attempt.TaskID
+	}
+	if handle.AttemptID == "" {
+		handle.AttemptID = attempt.AttemptID
+	}
+	if handle.TraceID == "" {
+		handle.TraceID = attempt.TraceID
+	}
+	if handle.CreatedAt == 0 {
+		handle.CreatedAt = now
+	}
+	if handle.UpdatedAt == 0 {
+		handle.UpdatedAt = handle.CreatedAt
 	}
 	if actionRecord != nil {
 		if handle.Metadata == nil {
 			handle.Metadata = map[string]any{}
 		}
 		handle.Metadata["action_id"] = actionRecord.ActionID
-	}
-	if v, _ := item["handle_id"].(string); v != "" {
-		handle.HandleID = v
-	} else {
-		handle.HandleID = "hdl_" + uuid.NewString()
-	}
-	if v, _ := item["session_id"].(string); v != "" {
-		handle.SessionID = v
-	}
-	if v, _ := item["task_id"].(string); v != "" {
-		handle.TaskID = v
-	}
-	if v, _ := item["attempt_id"].(string); v != "" {
-		handle.AttemptID = v
-	}
-	if v, _ := item["trace_id"].(string); v != "" {
-		handle.TraceID = v
-	}
-	if v, _ := item["kind"].(string); v != "" {
-		handle.Kind = v
-	}
-	if v, _ := item["value"].(string); v != "" {
-		handle.Value = v
-	}
-	if metadata, ok := item["metadata"].(map[string]any); ok {
-		handle.Metadata = mergeMaps(handle.Metadata, metadata)
-	}
-	if createdAt, ok := asInt64(item["created_at"]); ok && createdAt > 0 {
-		handle.CreatedAt = createdAt
-	}
-	if updatedAt, ok := asInt64(item["updated_at"]); ok && updatedAt > 0 {
-		handle.UpdatedAt = updatedAt
-	} else {
-		handle.UpdatedAt = handle.CreatedAt
 	}
 	if handle.Kind == "" && handle.Value == "" {
 		return execution.RuntimeHandle{}, false

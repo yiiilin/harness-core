@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -46,6 +47,23 @@ func (runtimeHandlesSliceHandler) Invoke(_ context.Context, _ map[string]any) (a
 					"handle_id": "hdl_test_3",
 					"kind":      "pty",
 					"value":     "pty-session-3",
+				},
+			},
+		},
+	}, nil
+}
+
+type runtimeHandlesTypedStructHandler struct{}
+
+func (runtimeHandlesTypedStructHandler) Invoke(_ context.Context, _ map[string]any) (action.Result, error) {
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handles": []execution.RuntimeHandle{
+				{
+					HandleID: "hdl_test_4",
+					Kind:     "pty",
+					Value:    "pty-session-4",
 				},
 			},
 		},
@@ -139,5 +157,44 @@ func TestRunStepPersistsRuntimeHandlesFromTypedSlice(t *testing.T) {
 	}
 	if !ids["hdl_test_2"] || !ids["hdl_test_3"] {
 		t.Fatalf("unexpected runtime handles: %#v", handles)
+	}
+}
+
+func TestRunStepPersistsRuntimeHandlesFromExecutionStructSlice(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.handle.struct-slice", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, runtimeHandlesTypedStructHandler{})
+
+	rt := hruntime.New(hruntime.Options{Tools: tools})
+
+	sess := mustCreateSession(t, rt, "runtime handle struct slices", "persist handles from execution.RuntimeHandle slices")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "capture struct runtime handles"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "runtime handle struct slice", []plan.StepSpec{{
+		StepID: "step_runtime_handle_struct_slice",
+		Title:  "launch struct handle slice",
+		Action: action.Spec{ToolName: "demo.handle.struct-slice", Args: map[string]any{"mode": "interactive"}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	if _, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0]); err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	handles, err := rt.ListRuntimeHandles(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list runtime handles: %v", err)
+	}
+	if len(handles) != 1 {
+		t.Fatalf("expected one runtime handle, got %#v", handles)
+	}
+	if handles[0].HandleID != "hdl_test_4" || handles[0].Kind != "pty" || handles[0].Value != "pty-session-4" {
+		t.Fatalf("unexpected runtime handle from struct slice: %#v", handles[0])
 	}
 }

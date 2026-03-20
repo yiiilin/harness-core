@@ -82,29 +82,30 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 
 	if s.Runner != nil {
 		err = s.Runner.Within(context.Background(), func(repos persistence.RepositorySet) error {
-			if repos.Approvals == nil {
+			repoSet := s.repositoriesWithFallback(repos)
+			if repoSet.Approvals == nil {
 				return approval.ErrApprovalNotFound
 			}
-			if err := repos.Approvals.Update(rec); err != nil {
+			if err := repoSet.Approvals.Update(rec); err != nil {
 				return err
 			}
 			if response.Reply == approval.ReplyReject {
-				if err := finalizeBlockedAttemptInStore(repos.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
+				if err := finalizeBlockedAttemptInStore(repoSet.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
 					return err
 				}
 			}
 			if response.Reply == approval.ReplyReject {
-				pl, err := updateLatestPlanStepInStore(repos.Plans, rec.SessionID, step)
+				pl, err := updateLatestPlanStepInStore(repoSet.Plans, rec.SessionID, step)
 				if err != nil {
 					return err
 				}
 				updatedPlan = pl
-				if _, updatedTaskErr = updateTaskForTerminalInStore(repos.Tasks, st); updatedTaskErr != nil {
+				if _, updatedTaskErr = updateTaskForTerminalInStore(repoSet.Tasks, st); updatedTaskErr != nil {
 					return updatedTaskErr
 				}
 				updatedTaskUpdated = true
 			}
-			if err := repos.Sessions.Update(st); err != nil {
+			if err := repoSet.Sessions.Update(st); err != nil {
 				return err
 			}
 			if err := s.emitEventsWithSink(context.Background(), s.eventSinkForRepos(repos), events); err != nil {
@@ -134,9 +135,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		if err := s.Sessions.Update(st); err != nil {
 			return approval.Record{}, session.State{}, err
 		}
-		if err := s.emitEvents(context.Background(), events); err != nil {
-			return approval.Record{}, session.State{}, err
-		}
+		_ = s.emitEvents(context.Background(), events)
 	}
 	if updatedTaskUpdated && updatedTaskErr != nil {
 		return approval.Record{}, session.State{}, updatedTaskErr

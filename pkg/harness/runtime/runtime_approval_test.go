@@ -240,6 +240,76 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 	}
 }
 
+func TestRespondApprovalBestEffortEventEmissionWithoutRunner(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+		EventSink: selectiveFailingEventSink{failures: map[string]error{
+			audit.EventApprovalApproved: errors.New("boom:approval.approved"),
+		}},
+	}).WithPolicyEvaluator(askPolicy{})
+	rt.Runner = nil
+
+	sess := mustCreateSession(t, rt, "best effort approval", "approval responses should stay successful without runner")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "approve without transactional sink"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "approval", []plan.StepSpec{{
+		StepID: "step_best_effort_approval",
+		Title:  "best effort approval",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo approved", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	rec, stateAfterReply, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce})
+	if err != nil {
+		t.Fatalf("expected approval response to stay successful without runner compensation, got %v", err)
+	}
+	if rec.Status != approval.StatusApproved {
+		t.Fatalf("expected approved record, got %#v", rec)
+	}
+	if stateAfterReply.PendingApprovalID == "" {
+		t.Fatalf("expected session to retain pending approval until resume, got %#v", stateAfterReply)
+	}
+
+	storedApproval, err := rt.GetApproval(rec.ApprovalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if storedApproval.Status != approval.StatusApproved {
+		t.Fatalf("expected stored approval to remain approved, got %#v", storedApproval)
+	}
+}
+
 func TestRespondApprovalRejectFailsPendingStepWithoutExecuting(t *testing.T) {
 	sessions := session.NewMemoryStore()
 	tasks := task.NewMemoryStore()
