@@ -27,6 +27,11 @@ Preferred builtins composition helper package:
 - `builtins.New()`
 - `builtins.Register(&opts)`
 
+Preferred durable Postgres bootstrap helper package:
+- `pkg/harness/postgres`
+- `postgres.OpenService(...)`
+- `postgres.BuildOptions(...)`
+
 Compatibility wrappers on `pkg/harness` may remain for convenience, but the composition helper package is the clearer boundary.
 
 These convenience helpers may wire default module packs for local embedding, but they do not expand what the kernel owns.
@@ -49,8 +54,10 @@ These packages are the intended primary surfaces for consumers:
 - `pkg/harness/audit`
 - `pkg/harness/observability`
 - `pkg/harness/builtins`
+- `pkg/harness/postgres`
 
 These packages define the kernel's reusable contracts and composition points.
+`pkg/harness/postgres` is a public durable bootstrap helper around the kernel, not a kernel domain package.
 
 ---
 
@@ -74,6 +81,7 @@ The public package boundary should reinforce kernel scope, not weaken it.
 Rules:
 - `pkg/harness/*` must not import `adapters/*`
 - exported kernel types must not encode transport, auth, user, tenant, or UI concepts
+- concrete bootstrap helpers such as `pkg/harness/postgres` may exist, but they should stay as composition layers rather than polluting core runtime/domain types
 - module packs may register tools or verifiers, but module lifecycle and UX semantics should stay out of kernel domain objects
 - convenience bundle helpers should stay mechanically separate from the bare-kernel path whenever possible
 - `pkg/harness/runtime` should not directly import `modules/*`; composition should happen in a separate helper layer

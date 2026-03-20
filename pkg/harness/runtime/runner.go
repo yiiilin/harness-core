@@ -188,10 +188,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 					return err
 				}
 				updatedTask = taskRec
-				state.Version++
-				if err := repoSet.Sessions.Update(state); err != nil {
+				updatedState, err := persistSessionUpdate(repoSet.Sessions, state, leaseID)
+				if err != nil {
 					return err
 				}
+				state = updatedState
 				if err := persistExecutionFactsInRepos(repoSet, attemptRecord, false, nil, nil, nil); err != nil {
 					return err
 				}
@@ -216,10 +217,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
-			state.Version++
-			if err := s.Sessions.Update(state); err != nil {
+			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
+			if err != nil {
 				return StepRunOutput{}, err
 			}
+			state = updatedState
 			if err := s.persistExecutionFacts(attemptRecord, false, nil, nil, nil); err != nil {
 				return StepRunOutput{}, err
 			}
@@ -291,10 +293,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 					return err
 				}
 				updatedTask = taskRec
-				state.Version++
-				if err := repoSet.Sessions.Update(state); err != nil {
+				updatedState, err := persistSessionUpdate(repoSet.Sessions, state, leaseID)
+				if err != nil {
 					return err
 				}
+				state = updatedState
 				if err := persistExecutionFactsInRepos(repoSet, attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
 					return err
 				}
@@ -308,10 +311,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		} else {
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
-			state.Version++
-			if err := s.Sessions.Update(state); err != nil {
+			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
+			if err != nil {
 				return StepRunOutput{}, err
 			}
+			state = updatedState
 			if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
 				return StepRunOutput{}, err
 			}
@@ -488,10 +492,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				return err
 			}
 			updatedTask = taskRec
-			state.Version++
-			if err := repoSet.Sessions.Update(state); err != nil {
+			updatedState, err := persistSessionUpdate(repoSet.Sessions, state, leaseID)
+			if err != nil {
 				return err
 			}
+			state = updatedState
 			if err := persistExecutionFactsInRepos(repoSet, attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
 				return err
 			}
@@ -517,10 +522,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	} else {
 		updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 		updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
-		state.Version++
-		if err := s.Sessions.Update(state); err != nil {
+		updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
+		if err != nil {
 			return StepRunOutput{}, err
 		}
+		state = updatedState
 		if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
 			return StepRunOutput{}, err
 		}

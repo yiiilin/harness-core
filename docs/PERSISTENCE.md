@@ -120,6 +120,10 @@ Not yet in scope:
 Recommended first durable source of truth:
 - Postgres
 
+The public Postgres bootstrap path now lives under `pkg/harness/postgres`.
+That layer should own migration application, migration status/pending/drift inspection, and schema version introspection so embedding platforms do not need `internal/*` to bootstrap durable state safely.
+The local `cmd/harness-core migrate ...` commands should stay just a thin operations wrapper over that same public package rather than a separate bootstrap path.
+
 Redis can come later for:
 - caching
 - queueing

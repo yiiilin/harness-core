@@ -73,6 +73,28 @@ rt := harness.New(opts)
 - `EventSink`
 - tool / verifier registrations
 
+### 持久化 Postgres 接入的推荐入口
+
+如果嵌入方希望直接获得一个带持久化能力的 runtime，不要去 import `internal/*`，优先使用：
+
+- `pkg/harness/postgres`
+  - `OpenDB(...)`
+  - `EmbeddedMigrations()`
+  - `ApplyMigrations(...)`
+  - `ApplySchema(...)`
+  - `ListMigrationStatus(...)`
+  - `PendingMigrations(...)`
+  - `HasSchemaDrift(...)`
+  - `SchemaVersion(...)`
+  - `LatestSchemaVersion()`
+  - `BuildOptions(...)`
+  - `OpenService(...)`
+
+这个包是一个公开的 durable bootstrap / composition 层。
+它不是把 Postgres 变成内核概念，而是把已有的 Postgres wiring 公开成稳定接入面，方便平台直接嵌入。
+其中 `ApplyMigrations(...)` 是推荐主路径，`ApplySchema(...)` 只是兼容包装。
+迁移状态、pending 列表、drift 检查也应该走这个公开包，而不是让平台自己 import `internal/postgres`。
+
 ### 当前推荐关注的内核控制面入口
 
 - 生命周期：
@@ -166,6 +188,13 @@ rt := harness.New(opts)
 - `runtime.RunStep(...)`
 - transition / loop / defaults / planner / context / eventsink
 
+### `pkg/harness/postgres`
+公开的 Postgres durable bootstrap：
+- 打开 DB
+- 应用 versioned migrations
+- 组装 Postgres-backed repositories / runner / event sink
+- 直接构造持久化 runtime service
+
 ---
 
 ## 默认组件
@@ -219,6 +248,32 @@ policy -> action -> verify -> transition -> state update -> audit
 - `pty` 适合交互式会话启动，并通过 runtime handle 暴露句柄
 - PTY 的 read/write/attach/detach/close 是模块/平台层控制面，不是内核 lease 语义的一部分
 - PTY 专用 verifier 也在 `modules/shell`，不是内核新增语义
+
+### 持久化嵌入的最短路径
+
+```go
+import (
+	"context"
+
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+)
+
+var opts hruntime.Options
+builtins.Register(&opts)
+
+rt, db, err := hpostgres.OpenService(context.Background(), dsn, opts)
+if err != nil {
+	panic(err)
+}
+defer db.Close()
+```
+
+如果只是想看一个最小可运行的 durable embedding 示例，可以直接看 `examples/postgres-embedded`。
+如果想看多实例 worker 如何共享一个 Postgres-backed runtime，可以看 `examples/postgres-workers`。
+默认的 WebSocket adapter 和 `adapters/http` 都只是参考传输层，不是持久化接入的唯一入口。
+其中 `adapters/http` 现在额外暴露了 worker control-plane：claim / lease renew/release / claimed run / recover / approval resume，但这些仍然只是 transport 绑定，不是内核新概念。
 
 ### Deny path 已验证
 - policy 返回 deny

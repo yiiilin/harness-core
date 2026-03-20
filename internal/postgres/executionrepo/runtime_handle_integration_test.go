@@ -5,14 +5,14 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/internal/postgres/executionrepo"
-	"github.com/yiiilin/harness-core/internal/postgresruntime"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 )
 
 func TestRuntimeHandleRepoPersistsLifecycleStateAgainstPostgres(t *testing.T) {
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

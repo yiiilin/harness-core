@@ -17,10 +17,15 @@ It already has:
 - audit event envelopes with correlation ids
 - vendor-neutral metrics and trace exporter hooks
 - Postgres-backed repositories and transaction runner wiring
+- a public `pkg/harness/postgres` durable bootstrap path
+- public migration status / pending / drift helpers on `pkg/harness/postgres`
 - a public `pkg/harness` embedding facade
 - reference capability modules including PTY-backed shell execution
 - a minimal platform reference example under `examples/platform-reference`
 - a reference WebSocket adapter
+- a minimal HTTP reference adapter
+- HTTP worker control-plane reference routes for claim / lease / claimed execution
+- a durable Postgres multi-worker example
 
 It is not yet a complete product platform.
 
@@ -40,6 +45,10 @@ Remaining work is mainly future expansion, not a known core-boundary defect:
 - new capability modules
 - new adapters
 - stronger product-layer projections outside the kernel
+
+For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
+The recommended public path is `pkg/harness/postgres`; the WebSocket adapter remains a reference transport layer.
+The same applies to migration inspection: use `pkg/harness/postgres`, while `cmd/harness-core migrate ...` is only an ops convenience wrapper.
 
 ## Not kernel gaps
 

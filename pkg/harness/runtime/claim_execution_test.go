@@ -17,6 +17,24 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
+type blockingHandler struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingHandler) Invoke(_ context.Context, _ map[string]any) (action.Result, error) {
+	close(h.started)
+	<-h.release
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"status":    "completed",
+			"exit_code": 0,
+			"stdout":    "blocked-execution-complete",
+		},
+	}, nil
+}
+
 func newClaimExecutionRuntime(t *testing.T, policy any) (*hruntime.Service, *countingHandler) {
 	t.Helper()
 
@@ -80,6 +98,67 @@ func createClaimedExecutionPlan(t *testing.T, rt *hruntime.Service, title, goal,
 		t.Fatalf("create plan: %v", err)
 	}
 	return attached, pl
+}
+
+func TestRunClaimedSessionSurvivesLeaseRenewalDuringExecution(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &blockingHandler{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Tools:     tools,
+		Verifiers: verifiers,
+		Audit:     audits,
+	})
+
+	sess, _ := createClaimedExecutionPlan(t, rt, "claimed renewal", "renew while action is running", "step_claimed_renewal", "echo renew")
+	claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !ok || claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected claimed session %s, got %#v ok=%v", sess.SessionID, claimed, ok)
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := rt.RunClaimedSession(context.Background(), sess.SessionID, claimed.LeaseID)
+		resultCh <- err
+	}()
+
+	select {
+	case <-handler.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for claimed execution to start")
+	}
+
+	if _, err := rt.RenewSessionLease(context.Background(), sess.SessionID, claimed.LeaseID, time.Minute); err != nil {
+		t.Fatalf("renew lease during execution: %v", err)
+	}
+	close(handler.release)
+
+	if err := <-resultCh; err != nil {
+		t.Fatalf("expected claimed execution to survive lease renewal, got %v", err)
+	}
 }
 
 func TestRunClaimedStepRequiresLeaseOwnership(t *testing.T) {

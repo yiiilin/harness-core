@@ -13,9 +13,10 @@ Current status:
 - repository factory exists
 - repository implementations exist for session/task/plan/audit
 
-Related runtime bootstrap code lives in:
-- `internal/postgresruntime`
+Canonical public runtime bootstrap code now lives in:
+- `pkg/harness/postgres`
 
 That separation is intentional:
 - `internal/postgres` owns SQL/repository primitives
-- `internal/postgresruntime` owns service/bootstrap wiring
+- `pkg/harness/postgres` exposes public service/bootstrap wiring for embedding platforms
+- `internal/postgresruntime` remains only as an internal compatibility wrapper

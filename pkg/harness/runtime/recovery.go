@@ -174,11 +174,11 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 			updated = st
 			return nil
 		}
-		next.Version++
-		if err := sessStore.Update(next); err != nil {
+		updatedState, err := persistSessionUpdate(sessStore, next, st.LeaseID)
+		if err != nil {
 			return err
 		}
-		updated = next
+		updated = updatedState
 		return nil
 	}
 
@@ -209,8 +209,12 @@ func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID st
 			return err
 		}
 		updated = mutate(st)
-		updated.Version++
-		return store.Update(updated)
+		updatedState, err := persistSessionUpdate(store, updated, leaseID)
+		if err != nil {
+			return err
+		}
+		updated = updatedState
+		return nil
 	}
 
 	if s.Runner != nil {

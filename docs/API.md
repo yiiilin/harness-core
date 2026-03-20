@@ -31,6 +31,25 @@ See `docs/KERNEL_SCOPE.md`.
 The convenience helpers may wire default capability modules, but they do not make module, transport, auth, or tenant concerns part of the kernel contract.
 The separation exists so `pkg/harness/runtime` stays a bare kernel package rather than the owner of built-in capability packs.
 
+### Recommended durable Postgres bootstrap path
+- `pkg/harness/postgres`
+  - `postgres.OpenDB(...)`
+  - `postgres.EmbeddedMigrations()`
+  - `postgres.ApplyMigrations(...)`
+  - `postgres.ApplySchema(...)`
+  - `postgres.ListMigrationStatus(...)`
+  - `postgres.PendingMigrations(...)`
+  - `postgres.HasSchemaDrift(...)`
+  - `postgres.SchemaVersion(...)`
+  - `postgres.LatestSchemaVersion()`
+  - `postgres.BuildOptions(...)`
+  - `postgres.OpenService(...)`
+
+This package is a public composition/bootstrap layer around the kernel.
+It is the recommended durable embedding surface for Postgres-backed platforms, so downstream consumers do not need `internal/*` or the reference WebSocket adapter just to get persisted runtime semantics.
+Use `ApplyMigrations(...)` as the canonical bootstrap path; `ApplySchema(...)` remains as a compatibility wrapper over the same migration-driven behavior.
+The migration inspection helpers are also public so platforms can build their own ops/admin workflows without reaching into `internal/postgres`.
+
 ### Recommended kernel entrypoints
 - session/task/plan lifecycle:
   - `CreateSession`
@@ -118,6 +137,7 @@ Intent:
 - `pkg/harness/persistence`
 - `pkg/harness/executor/shell`
 - `pkg/harness/builtins`
+- `pkg/harness/postgres`
 
 Intent:
 - these packages are importable and supported
@@ -157,6 +177,27 @@ rt := harness.New(opts).
 	WithContextAssembler(myAssembler)
 ```
 
+For a durable Postgres-backed runtime:
+
+```go
+import (
+	"context"
+
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+)
+
+var opts hruntime.Options
+builtins.Register(&opts)
+
+rt, db, err := hpostgres.OpenService(context.Background(), dsn, opts)
+if err != nil {
+	panic(err)
+}
+defer db.Close()
+```
+
 For a planner-driven plan creation flow:
 
 ```go
@@ -174,9 +215,15 @@ Reference examples:
 - `examples/planner-context`
 - `examples/planner-replan`
 - `examples/platform-reference`
+- `examples/postgres-embedded`
+- `examples/postgres-workers`
 
 Module-specific interactive control surfaces remain outside the kernel facade.
 For example, PTY read/write/attach/detach behavior and PTY-specific verifiers live in `modules/shell` and are shown through `examples/platform-reference`; the kernel only owns the generic runtime-handle lifecycle.
+
+The reference WebSocket adapter and the minimal HTTP adapter are optional transport bindings.
+Embedding platforms do not need `adapters/websocket` or `adapters/http` to get durable Postgres runtime semantics.
+The HTTP adapter currently covers health/info, minimal lifecycle/run, and a worker control-plane for claim/lease/run/recover/resume flows, but it remains a reference binding rather than a kernel API contract.
 
 ## Stability intent
 

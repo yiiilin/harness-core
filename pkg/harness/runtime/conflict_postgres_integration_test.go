@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yiiilin/harness-core/internal/postgresruntime"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -22,7 +22,7 @@ func newPostgresConflictRuntime(t *testing.T, policy any) (*hruntime.Service, *c
 	t.Helper()
 
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -39,7 +39,7 @@ func newPostgresConflictRuntime(t *testing.T, policy any) (*hruntime.Service, *c
 		verify.ExitCodeChecker{},
 	)
 
-	opts := postgresruntime.BuildOptions(db, hruntime.Options{
+	opts := hpostgres.BuildOptions(db, hruntime.Options{
 		Tools:     tools,
 		Verifiers: verifiers,
 	})

@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/yiiilin/harness-core/internal/postgres/sessionrepo"
-	"github.com/yiiilin/harness-core/internal/postgresruntime"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
 func TestSessionRepoClaimRenewReleaseLeaseAgainstPostgres(t *testing.T) {
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSessionRepoClaimRenewReleaseLeaseAgainstPostgres(t *testing.T) {
 
 func TestSessionRepoReleaseLeaseRejectsExpiredHolderAgainstPostgres(t *testing.T) {
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSessionRepoReleaseLeaseRejectsExpiredHolderAgainstPostgres(t *testing.T
 
 func TestSessionRepoClaimRecoverableReclaimsOnlyExpiredLeaseAgainstPostgres(t *testing.T) {
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestSessionRepoClaimRecoverableReclaimsOnlyExpiredLeaseAgainstPostgres(t *t
 
 func TestSessionRepoClaimNextHasSingleWinnerAgainstPostgres(t *testing.T) {
 	pg := postgrestest.Start(t)
-	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yiiilin/harness-core/internal/postgresruntime"
+	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
 
@@ -70,7 +70,7 @@ func Start(t testing.TB) *Instance {
 
 func (i *Instance) OpenService(t testing.TB, opts hruntime.Options) (*hruntime.Service, *sql.DB) {
 	t.Helper()
-	rt, db, err := postgresruntime.OpenService(context.Background(), i.DSN, opts)
+	rt, db, err := hpostgres.OpenService(context.Background(), i.DSN, opts)
 	if err != nil {
 		t.Fatalf("open postgres runtime service: %v", err)
 	}
@@ -86,7 +86,7 @@ func (i *Instance) prepareDatabase(t testing.TB) {
 	var err error
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		db, err = postgresruntime.OpenDB(ctx, i.DSN)
+		db, err = hpostgres.OpenDB(ctx, i.DSN)
 		if err == nil {
 			break
 		}
@@ -97,8 +97,8 @@ func (i *Instance) prepareDatabase(t testing.TB) {
 	}
 	defer db.Close()
 
-	if err := postgresruntime.ApplySchema(ctx, db); err != nil {
-		t.Fatalf("apply postgres schema: %v", err)
+	if err := hpostgres.ApplyMigrations(ctx, db); err != nil {
+		t.Fatalf("apply postgres migrations: %v", err)
 	}
 	if err := resetDatabase(ctx, db); err != nil {
 		t.Fatalf("reset postgres database: %v", err)
