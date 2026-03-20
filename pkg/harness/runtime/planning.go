@@ -35,6 +35,13 @@ func (s *Service) AssembleContextForSession(ctx context.Context, sessionID strin
 	return assembled, state, spec, nil
 }
 
+func (s *Service) latestPlanForSession(sessionID string) (plan.Spec, bool, error) {
+	if s.Plans == nil {
+		return plan.Spec{}, false, nil
+	}
+	return s.Plans.LatestBySession(sessionID)
+}
+
 func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeReason string, maxSteps int) (plan.Spec, ContextPackage, error) {
 	if maxSteps <= 0 {
 		maxSteps = s.LoopBudgets.MaxSteps

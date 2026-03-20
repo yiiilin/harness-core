@@ -308,3 +308,11 @@ func (s *Service) EvaluateVerify(ctx context.Context, spec verify.Spec, result a
 func (s *Service) RunStep(ctx context.Context, sessionID string, step plan.StepSpec) (StepRunOutput, error) {
 	return s.runStep(ctx, sessionID, step)
 }
+
+func (s *Service) RunSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
+	return s.runSession(ctx, sessionID)
+}
+
+func (s *Service) RecoverSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
+	return s.recoverSession(ctx, sessionID)
+}

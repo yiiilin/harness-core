@@ -109,3 +109,38 @@ func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 		t.Fatalf("expected planner failure")
 	}
 }
+
+func TestRunSessionDrivesPlannerDerivedPlanToCompletion(t *testing.T) {
+	opts := hruntime.Options{}
+	hruntime.RegisterBuiltins(&opts)
+	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+
+	sess := mustCreateSession(t, rt, "planner session driver", "runtime should drive planner-derived steps")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner-driven session execution"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	out, err := rt.RunSession(context.Background(), sess.SessionID)
+	if err != nil {
+		t.Fatalf("run session: %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected session driver to complete the session, got %#v", out.Session)
+	}
+	if len(out.Executions) != 2 {
+		t.Fatalf("expected two step executions, got %#v", out.Executions)
+	}
+
+	plans, err := rt.ListPlans(sess.SessionID)
+	if err != nil {
+		t.Fatalf("list plans: %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected a single generated plan, got %#v", plans)
+	}
+	if plans[0].Status != plan.StatusCompleted {
+		t.Fatalf("expected generated plan to be completed, got %#v", plans[0])
+	}
+}
