@@ -25,6 +25,12 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	if err != nil {
 		return approval.Record{}, session.State{}, err
 	}
+	if rec.Status != approval.StatusPending || st.PendingApprovalID != approvalID {
+		return approval.Record{}, session.State{}, approval.ErrApprovalNotPending
+	}
+	if !approval.ValidReply(response.Reply) {
+		return approval.Record{}, session.State{}, approval.ErrInvalidReply
+	}
 
 	now := time.Now().UnixMilli()
 	rec.Reply = response.Reply
@@ -65,14 +71,6 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		st.ExecutionState = session.ExecutionIdle
 		st.InFlightStepID = ""
 	case approval.ReplyOnce, approval.ReplyAlways:
-		rec.Status = approval.StatusApproved
-		appendEvent(audit.EventApprovalApproved, map[string]any{
-			"approval_id": approvalID,
-			"reply":       response.Reply,
-			"tool_name":   rec.ToolName,
-		})
-		st.ExecutionState = session.ExecutionIdle
-	default:
 		rec.Status = approval.StatusApproved
 		appendEvent(audit.EventApprovalApproved, map[string]any{
 			"approval_id": approvalID,

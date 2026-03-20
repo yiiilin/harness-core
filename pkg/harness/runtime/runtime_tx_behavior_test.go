@@ -68,15 +68,34 @@ func newRuntimeWithRecorder(rec *txRecorder, aud audit.Store) *hruntime.Service 
 
 func seedHappyStep(tb testing.TB, rt *hruntime.Service) (session.State, plan.StepSpec) {
 	tb.Helper()
-	sess := mustCreateSession(tb, rt, "tx", "runner tx")
-	tsk := mustCreateTask(tb, rt, task.Spec{TaskType: "demo", Goal: "transaction behavior"})
-	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
-	pl, _ := rt.CreatePlan(sess.SessionID, "initial", []plan.StepSpec{{
+	sess, err := rt.Sessions.Create("tx", "runner tx")
+	if err != nil {
+		tb.Fatalf("seed session: %v", err)
+	}
+	tsk, err := rt.Tasks.Create(task.Spec{TaskType: "demo", Goal: "transaction behavior"})
+	if err != nil {
+		tb.Fatalf("seed task: %v", err)
+	}
+	sess.TaskID = tsk.TaskID
+	sess.Goal = tsk.Goal
+	sess.Phase = session.PhaseReceived
+	if err := rt.Sessions.Update(sess); err != nil {
+		tb.Fatalf("seed session attach: %v", err)
+	}
+	tsk.SessionID = sess.SessionID
+	tsk.Status = task.StatusRunning
+	if err := rt.Tasks.Update(tsk); err != nil {
+		tb.Fatalf("seed task attach: %v", err)
+	}
+	pl, err := rt.Plans.Create(sess.SessionID, "initial", []plan.StepSpec{{
 		StepID: "step_1",
 		Title:  "echo hello",
 		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo hello", "timeout_ms": 5000}},
 		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}}, {Kind: "output_contains", Args: map[string]any{"text": "hello"}}}},
 	}})
+	if err != nil {
+		tb.Fatalf("seed plan: %v", err)
+	}
 	return sess, pl.Steps[0]
 }
 

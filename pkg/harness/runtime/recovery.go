@@ -4,39 +4,28 @@ import (
 	"context"
 	"time"
 
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
 func (s *Service) MarkSessionInFlight(ctx context.Context, sessionID, stepID string) (session.State, error) {
-	st, err := s.Sessions.Get(sessionID)
-	if err != nil {
-		return session.State{}, err
-	}
 	now := time.Now().UnixMilli()
-	st.ExecutionState = session.ExecutionInFlight
-	st.InFlightStepID = stepID
-	st.LastHeartbeatAt = now
-	if err := s.Sessions.Update(st); err != nil {
-		return session.State{}, err
-	}
-	_ = ctx
-	return st, nil
+	return s.updateRecoveryState(ctx, func(st session.State) session.State {
+		st.ExecutionState = session.ExecutionInFlight
+		st.InFlightStepID = stepID
+		st.LastHeartbeatAt = now
+		return st
+	}, sessionID)
 }
 
 func (s *Service) MarkSessionInterrupted(ctx context.Context, sessionID string) (session.State, error) {
-	st, err := s.Sessions.Get(sessionID)
-	if err != nil {
-		return session.State{}, err
-	}
 	now := time.Now().UnixMilli()
-	st.ExecutionState = session.ExecutionInterrupted
-	st.InterruptedAt = now
-	st.Phase = session.PhaseRecover
-	if err := s.Sessions.Update(st); err != nil {
-		return session.State{}, err
-	}
-	_ = ctx
-	return st, nil
+	return s.updateRecoveryState(ctx, func(st session.State) session.State {
+		st.ExecutionState = session.ExecutionInterrupted
+		st.InterruptedAt = now
+		st.Phase = session.PhaseRecover
+		return st
+	}, sessionID)
 }
 
 func (s *Service) ListRecoverableSessions() ([]session.State, error) {
@@ -51,4 +40,34 @@ func (s *Service) ListRecoverableSessions() ([]session.State, error) {
 		}
 	}
 	return out, nil
+}
+
+func (s *Service) updateRecoveryState(ctx context.Context, mutate func(session.State) session.State, sessionID string) (session.State, error) {
+	var updated session.State
+	update := func(store session.Store) error {
+		st, err := store.Get(sessionID)
+		if err != nil {
+			return err
+		}
+		updated = mutate(st)
+		return store.Update(updated)
+	}
+
+	if s.Runner != nil {
+		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			store := s.Sessions
+			if repos.Sessions != nil {
+				store = repos.Sessions
+			}
+			return update(store)
+		}); err != nil {
+			return session.State{}, err
+		}
+		return updated, nil
+	}
+
+	if err := update(s.Sessions); err != nil {
+		return session.State{}, err
+	}
+	return updated, nil
 }

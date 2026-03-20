@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
 func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
@@ -28,5 +30,28 @@ func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	}
 	if items[0].InFlightStepID != "step_1" {
 		t.Fatalf("expected in-flight step step_1, got %s", items[0].InFlightStepID)
+	}
+}
+
+func TestRecoveryStateTransitionsUseRunnerBoundary(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	runner := &countingRunner{repos: persistence.RepositorySet{Sessions: sessions}}
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Runner:   runner,
+	})
+
+	sess := mustCreateSession(t, rt, "runner recovery", "recovery updates should use runner")
+	baselineCalls := runner.calls
+
+	if _, err := rt.MarkSessionInFlight(context.Background(), sess.SessionID, "step_1"); err != nil {
+		t.Fatalf("mark in-flight: %v", err)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), sess.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+
+	if runner.calls < baselineCalls+2 {
+		t.Fatalf("expected recovery writes to use runner, got %d calls from baseline %d", runner.calls, baselineCalls)
 	}
 }

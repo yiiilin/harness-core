@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -523,5 +524,157 @@ func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
 	}
 	if attempts[0].Status == "blocked" || attempts[0].FinishedAt == 0 {
 		t.Fatalf("expected blocked attempt to be finalized after reject, got %#v", attempts[0])
+	}
+}
+
+func TestRespondApprovalRejectsInvalidReply(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "invalid reply", "reject unknown approval replies")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "approval replies must be validated"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "invalid reply", []plan.StepSpec{{
+		StepID: "step_invalid_reply",
+		Title:  "pending approval",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo invalid", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	approvalID := initial.Execution.PendingApproval.ApprovalID
+	if _, _, err := rt.RespondApproval(approvalID, approval.Response{Reply: approval.Reply("bogus")}); !errors.Is(err, approval.ErrInvalidReply) {
+		t.Fatalf("expected ErrInvalidReply, got %v", err)
+	}
+
+	storedApproval, err := rt.GetApproval(approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if storedApproval.Status != approval.StatusPending || storedApproval.Reply != "" {
+		t.Fatalf("expected pending approval to remain unchanged, got %#v", storedApproval)
+	}
+	if handler.calls != 0 {
+		t.Fatalf("did not expect tool execution on invalid reply, got %d calls", handler.calls)
+	}
+}
+
+func TestRespondApprovalRejectsNonPendingApprovalAndCannotBroadenConsumedApproval(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "non-pending reply", "consumed approvals must stay immutable")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "old approvals must not be broadened"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "consumed approval", []plan.StepSpec{
+		{
+			StepID: "step_first",
+			Title:  "first gated step",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo first", "timeout_ms": 5000}},
+			Verify: verify.Spec{},
+		},
+		{
+			StepID: "step_second",
+			Title:  "second identical step",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo first", "timeout_ms": 5000}},
+			Verify: verify.Spec{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run first step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	approvalID := initial.Execution.PendingApproval.ApprovalID
+	if _, _, err := rt.RespondApproval(approvalID, approval.Response{Reply: approval.ReplyOnce}); err != nil {
+		t.Fatalf("respond approval once: %v", err)
+	}
+	if _, err := rt.ResumePendingApproval(context.Background(), sess.SessionID); err != nil {
+		t.Fatalf("resume pending approval: %v", err)
+	}
+
+	storedApproval, err := rt.GetApproval(approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if storedApproval.Status != approval.StatusConsumed {
+		t.Fatalf("expected consumed approval, got %#v", storedApproval)
+	}
+
+	if _, _, err := rt.RespondApproval(approvalID, approval.Response{Reply: approval.ReplyAlways}); !errors.Is(err, approval.ErrApprovalNotPending) {
+		t.Fatalf("expected ErrApprovalNotPending when re-responding consumed approval, got %v", err)
+	}
+
+	second, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[1])
+	if err != nil {
+		t.Fatalf("run second step: %v", err)
+	}
+	if second.Execution.PendingApproval == nil {
+		t.Fatalf("expected second step to require fresh approval")
+	}
+	if second.Execution.Policy.Decision.Action != permission.Ask {
+		t.Fatalf("expected second step to stay on ask path, got %#v", second.Execution.Policy.Decision)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected only the resumed first step to execute, got %d calls", handler.calls)
 	}
 }

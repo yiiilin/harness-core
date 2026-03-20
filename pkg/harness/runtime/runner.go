@@ -61,6 +61,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	var actionRecord *execution.ActionRecord
 	var verificationRecord *execution.VerificationRecord
 	artifactRecords := []execution.Artifact{}
+	runtimeHandles := []execution.RuntimeHandle{}
 	var capabilitySnapshot *capability.Snapshot
 
 	transitions := []TransitionDecision{}
@@ -354,6 +355,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			CreatedAt: time.Now().UnixMilli(),
 		})
 	}
+	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord)
 
 	state.Phase = session.PhaseVerify
 	verificationRecord = &execution.VerificationRecord{
@@ -448,6 +450,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := persistCapabilitySnapshotInRepos(repos, capabilitySnapshot); err != nil {
 				return err
 			}
+			if err := persistRuntimeHandlesInRepos(repos, runtimeHandles); err != nil {
+				return err
+			}
 			if finalizedApproval != nil && repos.Approvals != nil {
 				if err := repos.Approvals.Update(*finalizedApproval); err != nil {
 					return err
@@ -470,6 +475,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			return StepRunOutput{}, err
 		}
 		if err := s.persistCapabilitySnapshot(capabilitySnapshot); err != nil {
+			return StepRunOutput{}, err
+		}
+		if err := s.persistRuntimeHandles(runtimeHandles); err != nil {
 			return StepRunOutput{}, err
 		}
 		if finalizedApproval != nil && s.Approvals != nil {
@@ -626,6 +634,18 @@ func persistCapabilitySnapshotInRepos(repos persistence.RepositorySet, snapshot 
 	return err
 }
 
+func persistRuntimeHandlesInRepos(repos persistence.RepositorySet, handles []execution.RuntimeHandle) error {
+	if repos.RuntimeHandles == nil {
+		return nil
+	}
+	for _, handle := range handles {
+		if _, err := repos.RuntimeHandles.Create(handle); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) persistExecutionFacts(attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
 	if s.Attempts != nil {
 		if _, err := s.Attempts.Create(attempt); err != nil {
@@ -658,6 +678,18 @@ func (s *Service) persistCapabilitySnapshot(snapshot *capability.Snapshot) error
 	}
 	_, err := s.CapabilitySnapshots.Create(*snapshot)
 	return err
+}
+
+func (s *Service) persistRuntimeHandles(handles []execution.RuntimeHandle) error {
+	if s.RuntimeHandles == nil {
+		return nil
+	}
+	for _, handle := range handles {
+		if _, err := s.RuntimeHandles.Create(handle); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) emitEvents(ctx context.Context, events []audit.Event) error {
@@ -716,6 +748,130 @@ func trimActionResultToBudget(result action.Result, limit int) action.Result {
 		result.Error = &action.Error{Code: result.Error.Code, Message: result.Error.Message[:limit]}
 	}
 	return result
+}
+
+func extractRuntimeHandles(result action.Result, attempt execution.Attempt, actionRecord *execution.ActionRecord) []execution.RuntimeHandle {
+	out := []execution.RuntimeHandle{}
+	seen := map[string]struct{}{}
+	appendHandle := func(raw any) {
+		handle, ok := runtimeHandleFromValue(raw, attempt, actionRecord)
+		if !ok {
+			return
+		}
+		if _, exists := seen[handle.HandleID]; exists {
+			return
+		}
+		seen[handle.HandleID] = struct{}{}
+		out = append(out, handle)
+	}
+	collect := func(container map[string]any) {
+		if container == nil {
+			return
+		}
+		if raw, ok := container["runtime_handle"]; ok {
+			appendHandle(raw)
+		}
+		if raw, ok := container["runtime_handles"].([]any); ok {
+			for _, item := range raw {
+				appendHandle(item)
+			}
+		}
+	}
+	collect(result.Data)
+	collect(result.Meta)
+	return out
+}
+
+func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *execution.ActionRecord) (execution.RuntimeHandle, bool) {
+	item, ok := raw.(map[string]any)
+	if !ok {
+		return execution.RuntimeHandle{}, false
+	}
+
+	now := time.Now().UnixMilli()
+	handle := execution.RuntimeHandle{
+		SessionID: attempt.SessionID,
+		TaskID:    attempt.TaskID,
+		AttemptID: attempt.AttemptID,
+		TraceID:   attempt.TraceID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if actionRecord != nil {
+		if handle.Metadata == nil {
+			handle.Metadata = map[string]any{}
+		}
+		handle.Metadata["action_id"] = actionRecord.ActionID
+	}
+	if v, _ := item["handle_id"].(string); v != "" {
+		handle.HandleID = v
+	} else {
+		handle.HandleID = "hdl_" + uuid.NewString()
+	}
+	if v, _ := item["session_id"].(string); v != "" {
+		handle.SessionID = v
+	}
+	if v, _ := item["task_id"].(string); v != "" {
+		handle.TaskID = v
+	}
+	if v, _ := item["attempt_id"].(string); v != "" {
+		handle.AttemptID = v
+	}
+	if v, _ := item["trace_id"].(string); v != "" {
+		handle.TraceID = v
+	}
+	if v, _ := item["kind"].(string); v != "" {
+		handle.Kind = v
+	}
+	if v, _ := item["value"].(string); v != "" {
+		handle.Value = v
+	}
+	if metadata, ok := item["metadata"].(map[string]any); ok {
+		handle.Metadata = mergeMaps(handle.Metadata, metadata)
+	}
+	if createdAt, ok := asInt64(item["created_at"]); ok && createdAt > 0 {
+		handle.CreatedAt = createdAt
+	}
+	if updatedAt, ok := asInt64(item["updated_at"]); ok && updatedAt > 0 {
+		handle.UpdatedAt = updatedAt
+	} else {
+		handle.UpdatedAt = handle.CreatedAt
+	}
+	if handle.Kind == "" && handle.Value == "" {
+		return execution.RuntimeHandle{}, false
+	}
+	return handle, true
+}
+
+func mergeMaps(base map[string]any, extra map[string]any) map[string]any {
+	if base == nil && len(extra) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range extra {
+		out[key] = value
+	}
+	return out
+}
+
+func asInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func trimMapStrings(in map[string]any, limit int) map[string]any {

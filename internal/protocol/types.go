@@ -91,3 +91,11 @@ type ApprovalRespondPayload struct {
 	Reply      string         `json:"reply"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }
+
+type SessionScopedPayload struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type RuntimeHandleGetPayload struct {
+	HandleID string `json:"handle_id"`
+}

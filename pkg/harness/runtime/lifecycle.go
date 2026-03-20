@@ -26,10 +26,12 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 			if err != nil {
 				return err
 			}
-			_ = s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
+			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
 				"title": created.Title,
 				"goal":  created.Goal,
-			})})
+			})}); err != nil {
+				return err
+			}
 			return nil
 		}); err != nil {
 			return session.State{}, err
@@ -42,10 +44,12 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 	if err != nil {
 		return session.State{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
+	if err := s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
 		"title": created.Title,
 		"goal":  created.Goal,
-	})})
+	})}); err != nil {
+		return session.State{}, err
+	}
 	return created, nil
 }
 
@@ -63,11 +67,13 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 			if err != nil {
 				return err
 			}
-			_ = s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
+			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
 				"task_type": created.TaskType,
 				"goal":      created.Goal,
 				"status":    created.Status,
-			})})
+			})}); err != nil {
+				return err
+			}
 			return nil
 		}); err != nil {
 			return task.Record{}, err
@@ -80,11 +86,13 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 	if err != nil {
 		return task.Record{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
+	if err := s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
 		"task_type": created.TaskType,
 		"goal":      created.Goal,
 		"status":    created.Status,
-	})})
+	})}); err != nil {
+		return task.Record{}, err
+	}
 	return created, nil
 }
 
@@ -153,12 +161,14 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 		if err != nil {
 			return err
 		}
-		_ = s.emitEventsWithSink(ctx, sink, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		if err := s.emitEventsWithSink(ctx, sink, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 			"plan_id":       created.PlanID,
 			"revision":      created.Revision,
 			"change_reason": created.ChangeReason,
 			"step_count":    len(created.Steps),
-		})})
+		})}); err != nil {
+			return err
+		}
 		return nil
 	}
 

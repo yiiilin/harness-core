@@ -252,6 +252,97 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 			return
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "attempt.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListAttempts(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "ATTEMPT_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "action.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListActions(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "ACTION_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "verification.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListVerifications(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "VERIFICATION_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "artifact.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListArtifacts(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "ARTIFACT_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "capability_snapshot.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListCapabilitySnapshots(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "CAPABILITY_SNAPSHOT_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "context_summary.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListContextSummaries(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "CONTEXT_SUMMARY_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "runtime_handle.get":
+		var payload protocol.RuntimeHandleGetPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.GetRuntimeHandle(payload.HandleID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "runtime_handle.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListRuntimeHandles(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "RUNTIME_HANDLE_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "event.replay":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListAuditEvents(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "EVENT_REPLAY_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: map[string]any{"count": len(items)}})
+		for _, event := range items {
+			if err := conn.WriteJSON(map[string]any{
+				"id":      env.ID,
+				"type":    protocol.EnvelopeTypeEvent,
+				"action":  "audit.event",
+				"payload": event,
+			}); err != nil {
+				return
+			}
+		}
 	case "approval.get":
 		var payload protocol.ApprovalGetPayload
 		_ = json.Unmarshal(env.Payload, &payload)

@@ -224,6 +224,20 @@ func (s *Service) ListArtifacts(sessionID string) ([]execution.Artifact, error) 
 	return s.Artifacts.List(sessionID)
 }
 
+func (s *Service) GetRuntimeHandle(id string) (execution.RuntimeHandle, error) {
+	if s.RuntimeHandles == nil {
+		return execution.RuntimeHandle{}, execution.ErrRecordNotFound
+	}
+	return s.RuntimeHandles.Get(id)
+}
+
+func (s *Service) ListRuntimeHandles(sessionID string) ([]execution.RuntimeHandle, error) {
+	if s.RuntimeHandles == nil {
+		return nil, nil
+	}
+	return s.RuntimeHandles.List(sessionID)
+}
+
 func (s *Service) ListCapabilitySnapshots(sessionID string) ([]capability.Snapshot, error) {
 	if s.CapabilitySnapshots == nil {
 		return nil, nil

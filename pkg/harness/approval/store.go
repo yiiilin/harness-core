@@ -73,6 +73,15 @@ type ResumePolicy interface {
 
 type DefaultResumePolicy struct{}
 
+func ValidReply(reply Reply) bool {
+	switch reply {
+	case ReplyOnce, ReplyAlways, ReplyReject:
+		return true
+	default:
+		return false
+	}
+}
+
 func (DefaultResumePolicy) Resolve(record Record, step plan.StepSpec) (permission.Decision, bool) {
 	if record.Status != StatusApproved {
 		return permission.Decision{}, false
