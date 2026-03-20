@@ -44,6 +44,7 @@ type Service struct {
 	EventSink        EventSink
 	Metrics          Metrics
 	MetricsRecorder  *observability.MemoryRecorder
+	StorageMode      string
 }
 
 func New(opts Options) *Service {
@@ -62,6 +63,7 @@ func New(opts Options) *Service {
 		EventSink:        opts.EventSink,
 		Metrics:          metricsOrNoop(opts.Metrics),
 		MetricsRecorder:  opts.MetricsRecorder,
+		StorageMode:      opts.StorageMode,
 	}
 }
 
@@ -103,7 +105,7 @@ func (s *Service) RuntimeInfo() Info {
 		Mode:                "kernel-first",
 		Transport:           "adapter-defined",
 		AuthMode:            "shared-token-v1",
-		StorageMode:         "in-memory-dev",
+		StorageMode:         s.StorageMode,
 		ToolCount:           len(s.Tools.List()),
 		VerifierCount:       len(s.Verifiers.List()),
 		HasPlanner:          s.Planner != nil,

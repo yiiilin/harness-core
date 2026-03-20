@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
@@ -42,6 +43,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	events := []audit.Event{}
 	appendEvent := func(eventType string, stepID string, payload map[string]any) {
 		events = append(events, audit.Event{
+			EventID:   "evt_" + uuid.NewString(),
 			Type:      eventType,
 			SessionID: sessionID,
 			StepID:    stepID,
@@ -79,6 +81,7 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 		next := TransitionDecision{From: state.Phase, To: TransitionFailed, StepID: step.StepID, Reason: "policy denied action"}
 		transitions = append(transitions, next)
 		appendEvent(audit.EventPolicyDenied, step.StepID, map[string]any{"reason": decision.Reason, "matched_rule": decision.MatchedRule})
+		appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason})
 		state = ApplyTransition(state, next)
 		state.ExecutionState = session.ExecutionIdle
 		state.InFlightStepID = ""
@@ -141,6 +144,9 @@ func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepS
 	verified := verifyErr == nil && verifyResult.Success
 
 	next := DecideNextTransition(state, step.StepID, decision, verified)
+	if verified && latestPlanHasRemainingSteps(s.Plans, sessionID, step.StepID) {
+		next = TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "step completed, continue plan"}
+	}
 	transitions = append(transitions, next)
 	appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason})
 	state = ApplyTransition(state, next)
@@ -272,6 +278,27 @@ func updateTaskForTerminalInStore(store task.Store, state session.State) (*task.
 	}
 	return &rec, nil
 }
+
+func latestPlanHasRemainingSteps(store plan.Store, sessionID, completedStepID string) bool {
+	if store == nil {
+		return false
+	}
+	latest, ok := store.LatestBySession(sessionID)
+	if !ok {
+		return false
+	}
+	for _, st := range latest.Steps {
+		status := st.Status
+		if st.StepID == completedStepID {
+			status = plan.StepCompleted
+		}
+		if status != plan.StepCompleted {
+			return true
+		}
+	}
+	return false
+}
+
 func actionErrorMessage(result action.Result) string {
 	if result.Error != nil && result.Error.Message != "" {
 		return result.Error.Message

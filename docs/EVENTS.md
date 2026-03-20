@@ -66,7 +66,7 @@ The task reached terminal failure.
 ```
 
 ### Notes
-- `event_id` is optional in current in-memory flows, but should become stable over time
+- `event_id` should be populated for runtime-emitted events, including in-memory flows
 - `session_id` and `step_id` allow trace reconstruction
 - `payload` is intentionally free-form but should remain structured JSON
 

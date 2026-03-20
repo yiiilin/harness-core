@@ -1,0 +1,77 @@
+package postgresruntime
+
+import (
+	"context"
+	"database/sql"
+	_ "embed"
+	"errors"
+	"strings"
+
+	_ "github.com/lib/pq"
+	"github.com/yiiilin/harness-core/internal/postgres"
+	"github.com/yiiilin/harness-core/internal/postgres/auditrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/planrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/sessionrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/taskrepo"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
+	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/session"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
+)
+
+//go:embed schema.sql
+var schemaSQL string
+
+func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return nil, errors.New("postgres DSN is required")
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func ApplySchema(ctx context.Context, db postgres.DBTX) error {
+	_, err := db.ExecContext(ctx, schemaSQL)
+	return err
+}
+
+func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
+	opts = hruntime.WithDefaults(opts)
+	opts.Sessions = sessionrepo.New(db)
+	opts.Tasks = taskrepo.New(db)
+	opts.Plans = planrepo.New(db)
+	opts.Audit = auditrepo.New(db)
+	opts.Runner = persistence.TransactionalRunner{
+		Manager: postgres.TxManager{DB: db},
+		Factory: postgres.RepositoryFactory{
+			SessionFactory: func(dbtx postgres.DBTX) session.Store { return sessionrepo.New(dbtx) },
+			TaskFactory:    func(dbtx postgres.DBTX) task.Store { return taskrepo.New(dbtx) },
+			PlanFactory:    func(dbtx postgres.DBTX) plan.Store { return planrepo.New(dbtx) },
+			AuditFactory:   func(dbtx postgres.DBTX) audit.Store { return auditrepo.New(dbtx) },
+		},
+	}
+	opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}
+	opts.StorageMode = "postgres"
+	return opts
+}
+
+func OpenService(ctx context.Context, dsn string, opts hruntime.Options) (*hruntime.Service, *sql.DB, error) {
+	db, err := OpenDB(ctx, dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ApplySchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	return hruntime.New(BuildOptions(db, opts)), db, nil
+}

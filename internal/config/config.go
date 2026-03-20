@@ -3,8 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	Addr        string
-	SharedToken string
+	Addr         string
+	SharedToken  string
+	StorageMode  string
+	PostgresDSN  string
 }
 
 func Load() Config {
@@ -16,5 +18,18 @@ func Load() Config {
 	if token == "" {
 		token = "dev-token"
 	}
-	return Config{Addr: addr, SharedToken: token}
+	storageMode := os.Getenv("HARNESS_STORAGE_MODE")
+	if storageMode == "" {
+		storageMode = "memory"
+	}
+	postgresDSN := os.Getenv("HARNESS_POSTGRES_DSN")
+	if postgresDSN == "" {
+		postgresDSN = os.Getenv("DATABASE_URL")
+	}
+	return Config{
+		Addr:        addr,
+		SharedToken: token,
+		StorageMode: storageMode,
+		PostgresDSN: postgresDSN,
+	}
 }

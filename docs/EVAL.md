@@ -63,6 +63,18 @@ Measures tool execution failure before a successful verification path:
 - tool returns failure status
 - runtime still produces a structured failure path
 
+### `BenchmarkRunStepTimeoutPath`
+Measures executor timeout handling:
+- action starts
+- shell execution exceeds timeout budget
+- runtime records a structured timeout failure path
+
+### `BenchmarkEmitEventsBatch100`
+Measures runtime event emission overhead without tool execution:
+- a fixed batch of 100 structured events
+- audit sink emission only
+- useful for spotting event-pipeline regressions separately from executor cost
+
 ---
 
 ## Recommended command set
@@ -83,6 +95,30 @@ go test -bench . -benchmem ./pkg/harness/runtime
 
 ```bash
 go test -run '^$' -bench RunStep -benchmem ./pkg/harness/runtime
+```
+
+### Run the timeout-path benchmark only
+
+```bash
+go test -run '^$' -bench RunStepTimeoutPath -benchmem ./pkg/harness/runtime
+```
+
+Example output shape:
+
+```text
+BenchmarkRunStepTimeoutPath-8            1200           950000 ns/op          18000 B/op         220 allocs/op
+```
+
+### Run the event-volume benchmark only
+
+```bash
+go test -run '^$' -bench EmitEventsBatch100 -benchmem ./pkg/harness/runtime
+```
+
+Example output shape:
+
+```text
+BenchmarkEmitEventsBatch100-8           50000            25000 ns/op          12000 B/op         105 allocs/op
 ```
 
 ---
@@ -106,12 +142,10 @@ A useful rule of thumb:
 
 ## Near-term eval backlog
 
-1. add timeout-path benchmark
-2. add websocket end-to-end benchmark
-3. add event volume benchmark
-4. add table-driven transition correctness tests
-5. add golden-output tests for protocol responses
-6. expose richer runtime metrics hooks beyond the in-memory recorder
+1. add websocket end-to-end benchmark
+2. add table-driven transition correctness tests
+3. add golden-output tests for protocol responses
+4. expose richer runtime metrics hooks beyond the in-memory recorder
 
 ---
 

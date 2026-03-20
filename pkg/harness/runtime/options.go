@@ -26,6 +26,7 @@ type Options struct {
 	EventSink        EventSink
 	Metrics          Metrics
 	MetricsRecorder  *observability.MemoryRecorder
+	StorageMode      string
 }
 
 func WithDefaults(opts Options) Options {
@@ -72,6 +73,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Metrics == nil {
 		opts.Metrics = opts.MetricsRecorder
+	}
+	if opts.StorageMode == "" {
+		opts.StorageMode = "in-memory-dev"
 	}
 	return opts
 }

@@ -10,6 +10,8 @@ It ships:
 - an interface for context assemblers
 - a tiny default context assembler
 - a tiny runnable demo planner
+- runtime helpers that can build a plan revision from planner output
+- runnable examples for layered context assembly and replanning
 
 ---
 
@@ -48,6 +50,64 @@ It produces a step with:
 - `shell.exec`
 - `exit_code` verifier
 - simple `OnFail` strategy
+
+### `CreatePlanFromPlanner(...)`
+The runtime now provides a helper that:
+- loads session + attached task
+- assembles planner context
+- asks the configured planner for one or more next steps
+- persists a new plan revision from that planner output
+
+This keeps the kernel narrow while removing repetitive boilerplate from tests/examples.
+
+---
+
+## Current usage patterns
+
+### Minimal planner-driven path
+
+```go
+pl, assembled, err := rt.CreatePlanFromPlanner(ctx, sessionID, "planner-derived revision", 1)
+_ = assembled
+_ = pl
+_ = err
+```
+
+### Multi-step planner example
+
+See:
+- `examples/planner-replan`
+
+That example demonstrates:
+- deriving a structured two-step plan
+- executing the first step
+- returning the session to `plan` while work remains
+- creating a new plan revision from planner output
+
+### Layered context example
+
+See:
+- `examples/planner-context`
+
+That example demonstrates:
+- task/session core sections
+- derived summary fields
+- simple compaction helpers for long metadata/constraint fields
+
+---
+
+## Current guarantees and non-goals
+
+What the kernel now proves:
+- planners are pluggable
+- context assemblers are pluggable
+- planner output can be converted into persisted plan revisions
+- multi-step plans do not force the session terminal after the first successful step
+
+What the kernel still intentionally does not do:
+- ship a heavyweight production planner
+- ship retrieval/memory orchestration
+- infer long-horizon plans from free-form assistant text by itself
 
 ---
 

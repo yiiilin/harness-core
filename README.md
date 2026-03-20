@@ -31,13 +31,20 @@ Implemented today:
 - verifier registry
 - default policy evaluator
 - shell pipe executor
+- Postgres-backed repository implementations for session/task/plan/audit
+- Postgres-backed transaction runner and server bootstrap wiring
 - step runner (`policy -> action -> verify -> transition -> state update`)
 - in-memory audit/event sink
+- stable runtime-emitted `event_id` values
 - default context assembler
 - default planner placeholder
+- planner-assisted plan creation via `CreatePlanFromPlanner(...)`
 - default event sink bridge
 - WebSocket adapter
+- Postgres-backed WebSocket happy-path / deny-path E2E coverage
+- durable restart-read coverage
 - Go example clients
+- planner/context examples
 - integration tests and benchmark baseline
 
 ## Read first
@@ -56,7 +63,9 @@ Implemented today:
 - `docs/STATUS.md`
 - `docs/PERSISTENCE.md`
 - `docs/ROADMAP.md`
-- `internal/postgres/README.md` (durable storage scaffold)
+- `internal/postgres/README.md` (durable storage internals)
+- `VERSIONING.md`
+- `CHANGELOG.md`
 - `docs/EVAL.md`
 
 ## Default construction style
@@ -82,10 +91,41 @@ export HARNESS_SHARED_TOKEN=dev-token
 go run ./cmd/harness-core
 ```
 
+## Run Postgres-backed WebSocket adapter
+
+Start a local Postgres first, for example:
+
+```bash
+docker run --rm -d \
+  --name harness-pg \
+  -e POSTGRES_USER=harness \
+  -e POSTGRES_PASSWORD=harness \
+  -e POSTGRES_DB=harness_test \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+Then start the server in durable mode:
+
+```bash
+export HARNESS_ADDR=127.0.0.1:8787
+export HARNESS_SHARED_TOKEN=dev-token
+export HARNESS_STORAGE_MODE=postgres
+export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
+go run ./cmd/harness-core
+```
+
 ## Run minimal happy-path example
 
 ```bash
 go run ./examples/minimal-agent
+```
+
+## Run planner/context examples
+
+```bash
+go run ./examples/planner-context
+go run ./examples/planner-replan
 ```
 
 ## Run Go WebSocket client example
@@ -102,4 +142,5 @@ go run .
 ```bash
 go test ./...
 go test -bench . ./pkg/harness/runtime
+go test -run '^$' -bench RunStep -benchmem ./pkg/harness/runtime
 ```

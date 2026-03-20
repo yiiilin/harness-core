@@ -1,6 +1,6 @@
 # internal/postgres
 
-This package tree is the starting point for the durable Postgres-backed storage layer.
+This package tree contains the durable Postgres-backed storage internals for `harness-core`.
 
 Goals of this package:
 - provide a Postgres transaction runner
@@ -8,7 +8,14 @@ Goals of this package:
 - keep SQL/backend details out of `pkg/harness/*`
 
 Current status:
-- schema and migration skeleton added
-- SQL-backed transaction runner added
-- repository factory skeleton added
-- repository implementations not yet completed
+- schema and migration files exist
+- SQL-backed transaction runner exists
+- repository factory exists
+- repository implementations exist for session/task/plan/audit
+
+Related runtime bootstrap code lives in:
+- `internal/postgresruntime`
+
+That separation is intentional:
+- `internal/postgres` owns SQL/repository primitives
+- `internal/postgresruntime` owns service/bootstrap wiring

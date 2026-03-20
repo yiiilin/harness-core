@@ -1,0 +1,111 @@
+package runtime_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/session"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
+	"github.com/yiiilin/harness-core/pkg/harness/verify"
+)
+
+type sequencePlanner struct{}
+
+func (sequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+	switch state.CurrentStepID {
+	case "":
+		return plan.StepSpec{
+			StepID: "step_alpha",
+			Title:  "echo alpha",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo alpha", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+				{Kind: "output_contains", Args: map[string]any{"text": "alpha"}},
+			}},
+			OnFail: plan.OnFailSpec{Strategy: "abort"},
+		}, nil
+	case "step_alpha":
+		return plan.StepSpec{
+			StepID: "step_beta",
+			Title:  "echo beta",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo beta", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+				{Kind: "output_contains", Args: map[string]any{"text": "beta"}},
+			}},
+			OnFail: plan.OnFailSpec{Strategy: "abort"},
+		}, nil
+	default:
+		return plan.StepSpec{}, errors.New("no more steps")
+	}
+}
+
+type failingPlanner struct{}
+
+func (failingPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+	return plan.StepSpec{}, errors.New("planner failed")
+}
+
+func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.T) {
+	opts := hruntime.Options{}
+	hruntime.RegisterBuiltins(&opts)
+	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+
+	sess := rt.CreateSession("planner integration", "execute planner-derived sequence")
+	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run two planned shell steps"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, _, err := rt.CreatePlanFromPlanner(context.Background(), sess.SessionID, "planner derived", 2)
+	if err != nil {
+		t.Fatalf("create plan from planner: %v", err)
+	}
+	if len(pl.Steps) != 2 {
+		t.Fatalf("expected 2 planned steps, got %#v", pl.Steps)
+	}
+
+	out1, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step 1: %v", err)
+	}
+	if out1.Session.Phase != session.PhasePlan {
+		t.Fatalf("expected session to return to plan after first step, got %s", out1.Session.Phase)
+	}
+	if out1.UpdatedPlan == nil || out1.UpdatedPlan.Status != plan.StatusActive {
+		t.Fatalf("expected active plan after first step, got %#v", out1.UpdatedPlan)
+	}
+
+	out2, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[1])
+	if err != nil {
+		t.Fatalf("run step 2: %v", err)
+	}
+	if out2.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected complete session after second step, got %s", out2.Session.Phase)
+	}
+	if out2.UpdatedPlan == nil || out2.UpdatedPlan.Status != plan.StatusCompleted {
+		t.Fatalf("expected completed plan after second step, got %#v", out2.UpdatedPlan)
+	}
+}
+
+func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
+	opts := hruntime.Options{}
+	hruntime.RegisterBuiltins(&opts)
+	rt := hruntime.New(opts).WithPlanner(failingPlanner{})
+
+	sess := rt.CreateSession("planner failure", "planner failure path")
+	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "planner should fail"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	if _, _, err := rt.CreatePlanFromPlanner(context.Background(), sess.SessionID, "planner failure", 2); err == nil {
+		t.Fatalf("expected planner failure")
+	}
+}
