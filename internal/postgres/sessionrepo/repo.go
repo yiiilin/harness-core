@@ -329,9 +329,9 @@ func (r *Repo) classifyLeaseErr(ctx context.Context, sessionID string) error {
 func claimCondition(mode session.ClaimMode) string {
 	switch mode {
 	case session.ClaimModeRunnable:
-		return "phase NOT IN ('complete', 'failed', 'aborted') AND execution_state = 'idle' AND (pending_approval_id IS NULL OR pending_approval_id = '')"
+		return "phase NOT IN ('complete', 'failed', 'aborted') AND execution_state = 'idle'"
 	case session.ClaimModeRecoverable:
-		return "phase NOT IN ('complete', 'failed', 'aborted') AND execution_state IN ('in_flight', 'interrupted') AND (pending_approval_id IS NULL OR pending_approval_id = '')"
+		return "phase NOT IN ('complete', 'failed', 'aborted') AND execution_state IN ('in_flight', 'interrupted')"
 	default:
 		return ""
 	}

@@ -159,7 +159,7 @@ func claimableState(st State, mode ClaimMode, now int64) bool {
 	if leaseActiveAt(st, now) {
 		return false
 	}
-	if st.PendingApprovalID != "" || st.ExecutionState == ExecutionAwaitingApproval {
+	if st.ExecutionState == ExecutionAwaitingApproval {
 		return false
 	}
 	switch mode {

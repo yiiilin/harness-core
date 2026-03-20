@@ -28,11 +28,11 @@ type StepRunOutput struct {
 }
 
 func (s *Service) runStep(ctx context.Context, sessionID string, step plan.StepSpec) (StepRunOutput, error) {
-	return s.runStepWithDecision(ctx, sessionID, step, nil, nil)
+	return s.runStepWithDecision(ctx, sessionID, "", step, nil, nil)
 }
 
-func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, step plan.StepSpec, forcedDecision *permission.Decision, activeApproval *approval.Record) (StepRunOutput, error) {
-	state, err := s.GetSession(sessionID)
+func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID string, step plan.StepSpec, forcedDecision *permission.Decision, activeApproval *approval.Record) (StepRunOutput, error) {
+	state, err := s.ensureSessionLease(sessionID, leaseID)
 	if err != nil {
 		return StepRunOutput{}, err
 	}
@@ -249,7 +249,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	execResult.Step = step
 	appendEvent(audit.EventStepStarted, step.StepID, map[string]any{"title": step.Title}, "", attemptRecord.AttemptID)
 
-	if _, err := s.MarkSessionInFlight(ctx, sessionID, step.StepID); err != nil {
+	if _, err := s.markSessionInFlight(ctx, sessionID, leaseID, step.StepID); err != nil {
 		return StepRunOutput{}, err
 	}
 	state, _ = s.GetSession(sessionID)

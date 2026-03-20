@@ -11,23 +11,39 @@ import (
 )
 
 func (s *Service) MarkSessionInFlight(ctx context.Context, sessionID, stepID string) (session.State, error) {
+	return s.markSessionInFlight(ctx, sessionID, "", stepID)
+}
+
+func (s *Service) MarkClaimedSessionInFlight(ctx context.Context, sessionID, leaseID, stepID string) (session.State, error) {
+	return s.markSessionInFlight(ctx, sessionID, leaseID, stepID)
+}
+
+func (s *Service) markSessionInFlight(ctx context.Context, sessionID, leaseID, stepID string) (session.State, error) {
 	now := time.Now().UnixMilli()
-	return s.updateRecoveryState(ctx, func(st session.State) session.State {
+	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInFlight
 		st.InFlightStepID = stepID
 		st.LastHeartbeatAt = now
 		return st
-	}, sessionID)
+	})
 }
 
 func (s *Service) MarkSessionInterrupted(ctx context.Context, sessionID string) (session.State, error) {
+	return s.markSessionInterrupted(ctx, sessionID, "")
+}
+
+func (s *Service) MarkClaimedSessionInterrupted(ctx context.Context, sessionID, leaseID string) (session.State, error) {
+	return s.markSessionInterrupted(ctx, sessionID, leaseID)
+}
+
+func (s *Service) markSessionInterrupted(ctx context.Context, sessionID, leaseID string) (session.State, error) {
 	now := time.Now().UnixMilli()
-	return s.updateRecoveryState(ctx, func(st session.State) session.State {
+	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInterrupted
 		st.InterruptedAt = now
 		st.Phase = session.PhaseRecover
 		return st
-	}, sessionID)
+	})
 }
 
 func (s *Service) ListRecoverableSessions() ([]session.State, error) {
@@ -46,7 +62,7 @@ func (s *Service) ListRecoverableSessions() ([]session.State, error) {
 
 func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
 	out := SessionRunOutput{}
-	state, err := s.ensureRecoveryLease(sessionID, leaseID)
+	state, err := s.ensureSessionLease(sessionID, leaseID)
 	if err != nil {
 		return SessionRunOutput{}, err
 	}
@@ -68,7 +84,7 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 		case approval.StatusPending:
 			return out, nil
 		case approval.StatusApproved:
-			resumed, err := s.ResumePendingApproval(ctx, sessionID)
+			resumed, err := s.resumePendingApprovalWithLease(ctx, sessionID, leaseID)
 			if err != nil {
 				return SessionRunOutput{}, err
 			}
@@ -92,29 +108,35 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 	if _, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerRecover); err != nil {
 		return SessionRunOutput{}, err
 	}
-	next, err := s.runSession(ctx, sessionID)
+	next, err := s.runSession(ctx, sessionID, leaseID)
 	if err != nil {
 		return SessionRunOutput{}, err
 	}
 	return mergeSessionRunOutputs(out, next), nil
 }
 
-func (s *Service) ensureRecoveryLease(sessionID, leaseID string) (session.State, error) {
+func (s *Service) ensureSessionLease(sessionID, leaseID string) (session.State, error) {
 	st, err := s.GetSession(sessionID)
 	if err != nil {
 		return session.State{}, err
 	}
-	now := time.Now().UnixMilli()
-	if leaseID == "" {
-		if st.LeaseID != "" && st.LeaseExpiresAt > now {
-			return session.State{}, session.ErrSessionLeaseNotHeld
-		}
-		return st, nil
-	}
-	if st.LeaseID != leaseID || st.LeaseExpiresAt <= now {
-		return session.State{}, session.ErrSessionLeaseNotHeld
+	if err := requireSessionLease(st, leaseID, time.Now().UnixMilli()); err != nil {
+		return session.State{}, err
 	}
 	return st, nil
+}
+
+func requireSessionLease(st session.State, leaseID string, now int64) error {
+	if leaseID == "" {
+		if st.LeaseID != "" && st.LeaseExpiresAt > now {
+			return session.ErrSessionLeaseNotHeld
+		}
+		return nil
+	}
+	if st.LeaseID != leaseID || st.LeaseExpiresAt <= now {
+		return session.ErrSessionLeaseNotHeld
+	}
+	return nil
 }
 
 func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID string) (session.State, error) {
@@ -176,11 +198,14 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 	return updated, nil
 }
 
-func (s *Service) updateRecoveryState(ctx context.Context, mutate func(session.State) session.State, sessionID string) (session.State, error) {
+func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID string, mutate func(session.State) session.State) (session.State, error) {
 	var updated session.State
 	update := func(store session.Store) error {
 		st, err := store.Get(sessionID)
 		if err != nil {
+			return err
+		}
+		if err := requireSessionLease(st, leaseID, time.Now().UnixMilli()); err != nil {
 			return err
 		}
 		updated = mutate(st)

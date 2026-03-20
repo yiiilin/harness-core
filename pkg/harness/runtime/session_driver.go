@@ -24,10 +24,10 @@ type sessionStepSelection struct {
 	NeedsPlanning bool
 }
 
-func (s *Service) runSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
+func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
 	out := SessionRunOutput{}
 	for {
-		state, err := s.GetSession(sessionID)
+		state, err := s.ensureSessionLease(sessionID, leaseID)
 		if err != nil {
 			return SessionRunOutput{}, err
 		}
@@ -41,8 +41,28 @@ func (s *Service) runSession(ctx context.Context, sessionID string) (SessionRunO
 			out.Plan = planPointer(latest)
 		}
 
-		if isTerminalPhase(state.Phase) || state.PendingApprovalID != "" {
+		if isTerminalPhase(state.Phase) {
 			return out, nil
+		}
+		if state.PendingApprovalID != "" {
+			resumed, handled, err := s.resolvePendingApprovalForSession(ctx, sessionID, leaseID)
+			if err != nil {
+				return SessionRunOutput{}, err
+			}
+			if handled {
+				if resumed == nil {
+					return out, nil
+				}
+				out.Executions = append(out.Executions, *resumed)
+				out.Session = resumed.Session
+				if resumed.UpdatedPlan != nil {
+					out.Plan = resumed.UpdatedPlan
+				}
+				if isTerminalPhase(resumed.Session.Phase) || resumed.Session.PendingApprovalID != "" {
+					return out, nil
+				}
+				continue
+			}
 		}
 
 		if !ok {
@@ -67,7 +87,7 @@ func (s *Service) runSession(ctx context.Context, sessionID string) (SessionRunO
 			return out, nil
 		}
 
-		stepOut, err := s.runStep(ctx, sessionID, selection.Step)
+		stepOut, err := s.runStepWithDecision(ctx, sessionID, leaseID, selection.Step, nil, nil)
 		if err != nil {
 			return SessionRunOutput{}, err
 		}

@@ -73,6 +73,32 @@ rt := harness.New(opts)
 - `EventSink`
 - tool / verifier registrations
 
+### 当前推荐关注的内核控制面入口
+
+- 生命周期：
+  - `CreateSession`
+  - `CreateTask`
+  - `AttachTaskToSession`
+  - `CreatePlan`
+  - `CreatePlanFromPlanner`
+- 执行：
+  - `RunStep`
+  - `RunClaimedStep`
+  - `RunSession`
+  - `RunClaimedSession`
+  - `RecoverSession`
+  - `RecoverClaimedSession`
+- 审批 / 协调：
+  - `RespondApproval`
+  - `ResumePendingApproval`
+  - `ResumeClaimedApproval`
+  - `ClaimRunnableSession`
+  - `ClaimRecoverableSession`
+  - `RenewSessionLease`
+  - `ReleaseSessionLease`
+  - `MarkClaimedSessionInFlight`
+  - `MarkClaimedSessionInterrupted`
+
 ---
 
 ## 当前核心包说明

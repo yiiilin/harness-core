@@ -32,6 +32,7 @@ That means the current kernel baseline already includes:
 - first-class planning / replanning records
 - lifecycle-wide observability hooks
 - explicit lease heartbeat / expiry / reclaim semantics for runnable and recoverable work
+- claim-aware execution, approval resume, and recovery control-plane entrypoints
 
 Remaining work is mainly future expansion, not a known core-boundary defect:
 - new capability modules
@@ -66,3 +67,4 @@ Repository-wide roadmap: `docs/ROADMAP.md`
 
 Pure-kernel follow-up plan:
 - `docs/plans/2026-03-20-kernel-purity-followup-execution.md`
+- `docs/plans/2026-03-20-kernel-claim-closure-execution.md`

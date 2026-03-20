@@ -331,8 +331,16 @@ func (s *Service) RunStep(ctx context.Context, sessionID string, step plan.StepS
 	return s.runStep(ctx, sessionID, step)
 }
 
+func (s *Service) RunClaimedStep(ctx context.Context, sessionID, leaseID string, step plan.StepSpec) (StepRunOutput, error) {
+	return s.runStepWithDecision(ctx, sessionID, leaseID, step, nil, nil)
+}
+
 func (s *Service) RunSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
-	return s.runSession(ctx, sessionID)
+	return s.runSession(ctx, sessionID, "")
+}
+
+func (s *Service) RunClaimedSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
+	return s.runSession(ctx, sessionID, leaseID)
 }
 
 func (s *Service) RecoverSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {

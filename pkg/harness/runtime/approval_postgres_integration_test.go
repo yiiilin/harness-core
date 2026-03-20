@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -10,6 +11,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
@@ -76,6 +78,63 @@ func TestApprovalFlowPersistsAcrossPostgresRuntimeReinit(t *testing.T) {
 	}
 	if storedApproval.Status != approval.StatusConsumed {
 		t.Fatalf("expected consumed approval after durable resume, got %#v", storedApproval)
+	}
+}
+
+func TestPostgresRunClaimedSessionResumesApprovedPendingApproval(t *testing.T) {
+	pg := postgrestest.Start(t)
+
+	opts := hruntime.Options{}
+	builtins.Register(&opts)
+	opts.Policy = askPolicy{}
+
+	rt, db := pg.OpenService(t, opts)
+	defer db.Close()
+
+	sess := mustCreateSession(t, rt, "postgres claimed approval", "claimed session driver should resume approved work")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "claimed postgres approval resume"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "approval durable claimed", []plan.StepSpec{{
+		StepID: "step_pg_claimed_approval",
+		Title:  "durable claimed approval step",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo durable claimed", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval from postgres-backed ask path")
+	}
+	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !ok || claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected claimed session %s, got %#v ok=%v", sess.SessionID, claimed, ok)
+	}
+
+	out, err := rt.RunClaimedSession(context.Background(), sess.SessionID, claimed.LeaseID)
+	if err != nil {
+		t.Fatalf("run claimed session: %v", err)
+	}
+	if out.Session.PendingApprovalID != "" || out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected claimed session run to consume approval and complete, got %#v", out.Session)
 	}
 }
 

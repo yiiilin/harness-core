@@ -173,11 +173,19 @@ The contract is:
 - `LastHeartbeatAt` is an observational liveness timestamp, not an independent reclaim rule; reclaim decisions are driven by lease expiry
 - a stale holder cannot renew or release its lease; those calls fail with `session.ErrSessionLeaseNotHeld`
 - `ClaimRunnableSession` and `ClaimRecoverableSession` may reclaim work only when no active lease exists or the previous lease has expired
+- direct execution and resume APIs are valid only when no active lease exists for the session
+- claimed execution APIs (`RunClaimedStep`, `RunClaimedSession`, `ResumeClaimedApproval`) require the matching active lease id
+- claim-aware recovery state APIs (`MarkClaimedSessionInFlight`, `MarkClaimedSessionInterrupted`, `RecoverClaimedSession`) use the same rule, so stale holders cannot keep mutating state after reclaim
 
 Recovery follows the same rule:
 - `RecoverSession` is valid only when the session has no active recoverable lease
 - if a caller has already claimed a recoverable session, it must continue via `RecoverClaimedSession(session_id, lease_id)`
 - if another holder still owns an unexpired recoverable lease, recovery must fail cleanly rather than relying on transport-specific worker identity
+
+Approval resume follows the same rule:
+- a still-pending approval remains non-runnable because the session stays in `awaiting_approval`
+- once approval is granted and the session returns to `idle`, it may be claimed again as runnable work
+- after claim, resume must continue through the claimed API or the session driver on `RunClaimedSession`
 
 This gives the kernel a transport-neutral correctness rule:
 - active holder keeps exclusive recovery authority until lease expiry

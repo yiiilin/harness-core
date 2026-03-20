@@ -150,7 +150,15 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 }
 
 func (s *Service) ResumePendingApproval(ctx context.Context, sessionID string) (StepRunOutput, error) {
-	st, err := s.GetSession(sessionID)
+	return s.resumePendingApprovalWithLease(ctx, sessionID, "")
+}
+
+func (s *Service) ResumeClaimedApproval(ctx context.Context, sessionID, leaseID string) (StepRunOutput, error) {
+	return s.resumePendingApprovalWithLease(ctx, sessionID, leaseID)
+}
+
+func (s *Service) resumePendingApprovalWithLease(ctx context.Context, sessionID, leaseID string) (StepRunOutput, error) {
+	st, err := s.ensureSessionLease(sessionID, leaseID)
 	if err != nil {
 		return StepRunOutput{}, err
 	}
@@ -168,7 +176,33 @@ func (s *Service) ResumePendingApproval(ctx context.Context, sessionID string) (
 	if !ok {
 		return StepRunOutput{}, ErrApprovalNotResolved
 	}
-	return s.runStepWithDecision(ctx, sessionID, rec.Step, &decision, &rec)
+	return s.runStepWithDecision(ctx, sessionID, leaseID, rec.Step, &decision, &rec)
+}
+
+func (s *Service) resolvePendingApprovalForSession(ctx context.Context, sessionID, leaseID string) (*StepRunOutput, bool, error) {
+	st, err := s.GetSession(sessionID)
+	if err != nil {
+		return nil, false, err
+	}
+	if st.PendingApprovalID == "" {
+		return nil, false, nil
+	}
+	rec, err := s.GetApproval(st.PendingApprovalID)
+	if err != nil {
+		return nil, false, err
+	}
+	switch rec.Status {
+	case approval.StatusPending:
+		return nil, true, nil
+	case approval.StatusApproved:
+		resumed, err := s.resumePendingApprovalWithLease(ctx, sessionID, leaseID)
+		if err != nil {
+			return nil, true, err
+		}
+		return &resumed, true, nil
+	default:
+		return nil, true, ErrApprovalNotResolved
+	}
 }
 
 func (s *Service) findReusableApprovalDecision(ctx context.Context, state session.State, step plan.StepSpec, decision permission.Decision) (*permission.Decision, *approval.Record) {

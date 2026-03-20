@@ -40,17 +40,22 @@ The separation exists so `pkg/harness/runtime` stays a bare kernel package rathe
   - `CreatePlanFromPlanner`
 - governed execution:
   - `RunStep`
+  - `RunClaimedStep`
   - `RunSession`
+  - `RunClaimedSession`
   - `RecoverSession`
   - `RecoverClaimedSession`
   - `AbortSession`
 - approval / coordination control plane:
   - `RespondApproval`
   - `ResumePendingApproval`
+  - `ResumeClaimedApproval`
   - `ClaimRunnableSession`
   - `ClaimRecoverableSession`
   - `RenewSessionLease`
   - `ReleaseSessionLease`
+  - `MarkClaimedSessionInFlight`
+  - `MarkClaimedSessionInterrupted`
 - durable runtime facts / maintenance:
   - `CompactSessionContext`
   - `UpdateRuntimeHandle`

@@ -50,6 +50,15 @@ func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
 	var _ harness.CompactionTrigger = harness.CompactionTriggerPlan
 }
 
+func TestFacadeExposesClaimAwareKernelEntryPoints(t *testing.T) {
+	var _ = (*harness.Service).RunClaimedStep
+	var _ = (*harness.Service).RunClaimedSession
+	var _ = (*harness.Service).ResumeClaimedApproval
+	var _ = (*harness.Service).RecoverClaimedSession
+	var _ = (*harness.Service).MarkClaimedSessionInFlight
+	var _ = (*harness.Service).MarkClaimedSessionInterrupted
+}
+
 func TestFacadeSupportsKernelSessionControlEntryPoints(t *testing.T) {
 	rt := harness.NewDefault()
 
