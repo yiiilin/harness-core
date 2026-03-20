@@ -45,12 +45,14 @@ Implemented today:
 - default planner placeholder
 - planner-assisted plan creation via `CreatePlanFromPlanner(...)`
 - default event sink bridge
+- PTY-backed shell execution via `modules/shell`
 - WebSocket adapter
 - WebSocket approval / resume commands
 - Postgres-backed WebSocket happy-path / deny-path E2E coverage
 - durable restart-read coverage
 - Go example clients
 - planner/context examples
+- a minimal platform reference example under `examples/platform-reference`
 - integration tests and benchmark baseline
 
 ## Read first
@@ -139,6 +141,12 @@ go run ./examples/planner-context
 go run ./examples/planner-replan
 ```
 
+## Run minimal platform reference example
+
+```bash
+go run ./examples/platform-reference
+```
+
 ## Run Go WebSocket client example
 
 ```bash
@@ -152,6 +160,7 @@ go run .
 
 ```bash
 go test ./...
+go test ./examples/platform-reference -count=1
 go test -bench . ./pkg/harness/runtime
 go test -run '^$' -bench RunStep -benchmem ./pkg/harness/runtime
 ```

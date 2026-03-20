@@ -25,11 +25,16 @@ func TestRegisterShellModule(t *testing.T) {
 	tools := tool.NewRegistry()
 	verifiers := verify.NewRegistry()
 	shellmodule.Register(tools, verifiers)
-	if _, ok := tools.Get("shell.exec"); !ok {
+	def, ok := tools.Get("shell.exec")
+	if !ok {
 		t.Fatalf("expected shell.exec to be registered")
 	}
-	if len(verifiers.List()) < 2 {
-		t.Fatalf("expected shell verifiers to be registered")
+	modes, _ := def.Definition.Metadata["modes"].([]string)
+	if len(modes) < 2 {
+		t.Fatalf("expected shell module metadata to advertise pipe and pty modes, got %#v", def.Definition.Metadata)
+	}
+	if len(verifiers.List()) < 5 {
+		t.Fatalf("expected shell and PTY verifiers to be registered, got %#v", verifiers.List())
 	}
 }
 
@@ -51,7 +56,13 @@ func TestRegisterShellModuleWithSandboxHook(t *testing.T) {
 
 func TestDefaultPolicyRules(t *testing.T) {
 	rules := shellmodule.DefaultPolicyRules()
-	if len(rules) == 0 {
-		t.Fatalf("expected non-empty policy rules")
+	if len(rules) < 3 {
+		t.Fatalf("expected explicit pipe/pty policy rules, got %#v", rules)
+	}
+	if rules[0].Pattern != "mode=pipe" || rules[0].Action != "allow" {
+		t.Fatalf("expected pipe mode allow rule first, got %#v", rules[0])
+	}
+	if rules[1].Pattern != "mode=pty" || rules[1].Action != "ask" {
+		t.Fatalf("expected PTY mode ask rule second, got %#v", rules[1])
 	}
 }

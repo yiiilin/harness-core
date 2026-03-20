@@ -173,6 +173,10 @@ _ = err
 Reference examples:
 - `examples/planner-context`
 - `examples/planner-replan`
+- `examples/platform-reference`
+
+Module-specific interactive control surfaces remain outside the kernel facade.
+For example, PTY read/write/attach/detach behavior and PTY-specific verifiers live in `modules/shell` and are shown through `examples/platform-reference`; the kernel only owns the generic runtime-handle lifecycle.
 
 ## Stability intent
 

@@ -18,7 +18,9 @@ It already has:
 - vendor-neutral metrics and trace exporter hooks
 - Postgres-backed repositories and transaction runner wiring
 - a public `pkg/harness` embedding facade
-- reference capability modules and a reference WebSocket adapter
+- reference capability modules including PTY-backed shell execution
+- a minimal platform reference example under `examples/platform-reference`
+- a reference WebSocket adapter
 
 It is not yet a complete product platform.
 
@@ -57,6 +59,7 @@ Use it for:
 - embedding a small execution kernel inside a larger agent system
 - experimenting with governed tool execution and recovery semantics
 - building capability modules against stable-enough runtime contracts
+- studying a minimal claim/lease worker loop in `examples/platform-reference`
 - refining replay, audit, and observability patterns
 
 Do not assume it is a complete multi-user product platform by itself.

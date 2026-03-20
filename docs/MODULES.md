@@ -104,8 +104,11 @@ They are composed into the default built-in policy evaluator path unless the emb
 ### `modules/shell`
 Demonstrates:
 - `shell.exec`
-- verifier registration
+- `pipe` and `pty` shell modes
+- verifier registration including PTY-specific verifier kinds
 - default shell policy hints
+- a shared `PTYManager` hook for interactive shell control and attach/detach stream bridging
+- runtime-handle production for PTY-backed sessions
 - tests
 
 ### `modules/filesystem`

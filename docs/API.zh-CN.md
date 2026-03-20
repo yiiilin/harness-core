@@ -179,6 +179,9 @@ rt := harness.New(opts)
 ### 默认注册的 verifier
 - `exit_code`
 - `output_contains`
+- `pty_handle_active`
+- `pty_stream_contains`
+- `pty_exit_code`
 
 ### 默认组件
 - `DefaultContextAssembler`
@@ -209,6 +212,13 @@ policy -> action -> verify -> transition -> state update -> audit
 - `exit_code + output_contains`
 - session / task / plan 最终完成
 - audit 事件记录成功
+
+### 当前 shell 参考能力
+- `shell.exec` 支持 `pipe` 和 `pty`
+- `pipe` 适合一次性命令执行
+- `pty` 适合交互式会话启动，并通过 runtime handle 暴露句柄
+- PTY 的 read/write/attach/detach/close 是模块/平台层控制面，不是内核 lease 语义的一部分
+- PTY 专用 verifier 也在 `modules/shell`，不是内核新增语义
 
 ### Deny path 已验证
 - policy 返回 deny
@@ -257,6 +267,9 @@ sess := rt.CreateSession("demo", "run one step")
 - 通过 `/ws` 连接
 - 先 auth
 - 再发 `session.create` / `task.create` / `plan.create` / `step.run`
+
+如果你要看“平台层如何消费 claim/lease + PTY shell”，则参考：
+- `examples/platform-reference`
 
 ---
 

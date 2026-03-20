@@ -430,7 +430,7 @@ The final command shape is an output of the roadmap work and should be recorded 
 
 ## P2 — intentionally deferred for now
 
-- [ ] PTY shell execution
+- [x] PTY shell execution
 - [ ] Windows-native module
 - [ ] Knowledge / retrieval module
 - [ ] Multi-process / distributed runtime

@@ -140,10 +140,17 @@ This is why `modules/shell` can expose:
 - `Register(...)`
 - `RegisterWithOptions(...)`
 - `Backend`
+- `PTYManager`
 - `SandboxHook`
 - `DefaultPolicyRules()`
 
 without polluting `harness-core` with shell-specific policy logic.
+
+The same pattern is used by `examples/platform-reference`:
+
+- the kernel owns session claim / lease and runtime-handle lifecycle
+- the shell module owns PTY start/read/write/close/attach/detach behavior plus PTY-specific verifiers
+- the platform layer reconciles PTY shutdown back into `CloseRuntimeHandle(...)`
 
 ---
 
