@@ -2,6 +2,7 @@ package sessionrepo_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -45,12 +46,93 @@ func TestSessionRepoClaimRenewReleaseLeaseAgainstPostgres(t *testing.T) {
 		t.Fatalf("expected renewed expiry, got %#v", renewed)
 	}
 
-	released, err := repo.ReleaseLease(created.SessionID, "lease_1")
+	released, err := repo.ReleaseLease(created.SessionID, "lease_1", time.Now().UnixMilli())
 	if err != nil {
 		t.Fatalf("release lease: %v", err)
 	}
 	if released.LeaseID != "" || released.LeaseExpiresAt != 0 {
 		t.Fatalf("expected lease cleared, got %#v", released)
+	}
+}
+
+func TestSessionRepoReleaseLeaseRejectsExpiredHolderAgainstPostgres(t *testing.T) {
+	pg := postgrestest.Start(t)
+	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	repo := sessionrepo.New(db)
+	created, err := repo.Create("claim", "expired holders should not release")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	claimed, ok, err := repo.ClaimNext(session.ClaimModeRunnable, "lease_expired", now-120_000, now-60_000)
+	if err != nil {
+		t.Fatalf("claim expired lease: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected claimable runnable session")
+	}
+	if claimed.SessionID != created.SessionID {
+		t.Fatalf("unexpected claimed session: %#v", claimed)
+	}
+
+	if _, err := repo.ReleaseLease(created.SessionID, "lease_expired", time.Now().UnixMilli()); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected expired release to fail with lease-not-held, got %v", err)
+	}
+}
+
+func TestSessionRepoClaimRecoverableReclaimsOnlyExpiredLeaseAgainstPostgres(t *testing.T) {
+	pg := postgrestest.Start(t)
+	db, err := postgresruntime.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	repo := sessionrepo.New(db)
+	created, err := repo.Create("recover", "recoverable lease reclaim")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created.ExecutionState = session.ExecutionInterrupted
+	created.Phase = session.PhaseRecover
+	created.Version++
+	if err := repo.Update(created); err != nil {
+		t.Fatalf("mark recoverable: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	live, ok, err := repo.ClaimNext(session.ClaimModeRecoverable, "lease_live", now, now+60_000)
+	if err != nil {
+		t.Fatalf("claim recoverable: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected recoverable session to be claimed")
+	}
+	if live.LeaseID != "lease_live" {
+		t.Fatalf("expected live lease to be recorded, got %#v", live)
+	}
+
+	if _, ok, err := repo.ClaimNext(session.ClaimModeRecoverable, "lease_steal", now+1_000, now+120_000); err != nil {
+		t.Fatalf("reclaim live recoverable session: %v", err)
+	} else if ok {
+		t.Fatalf("expected live recoverable lease to block reclaim")
+	}
+
+	reclaimed, ok, err := repo.ClaimNext(session.ClaimModeRecoverable, "lease_reclaim", now+61_000, now+121_000)
+	if err != nil {
+		t.Fatalf("reclaim stale recoverable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected expired recoverable lease to be reclaimable")
+	}
+	if reclaimed.SessionID != created.SessionID || reclaimed.LeaseID != "lease_reclaim" {
+		t.Fatalf("unexpected reclaimed session: %#v", reclaimed)
 	}
 }
 

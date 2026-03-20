@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
@@ -13,6 +14,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
@@ -22,8 +24,6 @@ import (
 type Info struct {
 	Name                string `json:"name"`
 	Mode                string `json:"mode"`
-	Transport           string `json:"transport"`
-	AuthMode            string `json:"auth_mode"`
 	StorageMode         string `json:"storage_mode"`
 	ToolCount           int    `json:"tool_count"`
 	VerifierCount       int    `json:"verifier_count"`
@@ -44,6 +44,7 @@ type Service struct {
 	Artifacts           execution.ArtifactStore
 	RuntimeHandles      execution.RuntimeHandleStore
 	CapabilitySnapshots capability.SnapshotStore
+	PlanningRecords     planning.Store
 	CapabilityFreezer   capability.Freezer
 	ResumePolicy        approval.ResumePolicy
 	Tools               *tool.Registry
@@ -79,6 +80,7 @@ func New(opts Options) *Service {
 		Artifacts:           opts.Artifacts,
 		RuntimeHandles:      opts.RuntimeHandles,
 		CapabilitySnapshots: opts.CapabilitySnapshots,
+		PlanningRecords:     opts.PlanningRecords,
 		CapabilityFreezer:   opts.CapabilityFreezer,
 		ResumePolicy:        opts.ResumePolicy,
 		Tools:               opts.Tools,
@@ -138,8 +140,6 @@ func (s *Service) RuntimeInfo() Info {
 	return Info{
 		Name:                "harness-core",
 		Mode:                "kernel-first",
-		Transport:           "adapter-defined",
-		AuthMode:            "shared-token-v1",
 		StorageMode:         s.StorageMode,
 		ToolCount:           len(s.Tools.List()),
 		VerifierCount:       len(s.Verifiers.List()),
@@ -253,6 +253,20 @@ func (s *Service) ListCapabilitySnapshots(sessionID string) ([]capability.Snapsh
 	return s.CapabilitySnapshots.List(sessionID)
 }
 
+func (s *Service) GetPlanningRecord(id string) (planning.Record, error) {
+	if s.PlanningRecords == nil {
+		return planning.Record{}, planning.ErrPlanningRecordNotFound
+	}
+	return s.PlanningRecords.Get(id)
+}
+
+func (s *Service) ListPlanningRecords(sessionID string) ([]planning.Record, error) {
+	if s.PlanningRecords == nil {
+		return nil, nil
+	}
+	return s.PlanningRecords.List(sessionID)
+}
+
 func (s *Service) ListContextSummaries(sessionID string) ([]ContextSummary, error) {
 	if s.ContextSummaries == nil {
 		return nil, nil
@@ -322,5 +336,29 @@ func (s *Service) RunSession(ctx context.Context, sessionID string) (SessionRunO
 }
 
 func (s *Service) RecoverSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
-	return s.recoverSession(ctx, sessionID)
+	startedAt := time.Now().UnixMilli()
+	current, _ := s.GetSession(sessionID)
+	out, err := s.recoverSession(ctx, sessionID, "")
+	state := out.Session
+	if state.SessionID == "" {
+		state = current
+	}
+	if state.SessionID != "" {
+		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, time.Now().UnixMilli())
+	}
+	return out, err
+}
+
+func (s *Service) RecoverClaimedSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
+	startedAt := time.Now().UnixMilli()
+	current, _ := s.GetSession(sessionID)
+	out, err := s.recoverSession(ctx, sessionID, leaseID)
+	state := out.Session
+	if state.SessionID == "" {
+		state = current
+	}
+	if state.SessionID != "" {
+		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, time.Now().UnixMilli())
+	}
+	return out, err
 }

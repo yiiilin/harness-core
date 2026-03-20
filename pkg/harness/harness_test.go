@@ -23,6 +23,9 @@ func TestNewDefaultProvidesCoreComponents(t *testing.T) {
 	if !info.HasEventSink {
 		t.Fatalf("expected default event sink to be present")
 	}
+	if len(rt.ListTools()) != 0 {
+		t.Fatalf("expected bare-kernel default path to keep builtin modules out, got %d tools", len(rt.ListTools()))
+	}
 }
 
 func TestNewWithBuiltinsRegistersBuiltins(t *testing.T) {

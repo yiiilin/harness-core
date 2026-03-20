@@ -14,6 +14,7 @@ import (
 	"github.com/yiiilin/harness-core/internal/postgres/capabilityrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/contextrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/executionrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/planningrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/planrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/sessionrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/taskrepo"
@@ -23,6 +24,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -63,6 +65,7 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 	opts.Artifacts = executionrepo.NewArtifactStore(db)
 	opts.RuntimeHandles = executionrepo.NewRuntimeHandleStore(db)
 	opts.CapabilitySnapshots = capabilityrepo.New(db)
+	opts.PlanningRecords = planningrepo.New(db)
 	opts.Audit = auditrepo.New(db)
 	opts.ContextSummaries = contextrepo.New(db)
 	opts.Runner = persistence.TransactionalRunner{
@@ -85,6 +88,7 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 			RuntimeHandleFactory: func(dbtx postgres.DBTX) execution.RuntimeHandleStore {
 				return executionrepo.NewRuntimeHandleStore(dbtx)
 			},
+			PlanningFactory: func(dbtx postgres.DBTX) planning.Store { return planningrepo.New(dbtx) },
 		},
 	}
 	opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}

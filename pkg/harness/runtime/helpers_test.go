@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -89,6 +90,15 @@ func mustListCapabilitySnapshots(tb testing.TB, rt *hruntime.Service, sessionID 
 	items, err := rt.ListCapabilitySnapshots(sessionID)
 	if err != nil {
 		tb.Fatalf("list capability snapshots: %v", err)
+	}
+	return items
+}
+
+func mustListPlanningRecords(tb testing.TB, rt *hruntime.Service, sessionID string) []planning.Record {
+	tb.Helper()
+	items, err := rt.ListPlanningRecords(sessionID)
+	if err != nil {
+		tb.Fatalf("list planning records: %v", err)
 	}
 	return items
 }

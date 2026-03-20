@@ -67,10 +67,13 @@
 ## 最推荐的初始化方式
 
 ```go
-import "github.com/yiiilin/harness-core/pkg/harness"
+import (
+  "github.com/yiiilin/harness-core/pkg/harness"
+  "github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
 
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 rt := harness.New(opts)
 ```
 

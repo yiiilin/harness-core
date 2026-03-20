@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -339,7 +340,7 @@ func TestRecoverSessionInvalidatesDanglingRuntimeHandlesAcrossRuntimeReinit(t *t
 		Plans:          plans,
 		RuntimeHandles: runtimeHandles,
 	}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 
 	rt1 := hruntime.New(opts)
 	sess := mustCreateSession(t, rt1, "recover handles", "recover should invalidate stale handles")

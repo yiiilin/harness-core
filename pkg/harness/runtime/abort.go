@@ -120,6 +120,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		}); err != nil {
 			return AbortOutput{}, err
 		}
+		s.exportAbortObservability(ctx, aborted, request, now, time.Now().UnixMilli())
 		return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 	}
 
@@ -127,5 +128,6 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		return AbortOutput{}, err
 	}
 	_ = s.emitEventsWithSink(ctx, s.EventSink, events)
+	s.exportAbortObservability(ctx, aborted, request, now, time.Now().UnixMilli())
 	return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 }

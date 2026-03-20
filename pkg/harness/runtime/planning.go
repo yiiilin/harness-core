@@ -3,23 +3,27 @@ package runtime
 import (
 	"context"
 	"errors"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
 
-func (s *Service) AssembleContextForSession(ctx context.Context, sessionID string) (ContextPackage, session.State, task.Spec, error) {
+func (s *Service) AssembleContextForSession(ctx context.Context, sessionID string) (ContextPackage, *ContextSummary, session.State, task.Spec, error) {
 	state, err := s.GetSession(sessionID)
 	if err != nil {
-		return ContextPackage{}, session.State{}, task.Spec{}, err
+		return ContextPackage{}, nil, session.State{}, task.Spec{}, err
 	}
 	if state.TaskID == "" {
-		return ContextPackage{}, session.State{}, task.Spec{}, errors.New("session has no task attached")
+		return ContextPackage{}, nil, session.State{}, task.Spec{}, errors.New("session has no task attached")
 	}
 	rec, err := s.GetTask(state.TaskID)
 	if err != nil {
-		return ContextPackage{}, session.State{}, task.Spec{}, err
+		return ContextPackage{}, nil, session.State{}, task.Spec{}, err
 	}
 	spec := task.Spec{
 		TaskID:      rec.TaskID,
@@ -28,11 +32,11 @@ func (s *Service) AssembleContextForSession(ctx context.Context, sessionID strin
 		Constraints: rec.Constraints,
 		Metadata:    rec.Metadata,
 	}
-	assembled, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerPlan)
+	assembled, summary, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerPlan)
 	if err != nil {
-		return ContextPackage{}, session.State{}, task.Spec{}, err
+		return ContextPackage{}, nil, session.State{}, task.Spec{}, err
 	}
-	return assembled, state, spec, nil
+	return assembled, summary, state, spec, nil
 }
 
 func (s *Service) latestPlanForSession(sessionID string) (plan.Spec, bool, error) {
@@ -43,6 +47,7 @@ func (s *Service) latestPlanForSession(sessionID string) (plan.Spec, bool, error
 }
 
 func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeReason string, maxSteps int) (plan.Spec, ContextPackage, error) {
+	requestedMaxSteps := maxSteps
 	if maxSteps <= 0 {
 		maxSteps = s.LoopBudgets.MaxSteps
 	}
@@ -50,12 +55,45 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		maxSteps = s.LoopBudgets.MaxSteps
 	}
 
-	assembled, planningState, spec, err := s.AssembleContextForSession(ctx, sessionID)
+	planningID := "pln_" + uuid.NewString()
+	startedAt := time.Now().UnixMilli()
+	metadata := map[string]any{
+		"requested_max_steps": requestedMaxSteps,
+		"effective_max_steps": maxSteps,
+	}
+
+	assembled, summary, planningState, spec, err := s.AssembleContextForSession(ctx, sessionID)
 	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID: planningID,
+			SessionID:  sessionID,
+			Status:     planning.StatusFailed,
+			Reason:     changeReason,
+			Error:      err.Error(),
+			Metadata:   metadata,
+			StartedAt:  startedAt,
+			FinishedAt: time.Now().UnixMilli(),
+		})
 		return plan.Spec{}, ContextPackage{}, err
+	}
+	contextSummaryID := ""
+	if summary != nil {
+		contextSummaryID = summary.SummaryID
 	}
 	view, err := s.freezeCapabilityView(ctx, planningState.SessionID, spec.TaskID)
 	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID:       planningID,
+			SessionID:        planningState.SessionID,
+			TaskID:           spec.TaskID,
+			Status:           planning.StatusFailed,
+			Reason:           changeReason,
+			Error:            err.Error(),
+			ContextSummaryID: contextSummaryID,
+			Metadata:         metadata,
+			StartedAt:        startedAt,
+			FinishedAt:       time.Now().UnixMilli(),
+		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
 	assembled = attachCapabilityViewToContext(assembled, view)
@@ -66,6 +104,20 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		step, err := s.Planner.PlanNext(ctx, planningState, spec, lastAssembled)
 		if err != nil {
 			if len(steps) == 0 {
+				metadata["step_count"] = len(steps)
+				err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+					PlanningID:       planningID,
+					SessionID:        planningState.SessionID,
+					TaskID:           spec.TaskID,
+					Status:           planning.StatusFailed,
+					Reason:           changeReason,
+					Error:            err.Error(),
+					CapabilityViewID: view.ViewID,
+					ContextSummaryID: contextSummaryID,
+					Metadata:         metadata,
+					StartedAt:        startedAt,
+					FinishedAt:       time.Now().UnixMilli(),
+				})
 				return plan.Spec{}, ContextPackage{}, err
 			}
 			break
@@ -77,20 +129,118 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		steps = append(steps, step)
 		planningState.CurrentStepID = step.StepID
 		planningState.Phase = session.PhasePlan
-		lastAssembled, _, err = s.compactAssembledContext(ctx, planningState, spec, CompactionTriggerPlan)
+		lastAssembled, summary, err = s.compactAssembledContext(ctx, planningState, spec, CompactionTriggerPlan)
 		if err != nil {
+			metadata["step_count"] = len(steps)
+			err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+				PlanningID:       planningID,
+				SessionID:        planningState.SessionID,
+				TaskID:           spec.TaskID,
+				Status:           planning.StatusFailed,
+				Reason:           changeReason,
+				Error:            err.Error(),
+				CapabilityViewID: view.ViewID,
+				ContextSummaryID: contextSummaryID,
+				Metadata:         metadata,
+				StartedAt:        startedAt,
+				FinishedAt:       time.Now().UnixMilli(),
+			})
 			return plan.Spec{}, ContextPackage{}, err
+		}
+		if summary != nil {
+			contextSummaryID = summary.SummaryID
 		}
 		lastAssembled = attachCapabilityViewToContext(lastAssembled, view)
 	}
 
 	if len(steps) == 0 {
-		return plan.Spec{}, ContextPackage{}, errors.New("planner did not produce any steps")
-	}
-
-	pl, err := s.createPlanWithCapabilityView(ctx, sessionID, changeReason, steps, view)
-	if err != nil {
+		err := errors.New("planner did not produce any steps")
+		metadata["step_count"] = len(steps)
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID:       planningID,
+			SessionID:        planningState.SessionID,
+			TaskID:           spec.TaskID,
+			Status:           planning.StatusFailed,
+			Reason:           changeReason,
+			Error:            err.Error(),
+			CapabilityViewID: view.ViewID,
+			ContextSummaryID: contextSummaryID,
+			Metadata:         metadata,
+			StartedAt:        startedAt,
+			FinishedAt:       time.Now().UnixMilli(),
+		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
+
+	metadata["step_count"] = len(steps)
+	pl, err := s.createPlanWithCapabilityView(ctx, sessionID, changeReason, steps, view, planning.Record{
+		PlanningID:       planningID,
+		SessionID:        planningState.SessionID,
+		TaskID:           spec.TaskID,
+		Status:           planning.StatusCompleted,
+		Reason:           changeReason,
+		CapabilityViewID: view.ViewID,
+		ContextSummaryID: contextSummaryID,
+		Metadata:         metadata,
+		StartedAt:        startedAt,
+		FinishedAt:       time.Now().UnixMilli(),
+	})
+	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID:       planningID,
+			SessionID:        planningState.SessionID,
+			TaskID:           spec.TaskID,
+			Status:           planning.StatusFailed,
+			Reason:           changeReason,
+			Error:            err.Error(),
+			CapabilityViewID: view.ViewID,
+			ContextSummaryID: contextSummaryID,
+			Metadata:         metadata,
+			StartedAt:        startedAt,
+			FinishedAt:       time.Now().UnixMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
+	}
+	s.exportPlanningObservability(ctx, planning.Record{
+		PlanningID:       planningID,
+		SessionID:        planningState.SessionID,
+		TaskID:           spec.TaskID,
+		Status:           planning.StatusCompleted,
+		Reason:           changeReason,
+		PlanID:           pl.PlanID,
+		PlanRevision:     pl.Revision,
+		CapabilityViewID: view.ViewID,
+		ContextSummaryID: contextSummaryID,
+		Metadata:         metadata,
+		StartedAt:        startedAt,
+		FinishedAt:       time.Now().UnixMilli(),
+	})
 	return pl, assembled, nil
+}
+
+func (s *Service) joinPlanningPersistenceError(ctx context.Context, cause error, record planning.Record) error {
+	s.exportPlanningObservability(ctx, record)
+	if err := s.persistPlanningRecord(ctx, record); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
+}
+
+func (s *Service) persistPlanningRecord(ctx context.Context, record planning.Record) error {
+	if s.PlanningRecords == nil {
+		return nil
+	}
+	create := func(store planning.Store) error {
+		if store == nil {
+			return nil
+		}
+		_, err := store.Create(record)
+		return err
+	}
+	if s.Runner != nil {
+		return s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			return create(s.repositoriesWithFallback(repos).PlanningRecords)
+		})
+	}
+	return create(s.PlanningRecords)
 }

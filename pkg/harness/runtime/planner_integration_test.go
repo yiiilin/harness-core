@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -52,7 +53,7 @@ func (failingPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, 
 
 func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planner integration", "execute planner-derived sequence")
@@ -95,7 +96,7 @@ func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.
 
 func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts).WithPlanner(failingPlanner{})
 
 	sess := mustCreateSession(t, rt, "planner failure", "planner failure path")
@@ -112,7 +113,7 @@ func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 
 func TestRunSessionDrivesPlannerDerivedPlanToCompletion(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planner session driver", "runtime should drive planner-derived steps")

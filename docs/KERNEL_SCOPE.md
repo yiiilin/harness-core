@@ -26,6 +26,26 @@ If a concept does not change one of those, it should not enter the kernel.
 
 ---
 
+## Multi-user platform note
+
+A multi-user, multi-session agent platform can embed the kernel without teaching the kernel who the users are.
+
+The kernel should provide:
+
+- safe concurrent session execution, claim, lease, and recovery semantics
+- governed approval and resume semantics
+- durable execution facts for replay, audit, and debugging
+
+The outer platform should provide:
+
+- user / tenant / org ownership
+- auth and visibility rules
+- quota, billing, scheduling, and operational policy
+
+Supporting many users and many sessions does not require `user_id` or `tenant_id` to become kernel concepts.
+
+---
+
 ## Kernel owns
 
 The following concerns belong in the kernel:
@@ -139,6 +159,20 @@ Reject a kernel proposal immediately if it introduces:
 - billing, quota, or analytics fields
 - product-provider or model-vendor routing logic
 - module-specific behavior that does not alter the global runtime loop
+
+---
+
+## Public surface constraints
+
+The kernel boundary applies to exported types and helper APIs, not only internal implementation.
+
+Rules:
+
+- exported `pkg/harness/*` types must remain transport-neutral and identity-neutral
+- exported kernel metadata must not report adapter-specific or auth-specific modes
+- `pkg/harness/*` must not depend on `adapters/*`
+- convenience helpers that wire module packs are packaging helpers only; they do not expand kernel scope
+- if a helper imports `modules/*`, keep that helper mechanical and keep module-specific UX/policy semantics out of kernel domain types
 
 ---
 

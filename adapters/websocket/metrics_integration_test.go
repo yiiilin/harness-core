@@ -9,6 +9,7 @@ import (
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
 
@@ -35,7 +36,7 @@ func recvMap(t *testing.T, conn *gorillaws.Conn) map[string]any {
 
 func TestWebSocketRuntimeMetrics(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 	srv := adapterws.New(config.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())

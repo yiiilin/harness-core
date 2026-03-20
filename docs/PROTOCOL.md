@@ -250,13 +250,18 @@ The runtime should emit structured events.
 - `session.created`
 - `plan.generated`
 - `step.started`
+- `approval.requested`
+- `approval.approved`
+- `approval.rejected`
 - `tool.called`
 - `tool.completed`
 - `tool.failed`
 - `verify.completed`
 - `state.changed`
+- `session.aborted`
 - `task.completed`
 - `task.failed`
+- `task.aborted`
 - `policy.denied`
 
 ### Canonical event envelope
@@ -266,17 +271,13 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 ```json
 {
   "event_id": "evt_01",
-  "type": "verify.completed",
+  "type": "plan.generated",
   "session_id": "sess_01",
   "task_id": "task_01",
-  "step_id": "step_01",
-  "attempt_id": "att_01",
-  "action_id": "act_01",
-  "verification_id": "ver_01",
-  "trace_id": "trc_01",
-  "causation_id": "act_01",
+  "planning_id": "pln_01",
   "payload": {
-    "success": true
+    "plan_id": "plan_01",
+    "revision": 2
   },
   "created_at": 1710000000000
 }
@@ -285,6 +286,7 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 ### Event envelope rules
 - `session_id` is required for session-scoped runtime events.
 - `task_id` should be present whenever a task is attached to the session.
+- `planning_id` should be present for planner-derived plan generation events when the runtime persisted a planning cycle record.
 - `attempt_id` and `trace_id` should be present for step execution events.
 - `action_id` is required for tool invocation/completion/failure events.
 - `verification_id` is required for verification events.
@@ -298,17 +300,17 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 The kernel may optionally export vendor-neutral metric samples and trace spans in addition to audit events.
 
 ### MetricSample
-- `name`: stable sample name such as `step.run`
-- `labels`: string correlation labels such as `session_id`, `task_id`, `step_id`, `attempt_id`, `trace_id`
+- `name`: stable sample name such as `step.run`, `planning.cycle`, `approval.request`, `approval.response`, `session.recover`, `session.abort`, `lease.claim`, `lease.renew`, `lease.release`
+- `labels`: string correlation labels such as `session_id`, `task_id`, `planning_id`, `approval_id`, `lease_id`, `step_id`, `attempt_id`, `trace_id`
 - `fields`: structured numeric/boolean detail
 - `recorded_at`: emission timestamp
 
 ### TraceSpan
-- `name`: stable span name such as `tool.invoke` or `verify.evaluate`
+- `name`: stable span name such as `tool.invoke`, `verify.evaluate`, `planning.cycle`, `approval.request`, `approval.response`, `session.recover`, `session.abort`, `lease.claim`, `lease.renew`, or `lease.release`
 - `trace_id`: correlation id shared across related spans and events
 - `span_id`: id for the current span
 - `parent_id`: parent span id when the span is nested
-- correlation fields such as `session_id`, `task_id`, `step_id`, `attempt_id`, `action_id`, `verification_id`, `causation_id`
+- correlation fields such as `session_id`, `task_id`, `planning_id`, `approval_id`, `lease_id`, `step_id`, `attempt_id`, `action_id`, `verification_id`, `causation_id`
 - `started_at` / `finished_at`: timestamps for latency analysis
 - `attributes`: structured vendor-neutral attributes
 

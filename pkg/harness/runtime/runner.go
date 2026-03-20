@@ -226,6 +226,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		}
 		if pendingApproval != nil {
 			execResult.PendingApproval = pendingApproval
+			s.exportApprovalRequestObservability(ctx, state, attemptRecord, *pendingApproval)
 		}
 		if s.Runner == nil {
 			_ = s.emitEvents(ctx, events)
@@ -832,6 +833,9 @@ func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) pers
 	}
 	if repos.CapabilitySnapshots == nil {
 		repos.CapabilitySnapshots = s.CapabilitySnapshots
+	}
+	if repos.PlanningRecords == nil {
+		repos.PlanningRecords = s.PlanningRecords
 	}
 	return repos
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
@@ -26,6 +27,7 @@ type Options struct {
 	Artifacts           execution.ArtifactStore
 	RuntimeHandles      execution.RuntimeHandleStore
 	CapabilitySnapshots capability.SnapshotStore
+	PlanningRecords     planning.Store
 	CapabilityFreezer   capability.Freezer
 	ResumePolicy        approval.ResumePolicy
 	Tools               *tool.Registry
@@ -82,6 +84,9 @@ func WithDefaults(opts Options) Options {
 	if opts.CapabilitySnapshots == nil {
 		opts.CapabilitySnapshots = capability.NewMemorySnapshotStore()
 	}
+	if opts.PlanningRecords == nil {
+		opts.PlanningRecords = planning.NewMemoryStore()
+	}
 	if opts.CapabilityFreezer == nil {
 		opts.CapabilityFreezer = capability.RegistryFreezer{Registry: opts.Tools}
 	}
@@ -113,6 +118,7 @@ func WithDefaults(opts Options) Options {
 			RuntimeHandles:      opts.RuntimeHandles,
 			Approvals:           opts.Approvals,
 			CapabilitySnapshots: opts.CapabilitySnapshots,
+			PlanningRecords:     opts.PlanningRecords,
 		})
 	}
 	if opts.ContextAssembler == nil {

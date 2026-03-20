@@ -77,8 +77,13 @@ Implemented today:
 ## Default construction style
 
 ```go
+import (
+  "github.com/yiiilin/harness-core/pkg/harness"
+  "github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
+
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 rt := harness.New(opts)
 ```
 

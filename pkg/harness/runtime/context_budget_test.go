@@ -134,7 +134,7 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 		t.Fatalf("attach task: %v", err)
 	}
 
-	assembled, state, spec, err := rt.AssembleContextForSession(context.Background(), attached.SessionID)
+	assembled, _, state, spec, err := rt.AssembleContextForSession(context.Background(), attached.SessionID)
 	if err != nil {
 		t.Fatalf("assemble context: %v", err)
 	}

@@ -50,13 +50,19 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 ### 顶层 facade 当前提供
 - `harness.Options`
 - `harness.New(...)`
-- `harness.RegisterBuiltins(...)`
+- `harness.RegisterBuiltins(...)`（兼容包装）
+- `pkg/harness/builtins.Register(...)`（推荐的 builtins 组合层）
 
 这让嵌入方可以先走最短路径：
 
 ```go
+import (
+	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
+
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 rt := harness.New(opts)
 ```
 
@@ -204,8 +210,13 @@ policy -> action -> verify -> transition -> state update -> audit
 ## 一个最小接入示例
 
 ```go
+import (
+	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
+
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 rt := harness.New(opts)
 
 sess := rt.CreateSession("demo", "run one step")

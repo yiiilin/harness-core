@@ -2,54 +2,67 @@
 
 ## Current maturity snapshot
 
-`harness-core` is currently a **pre-1.0 runtime kernel prototype**.
+`harness-core` is a **pre-1.0 execution kernel for harness engineering**.
 
 It already has:
-- persistence abstractions (`RepositorySet`, `UnitOfWork` / `Runner`)
-- Postgres-backed repositories and transaction wiring
-- Postgres-backed WebSocket happy/deny integration coverage
-- restart-read durability coverage
-- a minimal demo planner example
-- planner-driven plan creation helpers
-- a default context assembler
-- stable-enough domain objects for `task / session / plan / step`
-- a tool registry
-- a verifier registry
-- a default policy evaluator
-- a shell pipe executor
-- shell output truncation and cwd/path allowlist support
-- a `RunStep()` execution loop
-- in-memory audit sink
-- in-memory metrics recorder
-- stable runtime-emitted event ids
-- websocket adapter
-- planner/context examples
-- reference modules (`shell`, `filesystem`, `http`)
-- integration tests and benchmark baselines
+- durable `task / session / plan / step` lifecycle contracts
+- a governed runtime loop: `plan -> policy -> approval -> execute -> verify -> recover`
+- optimistic concurrency for mutable session and approval records
+- claim / lease primitives for runnable and recoverable sessions
+- abort / cancel semantics
+- first-class execution facts: attempts, actions, verifications, artifacts, and runtime handles
+- runtime handle lifecycle control
+- plan-level capability freeze plus per-action capability snapshots
+- context compaction hooks plus durable context summaries
+- audit event envelopes with correlation ids
+- vendor-neutral metrics and trace exporter hooks
+- Postgres-backed repositories and transaction runner wiring
+- a public `pkg/harness` embedding facade
+- reference capability modules and a reference WebSocket adapter
 
-It does **not** yet have:
-- multi-process/distributed execution
-- complete public API stability guarantees
-- richer shell modes such as PTY execution
-- advanced capability packs such as Windows-native or knowledge modules
+It is not yet a complete product platform.
+
+## Current pure-kernel gap status
+
+The focused pure-kernel follow-up plan in `docs/plans/2026-03-20-kernel-purity-followup-execution.md` is now implemented and verified.
+
+That means the current kernel baseline already includes:
+- transport-neutral runtime metadata surfaces
+- a bare-kernel constructor path separate from builtins composition
+- first-class planning / replanning records
+- lifecycle-wide observability hooks
+- explicit lease heartbeat / expiry / reclaim semantics for runnable and recoverable work
+
+Remaining work is mainly future expansion, not a known core-boundary defect:
+- new capability modules
+- new adapters
+- stronger product-layer projections outside the kernel
+
+## Not kernel gaps
+
+The following are intentionally outside `harness-core`:
+- user / tenant / org ownership
+- auth handshakes and gateway behavior
+- session visibility and search projections
+- approval UI and operator dashboards
+- provider routing, billing, quota, and business policy
+- worker fleet orchestration and deployment topology
+
+Those belong in adapters, modules, or an embedding platform.
 
 ## Best use today
 
 Use it for:
-- studying harness runtime structure
-- embedding in prototypes and controlled project integrations
-- refining contracts
-- building capability modules
-- experimenting with execution / verify / policy patterns
+- embedding a small execution kernel inside a larger agent system
+- experimenting with governed tool execution and recovery semantics
+- building capability modules against stable-enough runtime contracts
+- refining replay, audit, and observability patterns
 
-Do not assume it is production-ready infrastructure yet.
+Do not assume it is a complete multi-user product platform by itself.
 
 ## Current execution plan
 
-The active execution plan for the repository is tracked in `docs/ROADMAP.md`.
+Repository-wide roadmap: `docs/ROADMAP.md`
 
-Current instruction set:
-- complete P0
-- complete P1
-- complete advanced planner/context work
-- defer P2 for now
+Pure-kernel follow-up plan:
+- `docs/plans/2026-03-20-kernel-purity-followup-execution.md`

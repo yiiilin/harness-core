@@ -24,6 +24,7 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 	if leaseTTL <= 0 {
 		return session.State{}, ErrInvalidLeaseTTL
 	}
+	startedAt := time.Now().UnixMilli()
 	now := time.Now().UnixMilli()
 	expiresAt := now + leaseTTL.Milliseconds()
 
@@ -47,19 +48,23 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 		}); err != nil {
 			return session.State{}, err
 		}
+		s.exportLeaseObservability(ctx, "lease.renew", updated, leaseID, startedAt, time.Now().UnixMilli(), map[string]any{"ttl_ms": leaseTTL.Milliseconds()})
 		return updated, nil
 	}
 
 	if err := renew(s.Sessions); err != nil {
 		return session.State{}, err
 	}
+	s.exportLeaseObservability(ctx, "lease.renew", updated, leaseID, startedAt, time.Now().UnixMilli(), map[string]any{"ttl_ms": leaseTTL.Milliseconds()})
 	return updated, nil
 }
 
 func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID string) (session.State, error) {
+	startedAt := time.Now().UnixMilli()
+	now := time.Now().UnixMilli()
 	var updated session.State
 	release := func(store session.Store) error {
-		st, err := store.ReleaseLease(sessionID, leaseID)
+		st, err := store.ReleaseLease(sessionID, leaseID, now)
 		if err != nil {
 			return err
 		}
@@ -77,12 +82,14 @@ func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID st
 		}); err != nil {
 			return session.State{}, err
 		}
+		s.exportLeaseObservability(ctx, "lease.release", updated, leaseID, startedAt, time.Now().UnixMilli(), map[string]any{})
 		return updated, nil
 	}
 
 	if err := release(s.Sessions); err != nil {
 		return session.State{}, err
 	}
+	s.exportLeaseObservability(ctx, "lease.release", updated, leaseID, startedAt, time.Now().UnixMilli(), map[string]any{})
 	return updated, nil
 }
 
@@ -90,6 +97,7 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 	if leaseTTL <= 0 {
 		return session.State{}, false, ErrInvalidLeaseTTL
 	}
+	startedAt := time.Now().UnixMilli()
 	now := time.Now().UnixMilli()
 	expiresAt := now + leaseTTL.Milliseconds()
 	leaseID := "lse_" + uuid.NewString()
@@ -119,11 +127,13 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 		}); err != nil {
 			return session.State{}, false, err
 		}
+		s.exportLeaseObservability(ctx, "lease.claim", claimed, claimed.LeaseID, startedAt, time.Now().UnixMilli(), map[string]any{"claimed": ok, "claim_mode": string(mode), "ttl_ms": leaseTTL.Milliseconds()})
 		return claimed, ok, nil
 	}
 
 	if err := claim(s.Sessions); err != nil {
 		return session.State{}, false, err
 	}
+	s.exportLeaseObservability(ctx, "lease.claim", claimed, claimed.LeaseID, startedAt, time.Now().UnixMilli(), map[string]any{"claimed": ok, "claim_mode": string(mode), "ttl_ms": leaseTTL.Milliseconds()})
 	return claimed, ok, nil
 }

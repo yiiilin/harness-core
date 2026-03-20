@@ -28,10 +28,10 @@ func (r *Repo) Create(title, goal string) (session.State, error) {
 	metaJSON, _ := json.Marshal(metadata)
 	row := r.db.QueryRowContext(ctx, `
 INSERT INTO sessions (
-  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
-`, id, nil, nil, title, goal, string(session.PhaseReceived), nil, nil, 0, string(session.ExecutionIdle), nil, nil, nil, nil, nil, now, nil, string(metaJSON), 1, now, now)
+  session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+`, id, nil, title, goal, string(session.PhaseReceived), nil, nil, 0, string(session.ExecutionIdle), nil, nil, nil, nil, nil, now, nil, string(metaJSON), 1, now, now)
 	st, err := scanState(row.Scan)
 	if err != nil {
 		return session.State{}, err
@@ -42,7 +42,7 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 func (r *Repo) Get(id string) (session.State, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions WHERE session_id = $1
 `, id)
 	return scanState(row.Scan)
@@ -58,26 +58,25 @@ func (r *Repo) Update(next session.State) error {
 	result, err := r.db.ExecContext(ctx, `
 UPDATE sessions
 SET task_id = $2,
-    parent_session_id = $3,
-    title = $4,
-    goal = $5,
-    phase = $6,
-    current_step_id = $7,
-    summary = $8,
-    retry_count = $9,
-    execution_state = $10,
-    in_flight_step_id = $11,
-    pending_approval_id = $12,
-    lease_id = $13,
-    lease_claimed_at = $14,
-    lease_expires_at = $15,
-    last_heartbeat_at = $16,
-    interrupted_at = $17,
-    metadata_json = $18,
-    version = $19,
-    updated_at = $20
-WHERE session_id = $1 AND version = $21
-`, next.SessionID, nullable(next.TaskID), nullable(next.ParentSessionID), next.Title, nullable(next.Goal), string(next.Phase), nullable(next.CurrentStepID), nullable(next.Summary), next.RetryCount, string(next.ExecutionState), nullable(next.InFlightStepID), nullable(next.PendingApprovalID), nullable(next.LeaseID), nullableInt64(next.LeaseClaimedAt), nullableInt64(next.LeaseExpiresAt), nullableInt64(next.LastHeartbeatAt), nullableInt64(next.InterruptedAt), string(metaJSON), next.Version, next.UpdatedAt, next.Version-1)
+    title = $3,
+    goal = $4,
+    phase = $5,
+    current_step_id = $6,
+    summary = $7,
+    retry_count = $8,
+    execution_state = $9,
+    in_flight_step_id = $10,
+    pending_approval_id = $11,
+    lease_id = $12,
+    lease_claimed_at = $13,
+    lease_expires_at = $14,
+    last_heartbeat_at = $15,
+    interrupted_at = $16,
+    metadata_json = $17,
+    version = $18,
+    updated_at = $19
+WHERE session_id = $1 AND version = $20
+`, next.SessionID, nullable(next.TaskID), next.Title, nullable(next.Goal), string(next.Phase), nullable(next.CurrentStepID), nullable(next.Summary), next.RetryCount, string(next.ExecutionState), nullable(next.InFlightStepID), nullable(next.PendingApprovalID), nullable(next.LeaseID), nullableInt64(next.LeaseClaimedAt), nullableInt64(next.LeaseExpiresAt), nullableInt64(next.LastHeartbeatAt), nullableInt64(next.InterruptedAt), string(metaJSON), next.Version, next.UpdatedAt, next.Version-1)
 	if err != nil {
 		return err
 	}
@@ -114,7 +113,7 @@ WHERE session_id = (
   LIMIT 1
   FOR UPDATE SKIP LOCKED
 )
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 `, leaseID, claimedAt, expiresAt)
 	st, err := scanState(row.Scan)
 	if errors.Is(err, session.ErrSessionNotFound) {
@@ -137,7 +136,7 @@ SET lease_expires_at = $3,
 WHERE session_id = $1
   AND lease_id = $2
   AND lease_expires_at > $4
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 `, sessionID, leaseID, expiresAt, now)
 	st, err := scanState(row.Scan)
 	if err == nil {
@@ -149,9 +148,8 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 	return session.State{}, r.classifyLeaseErr(ctx, sessionID)
 }
 
-func (r *Repo) ReleaseLease(sessionID, leaseID string) (session.State, error) {
+func (r *Repo) ReleaseLease(sessionID, leaseID string, now int64) (session.State, error) {
 	ctx := context.Background()
-	now := time.Now().UnixMilli()
 	row := r.db.QueryRowContext(ctx, `
 UPDATE sessions
 SET lease_id = NULL,
@@ -161,7 +159,8 @@ SET lease_id = NULL,
     updated_at = $3
 WHERE session_id = $1
   AND lease_id = $2
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+  AND lease_expires_at > $3
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 `, sessionID, leaseID, now)
 	st, err := scanState(row.Scan)
 	if err == nil {
@@ -176,7 +175,7 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 func (r *Repo) List() ([]session.State, error) {
 	ctx := context.Background()
 	rows, err := r.db.QueryContext(ctx, `
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions
 ORDER BY updated_at DESC
 `)
@@ -250,15 +249,14 @@ func (n *sqlNullInt64) Scan(value any) error {
 
 func scanState(scan scanner) (session.State, error) {
 	var st session.State
-	var taskID, parentID, goal, currentStepID, summary, executionState, inFlightStepID, pendingApprovalID, leaseID sqlNullString
+	var taskID, goal, currentStepID, summary, executionState, inFlightStepID, pendingApprovalID, leaseID sqlNullString
 	var leaseClaimedAt, leaseExpiresAt, lastHeartbeatAt, interruptedAt sqlNullInt64
 	var phase string
 	var metaRaw string
-	if err := scan(&st.SessionID, &taskID, &parentID, &st.Title, &goal, &phase, &currentStepID, &summary, &st.RetryCount, &executionState, &inFlightStepID, &pendingApprovalID, &leaseID, &leaseClaimedAt, &leaseExpiresAt, &lastHeartbeatAt, &interruptedAt, &metaRaw, &st.Version, &st.CreatedAt, &st.UpdatedAt); err != nil {
+	if err := scan(&st.SessionID, &taskID, &st.Title, &goal, &phase, &currentStepID, &summary, &st.RetryCount, &executionState, &inFlightStepID, &pendingApprovalID, &leaseID, &leaseClaimedAt, &leaseExpiresAt, &lastHeartbeatAt, &interruptedAt, &metaRaw, &st.Version, &st.CreatedAt, &st.UpdatedAt); err != nil {
 		return session.State{}, translateErr(err)
 	}
 	st.TaskID = taskID.String
-	st.ParentSessionID = parentID.String
 	st.Goal = goal.String
 	st.Phase = session.Phase(phase)
 	st.CurrentStepID = currentStepID.String

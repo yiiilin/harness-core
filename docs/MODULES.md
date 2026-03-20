@@ -94,7 +94,7 @@ func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts 
 
 This keeps module wiring consistent across the ecosystem while still allowing controlled extension.
 
-When `runtime.RegisterBuiltins()` is used, these `DefaultPolicyRules()` are no longer documentation-only hints.
+When `builtins.Register()` is used, these `DefaultPolicyRules()` are no longer documentation-only hints.
 They are composed into the default built-in policy evaluator path unless the embedding app overrides `opts.Policy`.
 
 ---
@@ -142,12 +142,12 @@ These belong to `harness-core` itself.
 
 ## Relationship to built-ins
 
-`runtime.RegisterBuiltins()` may reuse modules.
+`pkg/harness/builtins.Register()` may reuse modules.
 
 That is the preferred direction.
 
 Instead of duplicating built-in tool definitions inside the runtime package,
-`RegisterBuiltins()` should wire well-defined modules into the default options.
+the builtins composition helper should wire well-defined modules into the default options.
 
 This ensures:
 - one source of truth

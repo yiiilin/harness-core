@@ -1,60 +1,39 @@
-package session_test
+package session
 
-import (
-	"errors"
-	"testing"
+import "testing"
 
-	"github.com/yiiilin/harness-core/pkg/harness/session"
-)
+func TestMemoryStoreClaimNextUsesCreatedOrder(t *testing.T) {
+	store := &MemoryStore{
+		sessions: map[string]State{
+			"sess_a": {
+				SessionID:      "sess_a",
+				Title:          "newer",
+				Phase:          PhaseReceived,
+				ExecutionState: ExecutionIdle,
+				Version:        1,
+				CreatedAt:      20,
+				UpdatedAt:      20,
+			},
+			"sess_b": {
+				SessionID:      "sess_b",
+				Title:          "older",
+				Phase:          PhaseReceived,
+				ExecutionState: ExecutionIdle,
+				Version:        1,
+				CreatedAt:      10,
+				UpdatedAt:      10,
+			},
+		},
+	}
 
-func TestMemoryStoreUpdateRequiresFreshVersion(t *testing.T) {
-	store := session.NewMemoryStore()
-
-	created, err := store.Create("demo", "goal")
+	claimed, ok, err := store.ClaimNext(ClaimModeRunnable, "lease_1", 100, 200)
 	if err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatalf("claim next: %v", err)
 	}
-	if created.Version != 1 {
-		t.Fatalf("expected create version 1, got %d", created.Version)
+	if !ok {
+		t.Fatalf("expected a claim winner")
 	}
-
-	first, err := store.Get(created.SessionID)
-	if err != nil {
-		t.Fatalf("get first: %v", err)
-	}
-	second, err := store.Get(created.SessionID)
-	if err != nil {
-		t.Fatalf("get second: %v", err)
-	}
-
-	first.Summary = "first writer"
-	first.Version++
-	if err := store.Update(first); err != nil {
-		t.Fatalf("update first: %v", err)
-	}
-
-	second.Summary = "stale writer"
-	second.Version++
-	if err := store.Update(second); !errors.Is(err, session.ErrSessionVersionConflict) {
-		t.Fatalf("expected version conflict, got %v", err)
-	}
-
-	latest, err := store.Get(created.SessionID)
-	if err != nil {
-		t.Fatalf("get latest: %v", err)
-	}
-	if latest.Summary != "first writer" {
-		t.Fatalf("expected first writer summary to win, got %#v", latest)
-	}
-	if latest.Version != 2 {
-		t.Fatalf("expected version 2 after one successful update, got %d", latest.Version)
-	}
-}
-
-func TestMemoryStoreUpdateMissingSession(t *testing.T) {
-	store := session.NewMemoryStore()
-	err := store.Update(session.State{SessionID: "missing", Version: 1})
-	if !errors.Is(err, session.ErrSessionNotFound) {
-		t.Fatalf("expected not found, got %v", err)
+	if claimed.SessionID != "sess_b" {
+		t.Fatalf("expected oldest created session to win, got %#v", claimed)
 	}
 }

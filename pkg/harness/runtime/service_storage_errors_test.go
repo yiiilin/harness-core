@@ -34,7 +34,7 @@ func (s failingSessionStore) ClaimNext(session.ClaimMode, string, int64, int64) 
 func (s failingSessionStore) RenewLease(string, string, int64, int64) (session.State, error) {
 	return session.State{}, session.ErrSessionLeaseNotHeld
 }
-func (s failingSessionStore) ReleaseLease(string, string) (session.State, error) {
+func (s failingSessionStore) ReleaseLease(string, string, int64) (session.State, error) {
 	return session.State{}, session.ErrSessionLeaseNotHeld
 }
 func (s failingSessionStore) List() ([]session.State, error) { return nil, s.listErr }

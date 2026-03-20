@@ -9,6 +9,7 @@ import (
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -23,7 +24,7 @@ func (askAllWebSocketPolicy) Evaluate(_ context.Context, _ session.State, _ plan
 
 func TestWebSocketApprovalRespondAndResumeFlow(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	opts.Policy = askAllWebSocketPolicy{}
 	rt := hruntime.New(opts)
 

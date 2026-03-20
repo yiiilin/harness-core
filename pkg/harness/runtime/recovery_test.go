@@ -2,10 +2,13 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -17,7 +20,7 @@ import (
 
 func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt1 := hruntime.New(opts)
 	sess := mustCreateSession(t, rt1, "recovery", "mark in-flight and recover later")
 	_, err := rt1.MarkSessionInFlight(context.Background(), sess.SessionID, "step_1")
@@ -133,7 +136,7 @@ func TestRunSessionStopsOnPendingApprovalAndRecoverSessionResumesToCompletion(t 
 
 func TestRecoverSessionContinuesInterruptedSessionFromPersistedPlan(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 
 	sess := mustCreateSession(t, rt, "recover driver", "recover interrupted planned session")
@@ -161,6 +164,93 @@ func TestRecoverSessionContinuesInterruptedSessionFromPersistedPlan(t *testing.T
 	out, err := rt.RecoverSession(context.Background(), sess.SessionID)
 	if err != nil {
 		t.Fatalf("recover session: %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected recovered session to complete, got %#v", out.Session)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected one recovered step execution, got %#v", out.Executions)
+	}
+}
+
+func TestRecoverSessionRejectsActiveRecoverableLeaseWithoutLeaseID(t *testing.T) {
+	opts := hruntime.Options{}
+	builtins.Register(&opts)
+	rt := hruntime.New(opts)
+
+	sess := mustCreateSession(t, rt, "recover claimed", "direct recovery should not bypass an active lease")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "claim before recovery"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	if _, err := rt.CreatePlan(sess.SessionID, "claimed recovery plan", []plan.StepSpec{{
+		StepID: "step_claimed_recover",
+		Title:  "recover after claim",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo claimed", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+		}},
+	}}); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), sess.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRecoverableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim recoverable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected recoverable session to be claimed")
+	}
+	if claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected claimed session %s, got %#v", sess.SessionID, claimed)
+	}
+
+	if _, err := rt.RecoverSession(context.Background(), sess.SessionID); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected direct recovery without lease to fail, got %v", err)
+	}
+}
+
+func TestRecoverClaimedSessionContinuesInterruptedSession(t *testing.T) {
+	opts := hruntime.Options{}
+	builtins.Register(&opts)
+	rt := hruntime.New(opts)
+
+	sess := mustCreateSession(t, rt, "recover claimed", "claimed recovery should resume work")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "claim before recovery"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	if _, err := rt.CreatePlan(sess.SessionID, "claimed recovery plan", []plan.StepSpec{{
+		StepID: "step_claimed_recover",
+		Title:  "recover after claim",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo claimed", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			{Kind: "output_contains", Args: map[string]any{"text": "claimed"}},
+		}},
+	}}); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), sess.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRecoverableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim recoverable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected recoverable session to be claimed")
+	}
+
+	out, err := rt.RecoverClaimedSession(context.Background(), sess.SessionID, claimed.LeaseID)
+	if err != nil {
+		t.Fatalf("recover claimed session: %v", err)
 	}
 	if out.Session.Phase != session.PhaseComplete {
 		t.Fatalf("expected recovered session to complete, got %#v", out.Session)

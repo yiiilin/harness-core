@@ -18,6 +18,19 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 
 This facade is intended to remain the simplest public entry point.
 
+Preferred bare-kernel constructors:
+- `harness.New(opts)`
+- `harness.NewDefault()`
+
+Preferred builtins composition helper package:
+- `pkg/harness/builtins`
+- `builtins.New()`
+- `builtins.Register(&opts)`
+
+Compatibility wrappers on `pkg/harness` may remain for convenience, but the composition helper package is the clearer boundary.
+
+These convenience helpers may wire default module packs for local embedding, but they do not expand what the kernel owns.
+
 ---
 
 ## Public-facing packages (preferred)
@@ -35,6 +48,7 @@ These packages are the intended primary surfaces for consumers:
 - `pkg/harness/permission`
 - `pkg/harness/audit`
 - `pkg/harness/observability`
+- `pkg/harness/builtins`
 
 These packages define the kernel's reusable contracts and composition points.
 
@@ -50,6 +64,19 @@ These are useful, but consumers should expect them to evolve faster:
 Rationale:
 - modules are capability packs and may expand rapidly
 - adapters reflect transport/runtime choices and are not the kernel itself
+
+---
+
+## Purity constraints for `pkg/harness/*`
+
+The public package boundary should reinforce kernel scope, not weaken it.
+
+Rules:
+- `pkg/harness/*` must not import `adapters/*`
+- exported kernel types must not encode transport, auth, user, tenant, or UI concepts
+- module packs may register tools or verifiers, but module lifecycle and UX semantics should stay out of kernel domain objects
+- convenience bundle helpers should stay mechanically separate from the bare-kernel path whenever possible
+- `pkg/harness/runtime` should not directly import `modules/*`; composition should happen in a separate helper layer
 
 ---
 

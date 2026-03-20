@@ -12,6 +12,7 @@ import (
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 )
@@ -147,7 +148,7 @@ func TestWebSocketExposesExecutionFactListsAndEventReplay(t *testing.T) {
 
 func TestWebSocketApprovalRejectsInvalidAndRepeatedReplies(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	opts.Policy = askAllWebSocketPolicy{}
 	rt := hruntime.New(opts)
 

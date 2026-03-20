@@ -43,6 +43,11 @@ pkg/harness/
   observability/
   memory/
 
+modules/
+  shell/
+  filesystem/
+  http/
+
 adapters/
   websocket/
 
@@ -56,6 +61,12 @@ Rationale:
 - keep the runtime kernel small and reusable
 - keep transport and deployment concerns at the edge
 - make examples and adapters consumers of the same library contracts
+
+Preferred mental model:
+- bare kernel: `pkg/harness/runtime` plus the domain contracts under `pkg/harness/*`
+- capability packs: `modules/*`
+- transport bindings: `adapters/*`
+- ownership / auth / scheduling / UI product layer: embedding platform
 
 ---
 
@@ -129,6 +140,27 @@ See `docs/KERNEL_SCOPE.md`.
 
 ---
 
+## Multi-user / Multi-session Platform Embedding
+
+`harness-core` is intended to sit inside a platform that may host many users and many active sessions at once.
+
+The kernel must still own the runtime semantics that make that safe:
+- session claim / lease / reclaim primitives
+- approval blocking and resume semantics
+- restart-safe recovery behavior
+- durable execution facts and correlation ids
+
+The platform must own the concepts that make that a product:
+- actor identity
+- ownership and visibility
+- auth, quota, billing, and policy overlays
+- parent/child session trees and orchestration topology
+- transport protocols, worker fleets, and operator tooling
+
+This split is intentional. Multi-user scale is a deployment property, not a reason to move identity into the kernel.
+
+---
+
 ## Storage direction
 
 Chosen direction for v1:
@@ -171,6 +203,7 @@ Preferred long-term structure:
 - core contracts live in `pkg/harness/*`
 - capability packs live in `modules/*`
 - transport bindings live in `adapters/*`
+- orchestration trees above a session belong in an embedding layer, not in `session.State`
 
 See `docs/PACKAGE_BOUNDARIES.md` for guidance on which packages consumers should import directly.
 See `docs/KERNEL_SCOPE.md` for the rule set that decides whether a new concept belongs in the kernel at all.

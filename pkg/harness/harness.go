@@ -4,10 +4,12 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	hbuiltins "github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -32,6 +34,9 @@ type PlanStatus = plan.Status
 
 type StepSpec = plan.StepSpec
 type StepStatus = plan.StepStatus
+
+type PlanningRecord = planning.Record
+type PlanningStatus = planning.Status
 
 type ActionSpec = action.Spec
 type ActionResult = action.Result
@@ -110,13 +115,13 @@ func NewDefault() *Service {
 }
 
 // NewWithBuiltins constructs a runtime with default in-memory components and built-in tools/verifiers.
+// This is a convenience composition helper layered on top of the bare kernel path.
 func NewWithBuiltins() *Service {
-	opts := Options{}
-	RegisterBuiltins(&opts)
-	return hruntime.New(opts)
+	return hbuiltins.New()
 }
 
 // RegisterBuiltins wires the default built-in tools and verifiers into options.
+// This is a convenience composition helper layered on top of the bare kernel path.
 func RegisterBuiltins(opts *Options) {
-	hruntime.RegisterBuiltins(opts)
+	hbuiltins.Register(opts)
 }

@@ -42,6 +42,9 @@ That facade is intended to expose the kernel constructor plus the session-level 
 - context compaction
 - runtime handle lifecycle control
 
+A multi-user, multi-session agent platform should rely on the kernel for session correctness, recovery, approvals, and execution facts.
+It should keep identity, ownership, auth, quota, routing, and UI concerns outside the kernel.
+
 ---
 
 ## Main state machine
@@ -158,6 +161,28 @@ create session
 -> complete or fail
 -> optionally persist summary
 ```
+
+### Lease, heartbeat, and reclaim semantics
+
+The kernel exposes lease primitives so an embedding platform can coordinate runnable and recoverable sessions without pushing worker-fleet concepts into core.
+
+The contract is:
+- claim order is deterministic: oldest `created_at` wins, with `session_id` as the stable tie-breaker
+- `LeaseExpiresAt` is the authority boundary for a claim; once `now >= lease_expires_at`, the previous holder is stale
+- `RenewSessionLease` is the lease heartbeat API; a successful renew extends `LeaseExpiresAt` and refreshes `LastHeartbeatAt`
+- `LastHeartbeatAt` is an observational liveness timestamp, not an independent reclaim rule; reclaim decisions are driven by lease expiry
+- a stale holder cannot renew or release its lease; those calls fail with `session.ErrSessionLeaseNotHeld`
+- `ClaimRunnableSession` and `ClaimRecoverableSession` may reclaim work only when no active lease exists or the previous lease has expired
+
+Recovery follows the same rule:
+- `RecoverSession` is valid only when the session has no active recoverable lease
+- if a caller has already claimed a recoverable session, it must continue via `RecoverClaimedSession(session_id, lease_id)`
+- if another holder still owns an unexpired recoverable lease, recovery must fail cleanly rather than relying on transport-specific worker identity
+
+This gives the kernel a transport-neutral correctness rule:
+- active holder keeps exclusive recovery authority until lease expiry
+- after expiry, reclaim is explicit and deterministic
+- queue topology, worker pools, and heartbeating policy remain outside core
 
 ---
 

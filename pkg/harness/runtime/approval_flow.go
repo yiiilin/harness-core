@@ -142,6 +142,9 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	if updatedTaskUpdated && updatedTaskErr != nil {
 		return approval.Record{}, session.State{}, updatedTaskErr
 	}
+	if err == nil {
+		s.exportApprovalResponseObservability(context.Background(), st, rec)
+	}
 	_ = updatedPlan
 	return rec, st, err
 }

@@ -25,6 +25,7 @@ type Event struct {
 	Type           string         `json:"type"`
 	SessionID      string         `json:"session_id,omitempty"`
 	TaskID         string         `json:"task_id,omitempty"`
+	PlanningID     string         `json:"planning_id,omitempty"`
 	StepID         string         `json:"step_id,omitempty"`
 	AttemptID      string         `json:"attempt_id,omitempty"`
 	ActionID       string         `json:"action_id,omitempty"`

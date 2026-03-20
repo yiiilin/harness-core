@@ -10,6 +10,7 @@ import (
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -25,7 +26,7 @@ func (denyAllWebSocketPolicy) Evaluate(_ context.Context, _ session.State, _ pla
 func TestWebSocketPostgresStepRunHappyPath(t *testing.T) {
 	pg := postgrestest.Start(t)
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt, db := pg.OpenService(t, opts)
 	defer db.Close()
 
@@ -139,7 +140,7 @@ func TestWebSocketPostgresStepRunHappyPath(t *testing.T) {
 func TestWebSocketPostgresPolicyDenyPath(t *testing.T) {
 	pg := postgrestest.Start(t)
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	opts.Policy = denyAllWebSocketPolicy{}
 	rt, db := pg.OpenService(t, opts)
 	defer db.Close()

@@ -2,11 +2,13 @@ package runtime
 
 import (
 	"context"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 )
 
 const (
@@ -93,14 +95,14 @@ func capabilityViewIDFromStep(step plan.StepSpec) string {
 	return viewID
 }
 
-func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, changeReason string, steps []plan.StepSpec, view capability.View) (plan.Spec, error) {
+func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, changeReason string, steps []plan.StepSpec, view capability.View, planningRecord planning.Record) (plan.Spec, error) {
 	sess, err := s.Sessions.Get(sessionID)
 	if err != nil {
 		return plan.Spec{}, err
 	}
 
 	var created plan.Spec
-	create := func(planStore plan.Store, snapshotStore capability.SnapshotStore, sink EventSink) error {
+	create := func(planStore plan.Store, snapshotStore capability.SnapshotStore, planningStore planning.Store, sink EventSink) error {
 		if err := ensurePlanRevisionBudgetInStore(planStore, sessionID, s.LoopBudgets); err != nil {
 			return err
 		}
@@ -112,18 +114,35 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 		if err := persistCapabilityViewInStore(snapshotStore, created, view); err != nil {
 			return err
 		}
-		return s.emitEventsWithSink(ctx, sink, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		if planningStore != nil {
+			planningRecord.SessionID = created.SessionID
+			if planningRecord.TaskID == "" {
+				planningRecord.TaskID = sess.TaskID
+			}
+			planningRecord.PlanID = created.PlanID
+			planningRecord.PlanRevision = created.Revision
+			if planningRecord.FinishedAt == 0 {
+				planningRecord.FinishedAt = time.Now().UnixMilli()
+			}
+			if _, err := planningStore.Create(planningRecord); err != nil {
+				return err
+			}
+		}
+		event := newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 			"plan_id":       created.PlanID,
+			"planning_id":   planningRecord.PlanningID,
 			"revision":      created.Revision,
 			"change_reason": created.ChangeReason,
 			"step_count":    len(created.Steps),
-		})})
+		})
+		event.PlanningID = planningRecord.PlanningID
+		return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
 	}
 
 	if s.Runner != nil {
 		err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			return create(repoSet.Plans, repoSet.CapabilitySnapshots, s.eventSinkForRepos(repos))
+			return create(repoSet.Plans, repoSet.CapabilitySnapshots, repoSet.PlanningRecords, s.eventSinkForRepos(repos))
 		})
 		return created, err
 	}
@@ -138,12 +157,29 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 	if err := persistCapabilityViewInStore(s.CapabilitySnapshots, created, view); err != nil {
 		return plan.Spec{}, err
 	}
-	_ = s.emitEventsWithSink(ctx, s.EventSink, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+	if s.PlanningRecords != nil {
+		planningRecord.SessionID = created.SessionID
+		if planningRecord.TaskID == "" {
+			planningRecord.TaskID = sess.TaskID
+		}
+		planningRecord.PlanID = created.PlanID
+		planningRecord.PlanRevision = created.Revision
+		if planningRecord.FinishedAt == 0 {
+			planningRecord.FinishedAt = time.Now().UnixMilli()
+		}
+		if _, err := s.PlanningRecords.Create(planningRecord); err != nil {
+			return plan.Spec{}, err
+		}
+	}
+	event := newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 		"plan_id":       created.PlanID,
+		"planning_id":   planningRecord.PlanningID,
 		"revision":      created.Revision,
 		"change_reason": created.ChangeReason,
 		"step_count":    len(created.Steps),
-	})})
+	})
+	event.PlanningID = planningRecord.PlanningID
+	_ = s.emitEventsWithSink(ctx, s.EventSink, []audit.Event{event})
 	return created, nil
 }
 

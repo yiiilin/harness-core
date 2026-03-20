@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -105,6 +106,83 @@ func TestRenewAndReleaseSessionLease(t *testing.T) {
 	}
 	if released.LeaseID != "" || released.LeaseExpiresAt != 0 {
 		t.Fatalf("expected lease fields cleared after release, got %#v", released)
+	}
+}
+
+func TestReleaseSessionLeaseRejectsExpiredHolder(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	rt := hruntime.New(hruntime.Options{Sessions: sessions})
+
+	mustCreateSession(t, rt, "lease", "expired holders should not release")
+
+	claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected runnable session to be claimed")
+	}
+
+	stored, err := sessions.Get(claimed.SessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	stored.LeaseExpiresAt = time.Now().Add(-time.Second).UnixMilli()
+	stored.Version++
+	if err := sessions.Update(stored); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+
+	if _, err := rt.ReleaseSessionLease(context.Background(), claimed.SessionID, claimed.LeaseID); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected expired release to fail with lease-not-held, got %v", err)
+	}
+}
+
+func TestClaimRecoverableSessionReclaimsExpiredLeaseOnlyAfterExpiry(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	rt := hruntime.New(hruntime.Options{Sessions: sessions})
+
+	recoverable := mustCreateSession(t, rt, "recoverable", "reclaim only stale holders")
+	now := time.Now().UnixMilli()
+	recoverable.ExecutionState = session.ExecutionInterrupted
+	recoverable.Phase = session.PhaseRecover
+	recoverable.LeaseID = "lease_live"
+	recoverable.LeaseClaimedAt = now
+	recoverable.LeaseExpiresAt = now + int64(time.Minute/time.Millisecond)
+	recoverable.LastHeartbeatAt = now
+	recoverable.Version++
+	if err := sessions.Update(recoverable); err != nil {
+		t.Fatalf("update recoverable session: %v", err)
+	}
+
+	if _, ok, err := rt.ClaimRecoverableSession(context.Background(), time.Minute); err != nil {
+		t.Fatalf("claim recoverable session with live lease: %v", err)
+	} else if ok {
+		t.Fatalf("expected live recoverable lease to block reclaim")
+	}
+
+	stale, err := sessions.Get(recoverable.SessionID)
+	if err != nil {
+		t.Fatalf("get recoverable session: %v", err)
+	}
+	stale.LeaseExpiresAt = time.Now().Add(-time.Second).UnixMilli()
+	stale.Version++
+	if err := sessions.Update(stale); err != nil {
+		t.Fatalf("expire recoverable lease: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRecoverableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim stale recoverable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected stale recoverable lease to be reclaimable")
+	}
+	if claimed.SessionID != recoverable.SessionID {
+		t.Fatalf("expected recoverable session %s, got %#v", recoverable.SessionID, claimed)
+	}
+	if claimed.LeaseID == "" || claimed.LeaseID == "lease_live" {
+		t.Fatalf("expected reclaim to issue a fresh lease, got %#v", claimed)
 	}
 }
 

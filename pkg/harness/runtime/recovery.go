@@ -44,9 +44,9 @@ func (s *Service) ListRecoverableSessions() ([]session.State, error) {
 	return out, nil
 }
 
-func (s *Service) recoverSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
+func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
 	out := SessionRunOutput{}
-	state, err := s.GetSession(sessionID)
+	state, err := s.ensureRecoveryLease(sessionID, leaseID)
 	if err != nil {
 		return SessionRunOutput{}, err
 	}
@@ -97,6 +97,24 @@ func (s *Service) recoverSession(ctx context.Context, sessionID string) (Session
 		return SessionRunOutput{}, err
 	}
 	return mergeSessionRunOutputs(out, next), nil
+}
+
+func (s *Service) ensureRecoveryLease(sessionID, leaseID string) (session.State, error) {
+	st, err := s.GetSession(sessionID)
+	if err != nil {
+		return session.State{}, err
+	}
+	now := time.Now().UnixMilli()
+	if leaseID == "" {
+		if st.LeaseID != "" && st.LeaseExpiresAt > now {
+			return session.State{}, session.ErrSessionLeaseNotHeld
+		}
+		return st, nil
+	}
+	if st.LeaseID != leaseID || st.LeaseExpiresAt <= now {
+		return session.State{}, session.ErrSessionLeaseNotHeld
+	}
+	return st, nil
 }
 
 func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID string) (session.State, error) {

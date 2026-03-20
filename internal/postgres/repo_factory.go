@@ -9,6 +9,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/planning"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
@@ -24,6 +25,7 @@ type ActionFactory func(DBTX) execution.ActionStore
 type VerificationFactory func(DBTX) execution.VerificationStore
 type ArtifactFactory func(DBTX) execution.ArtifactStore
 type RuntimeHandleFactory func(DBTX) execution.RuntimeHandleStore
+type PlanningFactory func(DBTX) planning.Store
 
 // RepositoryFactory maps an active SQL transaction into a RepositorySet using
 // typed repository constructor functions.
@@ -39,6 +41,7 @@ type RepositoryFactory struct {
 	VerificationFactory       VerificationFactory
 	ArtifactFactory           ArtifactFactory
 	RuntimeHandleFactory      RuntimeHandleFactory
+	PlanningFactory           PlanningFactory
 }
 
 func (f RepositoryFactory) FromTx(tx persistence.Tx) persistence.RepositorySet {
@@ -79,6 +82,9 @@ func (f RepositoryFactory) FromTx(tx persistence.Tx) persistence.RepositorySet {
 	}
 	if f.RuntimeHandleFactory != nil {
 		repos.RuntimeHandles = f.RuntimeHandleFactory(dbtx)
+	}
+	if f.PlanningFactory != nil {
+		repos.PlanningRecords = f.PlanningFactory(dbtx)
 	}
 	return repos
 }

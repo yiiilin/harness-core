@@ -7,13 +7,14 @@ import (
 	"github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/postgresruntime"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
 
 func main() {
 	cfg := config.Load()
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 	if cfg.StorageMode == "postgres" {
 		var dbClose func() error

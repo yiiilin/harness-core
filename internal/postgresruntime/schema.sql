@@ -1,7 +1,6 @@
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
   task_id TEXT,
-  parent_session_id TEXT,
   title TEXT NOT NULL,
   goal TEXT,
   phase TEXT NOT NULL,
@@ -32,6 +31,9 @@ ALTER TABLE sessions
   ADD COLUMN IF NOT EXISTS lease_id TEXT,
   ADD COLUMN IF NOT EXISTS lease_claimed_at BIGINT,
   ADD COLUMN IF NOT EXISTS lease_expires_at BIGINT;
+
+ALTER TABLE sessions
+  DROP COLUMN IF EXISTS parent_session_id;
 
 CREATE TABLE IF NOT EXISTS tasks (
   task_id TEXT PRIMARY KEY,
@@ -84,6 +86,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   type TEXT NOT NULL,
   session_id TEXT,
   task_id TEXT,
+  planning_id TEXT,
   step_id TEXT,
   attempt_id TEXT,
   action_id TEXT,
@@ -98,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_session_created
 
 ALTER TABLE audit_events
   ADD COLUMN IF NOT EXISTS task_id TEXT,
+  ADD COLUMN IF NOT EXISTS planning_id TEXT,
   ADD COLUMN IF NOT EXISTS attempt_id TEXT,
   ADD COLUMN IF NOT EXISTS action_id TEXT,
   ADD COLUMN IF NOT EXISTS trace_id TEXT,
@@ -162,6 +166,25 @@ CREATE TABLE IF NOT EXISTS context_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_context_summaries_session_created
   ON context_summaries(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS planning_records (
+  planning_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  task_id TEXT,
+  status TEXT NOT NULL,
+  reason TEXT,
+  error TEXT,
+  plan_id TEXT,
+  plan_revision INTEGER NOT NULL DEFAULT 0,
+  capability_view_id TEXT,
+  context_summary_id TEXT,
+  metadata_json TEXT,
+  started_at BIGINT NOT NULL,
+  finished_at BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_planning_records_session_started
+  ON planning_records(session_id, started_at);
 
 CREATE TABLE IF NOT EXISTS attempts (
   attempt_id TEXT PRIMARY KEY,

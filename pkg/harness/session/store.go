@@ -14,7 +14,7 @@ type Store interface {
 	Update(next State) error
 	ClaimNext(mode ClaimMode, leaseID string, claimedAt, expiresAt int64) (State, bool, error)
 	RenewLease(sessionID, leaseID string, now, expiresAt int64) (State, error)
-	ReleaseLease(sessionID, leaseID string) (State, error)
+	ReleaseLease(sessionID, leaseID string, now int64) (State, error)
 	List() ([]State, error)
 }
 
@@ -89,13 +89,18 @@ func (s *MemoryStore) ClaimNext(mode ClaimMode, leaseID string, claimedAt, expir
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ids := make([]string, 0, len(s.sessions))
-	for id := range s.sessions {
-		ids = append(ids, id)
+	ordered := make([]State, 0, len(s.sessions))
+	for _, st := range s.sessions {
+		ordered = append(ordered, st)
 	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		st := s.sessions[id]
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].CreatedAt == ordered[j].CreatedAt {
+			return ordered[i].SessionID < ordered[j].SessionID
+		}
+		return ordered[i].CreatedAt < ordered[j].CreatedAt
+	})
+	for _, orderedState := range ordered {
+		st := s.sessions[orderedState.SessionID]
 		if !claimableState(st, mode, claimedAt) {
 			continue
 		}
@@ -105,7 +110,7 @@ func (s *MemoryStore) ClaimNext(mode ClaimMode, leaseID string, claimedAt, expir
 		st.LastHeartbeatAt = claimedAt
 		st.Version++
 		st.UpdatedAt = claimedAt
-		s.sessions[id] = st
+		s.sessions[st.SessionID] = st
 		return st, true, nil
 	}
 	return State{}, false, nil
@@ -119,7 +124,7 @@ func (s *MemoryStore) RenewLease(sessionID, leaseID string, now, expiresAt int64
 	if !ok {
 		return State{}, ErrSessionNotFound
 	}
-	if st.LeaseID != leaseID || leaseID == "" || st.LeaseExpiresAt <= now {
+	if !leaseHeldAt(st, leaseID, now) {
 		return State{}, ErrSessionLeaseNotHeld
 	}
 	st.LeaseExpiresAt = expiresAt
@@ -130,7 +135,7 @@ func (s *MemoryStore) RenewLease(sessionID, leaseID string, now, expiresAt int64
 	return st, nil
 }
 
-func (s *MemoryStore) ReleaseLease(sessionID, leaseID string) (State, error) {
+func (s *MemoryStore) ReleaseLease(sessionID, leaseID string, now int64) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -138,20 +143,20 @@ func (s *MemoryStore) ReleaseLease(sessionID, leaseID string) (State, error) {
 	if !ok {
 		return State{}, ErrSessionNotFound
 	}
-	if st.LeaseID != leaseID || leaseID == "" {
+	if !leaseHeldAt(st, leaseID, now) {
 		return State{}, ErrSessionLeaseNotHeld
 	}
 	st.LeaseID = ""
 	st.LeaseClaimedAt = 0
 	st.LeaseExpiresAt = 0
 	st.Version++
-	st.UpdatedAt = time.Now().UnixMilli()
+	st.UpdatedAt = now
 	s.sessions[sessionID] = st
 	return st, nil
 }
 
 func claimableState(st State, mode ClaimMode, now int64) bool {
-	if st.LeaseID != "" && st.LeaseExpiresAt > now {
+	if leaseActiveAt(st, now) {
 		return false
 	}
 	if st.PendingApprovalID != "" || st.ExecutionState == ExecutionAwaitingApproval {
@@ -168,4 +173,12 @@ func claimableState(st State, mode ClaimMode, now int64) bool {
 	default:
 		return false
 	}
+}
+
+func leaseActiveAt(st State, now int64) bool {
+	return st.LeaseID != "" && st.LeaseExpiresAt > now
+}
+
+func leaseHeldAt(st State, leaseID string, now int64) bool {
+	return leaseID != "" && st.LeaseID == leaseID && leaseActiveAt(st, now)
 }

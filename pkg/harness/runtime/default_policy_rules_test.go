@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -13,7 +14,7 @@ import (
 
 func TestRegisterBuiltinsComposesModuleDefaultPolicyRules(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 
 	sess := session.State{SessionID: "sess_policy", Phase: session.PhaseExecute}

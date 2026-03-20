@@ -18,13 +18,13 @@ func TestSessionRepoCreateGetUpdateList(t *testing.T) {
 	defer db.Close()
 	repo := sessionrepo.New(db)
 
-	createRows := sqlmock.NewRows([]string{"session_id", "task_id", "parent_session_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
-		AddRow("sess1", nil, nil, "demo", "goal", "received", nil, nil, 0, "idle", nil, nil, nil, nil, nil, int64(1), nil, "{}", int64(1), int64(1), int64(1))
+	createRows := sqlmock.NewRows([]string{"session_id", "task_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
+		AddRow("sess1", nil, "demo", "goal", "received", nil, nil, 0, "idle", nil, nil, nil, nil, nil, int64(1), nil, "{}", int64(1), int64(1), int64(1))
 	mock.ExpectQuery(regexp.QuoteMeta(`
 INSERT INTO sessions (
-  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+  session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 `)).WillReturnRows(createRows)
 	created, err := repo.Create("demo", "goal")
 	if err != nil {
@@ -37,10 +37,10 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 		t.Fatalf("expected version 1, got %d", created.Version)
 	}
 
-	getRows := sqlmock.NewRows([]string{"session_id", "task_id", "parent_session_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
-		AddRow("sess1", "task1", nil, "demo", "goal", "plan", nil, nil, 1, "idle", nil, nil, nil, nil, nil, int64(2), nil, "{}", int64(1), int64(1), int64(2))
+	getRows := sqlmock.NewRows([]string{"session_id", "task_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
+		AddRow("sess1", "task1", "demo", "goal", "plan", nil, nil, 1, "idle", nil, nil, nil, nil, nil, int64(2), nil, "{}", int64(1), int64(1), int64(2))
 	mock.ExpectQuery(regexp.QuoteMeta(`
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions WHERE session_id = $1
 `)).WithArgs("sess1").WillReturnRows(getRows)
 	got, err := repo.Get("sess1")
@@ -54,25 +54,24 @@ FROM sessions WHERE session_id = $1
 	mock.ExpectExec(regexp.QuoteMeta(`
 UPDATE sessions
 SET task_id = $2,
-    parent_session_id = $3,
-    title = $4,
-    goal = $5,
-    phase = $6,
-    current_step_id = $7,
-    summary = $8,
-    retry_count = $9,
-    execution_state = $10,
-    in_flight_step_id = $11,
-    pending_approval_id = $12,
-    lease_id = $13,
-    lease_claimed_at = $14,
-    lease_expires_at = $15,
-    last_heartbeat_at = $16,
-    interrupted_at = $17,
-    metadata_json = $18,
-    version = $19,
-    updated_at = $20
-WHERE session_id = $1 AND version = $21
+    title = $3,
+    goal = $4,
+    phase = $5,
+    current_step_id = $6,
+    summary = $7,
+    retry_count = $8,
+    execution_state = $9,
+    in_flight_step_id = $10,
+    pending_approval_id = $11,
+    lease_id = $12,
+    lease_claimed_at = $13,
+    lease_expires_at = $14,
+    last_heartbeat_at = $15,
+    interrupted_at = $16,
+    metadata_json = $17,
+    version = $18,
+    updated_at = $19
+WHERE session_id = $1 AND version = $20
 `)).WillReturnResult(sqlmock.NewResult(0, 1))
 	got.Summary = "done"
 	got.Version++
@@ -80,10 +79,10 @@ WHERE session_id = $1 AND version = $21
 		t.Fatalf("update: %v", err)
 	}
 
-	listRows := sqlmock.NewRows([]string{"session_id", "task_id", "parent_session_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
-		AddRow("sess1", "task1", nil, "demo", "goal", "plan", nil, "done", 1, "idle", nil, nil, nil, nil, nil, int64(3), nil, "{}", int64(2), int64(1), int64(3))
+	listRows := sqlmock.NewRows([]string{"session_id", "task_id", "title", "goal", "phase", "current_step_id", "summary", "retry_count", "execution_state", "in_flight_step_id", "pending_approval_id", "lease_id", "lease_claimed_at", "lease_expires_at", "last_heartbeat_at", "interrupted_at", "metadata_json", "version", "created_at", "updated_at"}).
+		AddRow("sess1", "task1", "demo", "goal", "plan", nil, "done", 1, "idle", nil, nil, nil, nil, nil, int64(3), nil, "{}", int64(2), int64(1), int64(3))
 	mock.ExpectQuery(regexp.QuoteMeta(`
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions
 ORDER BY updated_at DESC
 `)).WillReturnRows(listRows)
@@ -113,7 +112,7 @@ func TestSessionRepoGetReturnsStorageError(t *testing.T) {
 	repo := sessionrepo.New(db)
 	boom := errors.New("storage unavailable")
 	mock.ExpectQuery(regexp.QuoteMeta(`
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions WHERE session_id = $1
 `)).WithArgs("sess1").WillReturnError(boom)
 
@@ -134,9 +133,9 @@ func TestSessionRepoCreateAndListReturnStorageErrors(t *testing.T) {
 	createBoom := errors.New("insert failed")
 	mock.ExpectQuery(regexp.QuoteMeta(`
 INSERT INTO sessions (
-  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+  session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 `)).WillReturnError(createBoom)
 	if _, err := repo.Create("demo", "goal"); !errors.Is(err, createBoom) {
 		t.Fatalf("expected create storage error, got %v", err)
@@ -144,7 +143,7 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 
 	listBoom := errors.New("list failed")
 	mock.ExpectQuery(regexp.QuoteMeta(`
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
+SELECT session_id, task_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, lease_id, lease_claimed_at, lease_expires_at, last_heartbeat_at, interrupted_at, metadata_json, version, created_at, updated_at
 FROM sessions
 ORDER BY updated_at DESC
 `)).WillReturnError(listBoom)
@@ -177,25 +176,24 @@ func TestSessionRepoUpdateReturnsVersionConflictOrNotFound(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta(`
 UPDATE sessions
 SET task_id = $2,
-    parent_session_id = $3,
-    title = $4,
-    goal = $5,
-    phase = $6,
-    current_step_id = $7,
-    summary = $8,
-    retry_count = $9,
-    execution_state = $10,
-    in_flight_step_id = $11,
-    pending_approval_id = $12,
-    lease_id = $13,
-    lease_claimed_at = $14,
-    lease_expires_at = $15,
-    last_heartbeat_at = $16,
-    interrupted_at = $17,
-    metadata_json = $18,
-    version = $19,
-    updated_at = $20
-WHERE session_id = $1 AND version = $21
+    title = $3,
+    goal = $4,
+    phase = $5,
+    current_step_id = $6,
+    summary = $7,
+    retry_count = $8,
+    execution_state = $9,
+    in_flight_step_id = $10,
+    pending_approval_id = $11,
+    lease_id = $12,
+    lease_claimed_at = $13,
+    lease_expires_at = $14,
+    last_heartbeat_at = $15,
+    interrupted_at = $16,
+    metadata_json = $17,
+    version = $18,
+    updated_at = $19
+WHERE session_id = $1 AND version = $20
 `)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT 1 FROM sessions WHERE session_id = $1`)).
 		WithArgs("sess1").
@@ -207,25 +205,24 @@ WHERE session_id = $1 AND version = $21
 	mock.ExpectExec(regexp.QuoteMeta(`
 UPDATE sessions
 SET task_id = $2,
-    parent_session_id = $3,
-    title = $4,
-    goal = $5,
-    phase = $6,
-    current_step_id = $7,
-    summary = $8,
-    retry_count = $9,
-    execution_state = $10,
-    in_flight_step_id = $11,
-    pending_approval_id = $12,
-    lease_id = $13,
-    lease_claimed_at = $14,
-    lease_expires_at = $15,
-    last_heartbeat_at = $16,
-    interrupted_at = $17,
-    metadata_json = $18,
-    version = $19,
-    updated_at = $20
-WHERE session_id = $1 AND version = $21
+    title = $3,
+    goal = $4,
+    phase = $5,
+    current_step_id = $6,
+    summary = $7,
+    retry_count = $8,
+    execution_state = $9,
+    in_flight_step_id = $10,
+    pending_approval_id = $11,
+    lease_id = $12,
+    lease_claimed_at = $13,
+    lease_expires_at = $14,
+    last_heartbeat_at = $15,
+    interrupted_at = $16,
+    metadata_json = $17,
+    version = $18,
+    updated_at = $19
+WHERE session_id = $1 AND version = $20
 `)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT 1 FROM sessions WHERE session_id = $1`)).
 		WithArgs("sess1").

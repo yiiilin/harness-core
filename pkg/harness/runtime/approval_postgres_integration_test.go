@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -17,7 +18,7 @@ func TestApprovalFlowPersistsAcrossPostgresRuntimeReinit(t *testing.T) {
 	pg := postgrestest.Start(t)
 
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	opts.Policy = askPolicy{}
 
 	rt1, db1 := pg.OpenService(t, opts)
@@ -82,7 +83,7 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 	pg := postgrestest.Start(t)
 
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 
 	rt1, db1 := pg.OpenService(t, opts)
 

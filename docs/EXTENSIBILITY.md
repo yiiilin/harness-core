@@ -91,8 +91,13 @@ type Planner interface {
 Good:
 
 ```go
+import (
+    "github.com/yiiilin/harness-core/pkg/harness"
+    "github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
+
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 opts.Policy = myPolicy
 opts.ContextAssembler = myAssembler
 rt := harness.New(opts)
@@ -103,6 +108,7 @@ Good:
 - shell module exposes `Backend`
 - shell module exposes `SandboxHook`
 - modules expose `DefaultPolicyRules()` while core keeps the evaluator/composition logic
+- a separate builtins composition helper may assemble several modules without making the runtime package own them
 
 ### Avoid: global ad-hoc flags
 Avoid:

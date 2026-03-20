@@ -18,10 +18,18 @@ See `docs/KERNEL_SCOPE.md`.
 ## Recommended public surface
 
 ### Top-level constructor path
-- `harness.New(opts)`
-- `harness.NewDefault()`
-- `harness.NewWithBuiltins()`
-- `harness.RegisterBuiltins(&opts)`
+- bare-kernel constructors:
+  - `harness.New(opts)`
+  - `harness.NewDefault()`
+- convenience composition package:
+  - `builtins.New()`
+  - `builtins.Register(&opts)`
+- compatibility wrappers on `pkg/harness` remain available:
+  - `harness.NewWithBuiltins()`
+  - `harness.RegisterBuiltins(&opts)`
+
+The convenience helpers may wire default capability modules, but they do not make module, transport, auth, or tenant concerns part of the kernel contract.
+The separation exists so `pkg/harness/runtime` stays a bare kernel package rather than the owner of built-in capability packs.
 
 ### Recommended kernel entrypoints
 - session/task/plan lifecycle:
@@ -34,6 +42,7 @@ See `docs/KERNEL_SCOPE.md`.
   - `RunStep`
   - `RunSession`
   - `RecoverSession`
+  - `RecoverClaimedSession`
   - `AbortSession`
 - approval / coordination control plane:
   - `RespondApproval`
@@ -103,6 +112,7 @@ Intent:
 - `pkg/harness/audit`
 - `pkg/harness/persistence`
 - `pkg/harness/executor/shell`
+- `pkg/harness/builtins`
 
 Intent:
 - these packages are importable and supported
@@ -125,12 +135,18 @@ The planner/context API is intentionally narrow:
 - context assembler produces the structured input for that decision
 - runtime execution remains explicit
 - the top-level facade does not wrap transport or identity concerns
+- multi-user / multi-session ownership stays in the embedding platform, not the facade
 
 Typical construction path:
 
 ```go
+import (
+	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+)
+
 opts := harness.Options{}
-harness.RegisterBuiltins(&opts)
+builtins.Register(&opts)
 rt := harness.New(opts).
 	WithPlanner(myPlanner).
 	WithContextAssembler(myAssembler)

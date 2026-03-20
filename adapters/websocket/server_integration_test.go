@@ -9,6 +9,7 @@ import (
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
 	"github.com/yiiilin/harness-core/internal/config"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
 
@@ -35,7 +36,7 @@ func mustRecv(t *testing.T, conn *gorillaws.Conn) map[string]any {
 
 func TestWebSocketHappyPath(t *testing.T) {
 	opts := hruntime.Options{}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 	srv := adapterws.New(config.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
@@ -62,6 +63,13 @@ func TestWebSocketHappyPath(t *testing.T) {
 	infoResp := mustRecv(t, conn)
 	if ok, _ := infoResp["ok"].(bool); !ok {
 		t.Fatalf("expected runtime.info ok, got %#v", infoResp)
+	}
+	infoResult, _ := infoResp["result"].(map[string]any)
+	if _, ok := infoResult["transport"]; ok {
+		t.Fatalf("expected runtime.info to omit transport metadata, got %#v", infoResult)
+	}
+	if _, ok := infoResult["auth_mode"]; ok {
+		t.Fatalf("expected runtime.info to omit auth metadata, got %#v", infoResult)
 	}
 
 	if err := conn.WriteJSON(envelope{ID: "3", Type: "request", Action: "session.create", Payload: map[string]any{"title": "ws-test", "goal": "check websocket path"}}); err != nil {

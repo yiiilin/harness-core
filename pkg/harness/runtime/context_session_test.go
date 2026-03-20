@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -71,7 +72,7 @@ func TestRecoverSessionPersistsRecoveryCompactionSummary(t *testing.T) {
 		Compactor:        compactor,
 		ContextSummaries: summaries,
 	}
-	hruntime.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := hruntime.New(opts)
 
 	sess := mustCreateSession(t, rt, "recovery compaction", "persist recovery-phase summaries")

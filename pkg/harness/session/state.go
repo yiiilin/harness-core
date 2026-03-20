@@ -32,7 +32,6 @@ const (
 type State struct {
 	SessionID         string         `json:"session_id"`
 	TaskID            string         `json:"task_id,omitempty"`
-	ParentSessionID   string         `json:"parent_session_id,omitempty"`
 	Title             string         `json:"title"`
 	Goal              string         `json:"goal,omitempty"`
 	Phase             Phase          `json:"phase"`
