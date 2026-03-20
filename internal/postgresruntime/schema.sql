@@ -11,15 +11,27 @@ CREATE TABLE IF NOT EXISTS sessions (
   execution_state TEXT NOT NULL DEFAULT 'idle',
   in_flight_step_id TEXT,
   pending_approval_id TEXT,
+  lease_id TEXT,
+  lease_claimed_at BIGINT,
+  lease_expires_at BIGINT,
   last_heartbeat_at BIGINT,
   interrupted_at BIGINT,
   metadata_json TEXT,
+  version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
 
 ALTER TABLE sessions
   ADD COLUMN IF NOT EXISTS pending_approval_id TEXT;
+
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS lease_id TEXT,
+  ADD COLUMN IF NOT EXISTS lease_claimed_at BIGINT,
+  ADD COLUMN IF NOT EXISTS lease_expires_at BIGINT;
 
 CREATE TABLE IF NOT EXISTS tasks (
   task_id TEXT PRIMARY KEY,
@@ -106,12 +118,16 @@ CREATE TABLE IF NOT EXISTS approvals (
   requested_at BIGINT NOT NULL,
   responded_at BIGINT,
   consumed_at BIGINT,
+  version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_session_requested
   ON approvals(session_id, requested_at);
+
+ALTER TABLE approvals
+  ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS capability_snapshots (
   snapshot_id TEXT PRIMARY KEY,

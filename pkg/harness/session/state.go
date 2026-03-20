@@ -3,6 +3,7 @@ package session
 type Phase string
 
 type ExecutionState string
+type ClaimMode string
 
 const (
 	PhaseReceived Phase = "received"
@@ -23,6 +24,11 @@ const (
 	ExecutionAwaitingApproval ExecutionState = "awaiting_approval"
 )
 
+const (
+	ClaimModeRunnable    ClaimMode = "runnable"
+	ClaimModeRecoverable ClaimMode = "recoverable"
+)
+
 type State struct {
 	SessionID         string         `json:"session_id"`
 	TaskID            string         `json:"task_id,omitempty"`
@@ -36,9 +42,13 @@ type State struct {
 	ExecutionState    ExecutionState `json:"execution_state"`
 	InFlightStepID    string         `json:"in_flight_step_id,omitempty"`
 	PendingApprovalID string         `json:"pending_approval_id,omitempty"`
+	LeaseID           string         `json:"lease_id,omitempty"`
+	LeaseClaimedAt    int64          `json:"lease_claimed_at,omitempty"`
+	LeaseExpiresAt    int64          `json:"lease_expires_at,omitempty"`
 	LastHeartbeatAt   int64          `json:"last_heartbeat_at,omitempty"`
 	InterruptedAt     int64          `json:"interrupted_at,omitempty"`
 	Metadata          map[string]any `json:"metadata,omitempty"`
+	Version           int64          `json:"version"`
 	CreatedAt         int64          `json:"created_at"`
 	UpdatedAt         int64          `json:"updated_at"`
 }

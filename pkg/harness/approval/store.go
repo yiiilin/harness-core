@@ -56,6 +56,7 @@ type Record struct {
 	RequestedAt int64          `json:"requested_at"`
 	RespondedAt int64          `json:"responded_at,omitempty"`
 	ConsumedAt  int64          `json:"consumed_at,omitempty"`
+	Version     int64          `json:"version"`
 	CreatedAt   int64          `json:"created_at"`
 	UpdatedAt   int64          `json:"updated_at"`
 }
@@ -136,6 +137,7 @@ func (s *MemoryStore) CreatePending(req Request) (Record, error) {
 		Step:        req.Step,
 		Metadata:    req.Metadata,
 		RequestedAt: now,
+		Version:     1,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -158,8 +160,15 @@ func (s *MemoryStore) Get(id string) (Record, error) {
 func (s *MemoryStore) Update(next Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.approvals[next.ApprovalID]; !ok {
+	current, ok := s.approvals[next.ApprovalID]
+	if !ok {
 		return ErrApprovalNotFound
+	}
+	if next.Version != current.Version+1 {
+		return ErrApprovalVersionConflict
+	}
+	if next.CreatedAt == 0 {
+		next.CreatedAt = current.CreatedAt
 	}
 	next.UpdatedAt = time.Now().UnixMilli()
 	s.approvals[next.ApprovalID] = next

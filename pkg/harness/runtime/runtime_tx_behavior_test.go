@@ -79,6 +79,7 @@ func seedHappyStep(tb testing.TB, rt *hruntime.Service) (session.State, plan.Ste
 	sess.TaskID = tsk.TaskID
 	sess.Goal = tsk.Goal
 	sess.Phase = session.PhaseReceived
+	sess.Version++
 	if err := rt.Sessions.Update(sess); err != nil {
 		tb.Fatalf("seed session attach: %v", err)
 	}

@@ -79,6 +79,8 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		})
 		st.ExecutionState = session.ExecutionIdle
 	}
+	rec.Version++
+	st.Version++
 
 	if s.Runner != nil {
 		err = s.Runner.Within(context.Background(), func(repos persistence.RepositorySet) error {

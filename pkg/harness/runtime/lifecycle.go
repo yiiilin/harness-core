@@ -107,6 +107,7 @@ func (s *Service) attachTaskToSession(sessionID, taskID string) (session.State, 
 		sess.TaskID = tsk.TaskID
 		sess.Goal = tsk.Goal
 		sess.Phase = session.PhaseReceived
+		sess.Version++
 		if err := sessStore.Update(sess); err != nil {
 			return err
 		}

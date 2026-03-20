@@ -14,9 +14,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   execution_state TEXT NOT NULL DEFAULT 'idle',
   in_flight_step_id TEXT,
   pending_approval_id TEXT,
+  lease_id TEXT,
+  lease_claimed_at BIGINT,
+  lease_expires_at BIGINT,
   last_heartbeat_at BIGINT,
   interrupted_at BIGINT,
   metadata_json TEXT,
+  version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   requested_at BIGINT NOT NULL,
   responded_at BIGINT,
   consumed_at BIGINT,
+  version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );

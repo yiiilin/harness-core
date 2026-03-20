@@ -128,6 +128,7 @@ func (s *Service) updateRecoveryState(ctx context.Context, mutate func(session.S
 			return err
 		}
 		updated = mutate(st)
+		updated.Version++
 		return store.Update(updated)
 	}
 

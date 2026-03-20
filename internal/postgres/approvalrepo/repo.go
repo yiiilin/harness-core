@@ -28,10 +28,10 @@ func (r *Repo) CreatePending(req approval.Request) (approval.Record, error) {
 	metadataJSON, _ := json.Marshal(req.Metadata)
 	row := r.db.QueryRowContext(ctx, `
 INSERT INTO approvals (
-  approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, created_at, updated_at
-`, newID(), req.SessionID, nullable(req.TaskID), nullable(req.StepID), nullable(req.ToolName), nullable(req.Reason), nullable(req.MatchedRule), string(approval.StatusPending), nil, string(stepJSON), nullableJSON(metadataJSON), now, nil, nil, now, now)
+  approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, version, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, version, created_at, updated_at
+`, newID(), req.SessionID, nullable(req.TaskID), nullable(req.StepID), nullable(req.ToolName), nullable(req.Reason), nullable(req.MatchedRule), string(approval.StatusPending), nil, string(stepJSON), nullableJSON(metadataJSON), now, nil, nil, 1, now, now)
 	rec, err := scanRecord(row.Scan)
 	if err != nil {
 		return approval.Record{}, err
@@ -42,7 +42,7 @@ RETURNING approval_id, session_id, task_id, step_id, tool_name, reason, matched_
 func (r *Repo) Get(id string) (approval.Record, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, created_at, updated_at
+SELECT approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, version, created_at, updated_at
 FROM approvals WHERE approval_id = $1
 `, id)
 	return scanRecord(row.Scan)
@@ -59,7 +59,7 @@ func (r *Repo) Update(next approval.Record) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `
+	result, err := r.db.ExecContext(ctx, `
 UPDATE approvals
 SET session_id = $2,
     task_id = $3,
@@ -74,16 +74,27 @@ SET session_id = $2,
     requested_at = $12,
     responded_at = $13,
     consumed_at = $14,
-    updated_at = $15
-WHERE approval_id = $1
-`, next.ApprovalID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ToolName), nullable(next.Reason), nullable(next.MatchedRule), string(next.Status), nullable(string(next.Reply)), string(stepJSON), nullableJSON(metadataJSON), next.RequestedAt, nullableInt64(next.RespondedAt), nullableInt64(next.ConsumedAt), next.UpdatedAt)
-	return err
+    version = $15,
+    updated_at = $16
+WHERE approval_id = $1 AND version = $17
+`, next.ApprovalID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ToolName), nullable(next.Reason), nullable(next.MatchedRule), string(next.Status), nullable(string(next.Reply)), string(stepJSON), nullableJSON(metadataJSON), next.RequestedAt, nullableInt64(next.RespondedAt), nullableInt64(next.ConsumedAt), next.Version, next.UpdatedAt, next.Version-1)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows > 0 {
+		return nil
+	}
+	return r.classifyUpdateErr(ctx, next.ApprovalID)
 }
 
 func (r *Repo) List(sessionID string) ([]approval.Record, error) {
 	ctx := context.Background()
 	query := `
-SELECT approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, created_at, updated_at
+SELECT approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, version, created_at, updated_at
 FROM approvals
 `
 	args := []any{}
@@ -173,7 +184,7 @@ func scanRecord(scan scanner) (approval.Record, error) {
 	var taskID, stepID, toolName, reason, matchedRule, reply, metadataRaw sqlNullString
 	var respondedAt, consumedAt sqlNullInt64
 	var status, stepRaw string
-	if err := scan(&rec.ApprovalID, &rec.SessionID, &taskID, &stepID, &toolName, &reason, &matchedRule, &status, &reply, &stepRaw, &metadataRaw, &rec.RequestedAt, &respondedAt, &consumedAt, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
+	if err := scan(&rec.ApprovalID, &rec.SessionID, &taskID, &stepID, &toolName, &reason, &matchedRule, &status, &reply, &stepRaw, &metadataRaw, &rec.RequestedAt, &respondedAt, &consumedAt, &rec.Version, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
 		return approval.Record{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
@@ -228,4 +239,16 @@ func translateErr(err error) error {
 		return approval.ErrApprovalNotFound
 	}
 	return err
+}
+
+func (r *Repo) classifyUpdateErr(ctx context.Context, approvalID string) error {
+	row := r.db.QueryRowContext(ctx, `SELECT 1 FROM approvals WHERE approval_id = $1`, approvalID)
+	var exists int
+	if err := row.Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return approval.ErrApprovalNotFound
+		}
+		return err
+	}
+	return approval.ErrApprovalVersionConflict
 }

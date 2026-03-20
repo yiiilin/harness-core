@@ -77,6 +77,7 @@ func TestRunStepRejectsWhenTotalRuntimeBudgetExceeded(t *testing.T) {
 		t.Fatalf("attach task: %v", err)
 	}
 	attached.CreatedAt = time.Now().Add(-time.Minute).UnixMilli()
+	attached.Version++
 	if err := sessions.Update(attached); err != nil {
 		t.Fatalf("update session: %v", err)
 	}

@@ -13,9 +13,11 @@ const (
 	EventToolFailed        = "tool.failed"
 	EventVerifyCompleted   = "verify.completed"
 	EventStateChanged      = "state.changed"
+	EventSessionAborted    = "session.aborted"
 	EventPolicyDenied      = "policy.denied"
 	EventTaskCompleted     = "task.completed"
 	EventTaskFailed        = "task.failed"
+	EventTaskAborted       = "task.aborted"
 )
 
 type Event struct {

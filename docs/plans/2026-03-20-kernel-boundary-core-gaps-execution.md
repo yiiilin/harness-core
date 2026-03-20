@@ -74,10 +74,10 @@ Kernel admission test for new concepts:
 - Test: `internal/postgres/sessionrepo/*_test.go`
 - Test: `internal/postgres/approvalrepo/*_test.go`
 
-- [ ] Add kernel-level version / revision fields and any minimal lease metadata required to prevent blind overwrite of mutable coordination records.
-- [ ] Change mutable session and approval store update paths from blind writes to compare-and-swap style updates that fail cleanly on stale state.
-- [ ] Ensure runtime recovery, approval response, and resume flows surface concurrency conflicts as runtime errors instead of silently clobbering state.
-- [ ] Add in-memory and Postgres regression coverage proving concurrent resume/respond/recover attempts cannot both commit as winners.
+- [x] Add kernel-level version / revision fields and any minimal lease metadata required to prevent blind overwrite of mutable coordination records.
+- [x] Change mutable session and approval store update paths from blind writes to compare-and-swap style updates that fail cleanly on stale state.
+- [x] Ensure runtime recovery, approval response, and resume flows surface concurrency conflicts as runtime errors instead of silently clobbering state.
+- [x] Add in-memory and Postgres regression coverage proving concurrent resume/respond/recover attempts cannot both commit as winners.
 
 ### Task 3: Add transport-neutral claim / lease primitives for runnable work
 
@@ -92,10 +92,10 @@ Kernel admission test for new concepts:
 - Test: `pkg/harness/runtime/*coordination*_test.go`
 - Test: `internal/postgres/sessionrepo/*_test.go`
 
-- [ ] Add a minimal kernel coordination API for claiming runnable or recoverable sessions without introducing queueing, tenancy, or worker-fleet concepts.
-- [ ] Add lease renewal and release semantics so a caller can continue or abandon a claim without relying on transport-specific state.
-- [ ] Ensure selection excludes terminal sessions and approval-blocked sessions while still allowing interrupted sessions to be reclaimed safely.
-- [ ] Add concurrency tests proving two workers cannot claim the same runnable session at the same time.
+- [x] Add a minimal kernel coordination API for claiming runnable or recoverable sessions without introducing queueing, tenancy, or worker-fleet concepts.
+- [x] Add lease renewal and release semantics so a caller can continue or abandon a claim without relying on transport-specific state.
+- [x] Ensure selection excludes terminal sessions and approval-blocked sessions while still allowing interrupted sessions to be reclaimed safely.
+- [x] Add concurrency tests proving two workers cannot claim the same runnable session at the same time.
 
 ### Task 4: Add abort / cancel control-plane semantics to the kernel
 
@@ -108,10 +108,10 @@ Kernel admission test for new concepts:
 - Modify: `pkg/harness/audit/event.go`
 - Test: `pkg/harness/runtime/*abort*_test.go`
 
-- [ ] Add a transport-neutral runtime API for aborting a session with a structured reason while keeping user-facing wording and UX out of core.
-- [ ] Define how abort interacts with pending approvals, in-flight execution, recoverable sessions, and already-terminal sessions.
-- [ ] Ensure abort transitions, task/session terminal updates, and audit events occur through the same persistence boundary as other runtime state changes.
-- [ ] Add regression coverage proving aborted sessions cannot be resumed, re-run, or recovered accidentally.
+- [x] Add a transport-neutral runtime API for aborting a session with a structured reason while keeping user-facing wording and UX out of core.
+- [x] Define how abort interacts with pending approvals, in-flight execution, recoverable sessions, and already-terminal sessions.
+- [x] Ensure abort transitions, task/session terminal updates, and audit events occur through the same persistence boundary as other runtime state changes.
+- [x] Add regression coverage proving aborted sessions cannot be resumed, re-run, or recovered accidentally.
 
 ### Task 5: Turn runtime handles into a managed kernel control surface
 

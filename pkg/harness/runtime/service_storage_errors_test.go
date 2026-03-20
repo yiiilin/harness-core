@@ -21,10 +21,23 @@ type failingSessionStore struct {
 	listErr   error
 }
 
-func (s failingSessionStore) Create(string, string) (session.State, error) { return session.State{}, s.createErr }
-func (s failingSessionStore) Get(string) (session.State, error)            { return session.State{}, session.ErrSessionNotFound }
-func (s failingSessionStore) Update(session.State) error                   { return nil }
-func (s failingSessionStore) List() ([]session.State, error)               { return nil, s.listErr }
+func (s failingSessionStore) Create(string, string) (session.State, error) {
+	return session.State{}, s.createErr
+}
+func (s failingSessionStore) Get(string) (session.State, error) {
+	return session.State{}, session.ErrSessionNotFound
+}
+func (s failingSessionStore) Update(session.State) error { return nil }
+func (s failingSessionStore) ClaimNext(session.ClaimMode, string, int64, int64) (session.State, bool, error) {
+	return session.State{}, false, s.listErr
+}
+func (s failingSessionStore) RenewLease(string, string, int64, int64) (session.State, error) {
+	return session.State{}, session.ErrSessionLeaseNotHeld
+}
+func (s failingSessionStore) ReleaseLease(string, string) (session.State, error) {
+	return session.State{}, session.ErrSessionLeaseNotHeld
+}
+func (s failingSessionStore) List() ([]session.State, error) { return nil, s.listErr }
 
 type failingTaskStore struct {
 	createErr error
@@ -32,9 +45,11 @@ type failingTaskStore struct {
 }
 
 func (s failingTaskStore) Create(task.Spec) (task.Record, error) { return task.Record{}, s.createErr }
-func (s failingTaskStore) Get(string) (task.Record, error)       { return task.Record{}, task.ErrTaskNotFound }
-func (s failingTaskStore) Update(task.Record) error              { return nil }
-func (s failingTaskStore) List() ([]task.Record, error)          { return nil, s.listErr }
+func (s failingTaskStore) Get(string) (task.Record, error) {
+	return task.Record{}, task.ErrTaskNotFound
+}
+func (s failingTaskStore) Update(task.Record) error     { return nil }
+func (s failingTaskStore) List() ([]task.Record, error) { return nil, s.listErr }
 
 type failingPlanStore struct {
 	createErr error
@@ -44,10 +59,12 @@ type failingPlanStore struct {
 func (s failingPlanStore) Create(string, string, []plan.StepSpec) (plan.Spec, error) {
 	return plan.Spec{}, s.createErr
 }
-func (s failingPlanStore) Get(string) (plan.Spec, error)                        { return plan.Spec{}, plan.ErrPlanNotFound }
-func (s failingPlanStore) ListBySession(string) ([]plan.Spec, error)            { return nil, s.listErr }
-func (s failingPlanStore) LatestBySession(string) (plan.Spec, bool, error)      { return plan.Spec{}, false, s.listErr }
-func (s failingPlanStore) Update(plan.Spec) error                               { return nil }
+func (s failingPlanStore) Get(string) (plan.Spec, error)             { return plan.Spec{}, plan.ErrPlanNotFound }
+func (s failingPlanStore) ListBySession(string) ([]plan.Spec, error) { return nil, s.listErr }
+func (s failingPlanStore) LatestBySession(string) (plan.Spec, bool, error) {
+	return plan.Spec{}, false, s.listErr
+}
+func (s failingPlanStore) Update(plan.Spec) error { return nil }
 
 type failingAuditStoreForList struct{ listErr error }
 
@@ -59,17 +76,17 @@ func TestServiceCreateAndListSurfaceStoreErrors(t *testing.T) {
 	listErr := errors.New("list failed")
 
 	rt := hruntime.New(hruntime.Options{
-		Sessions: failingSessionStore{createErr: createErr, listErr: listErr},
-		Tasks:    failingTaskStore{createErr: createErr, listErr: listErr},
-		Plans:    failingPlanStore{createErr: createErr, listErr: listErr},
-		Audit:    failingAuditStoreForList{listErr: listErr},
-		Approvals: approval.NewMemoryStore(),
-		Attempts:  execution.NewMemoryAttemptStore(),
-		Actions:   execution.NewMemoryActionStore(),
-		Verifications: execution.NewMemoryVerificationStore(),
-		Artifacts: execution.NewMemoryArtifactStore(),
+		Sessions:            failingSessionStore{createErr: createErr, listErr: listErr},
+		Tasks:               failingTaskStore{createErr: createErr, listErr: listErr},
+		Plans:               failingPlanStore{createErr: createErr, listErr: listErr},
+		Audit:               failingAuditStoreForList{listErr: listErr},
+		Approvals:           approval.NewMemoryStore(),
+		Attempts:            execution.NewMemoryAttemptStore(),
+		Actions:             execution.NewMemoryActionStore(),
+		Verifications:       execution.NewMemoryVerificationStore(),
+		Artifacts:           execution.NewMemoryArtifactStore(),
 		CapabilitySnapshots: capability.NewMemorySnapshotStore(),
-		ContextSummaries: hruntime.NewMemoryContextSummaryStore(),
+		ContextSummaries:    hruntime.NewMemoryContextSummaryStore(),
 	})
 
 	if _, err := rt.CreateSession("bad", "create"); !errors.Is(err, createErr) {

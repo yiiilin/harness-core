@@ -188,6 +188,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 					return err
 				}
 				updatedTask = taskRec
+				state.Version++
 				if err := repoSet.Sessions.Update(state); err != nil {
 					return err
 				}
@@ -215,6 +216,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+			state.Version++
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
@@ -287,6 +289,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 					return err
 				}
 				updatedTask = taskRec
+				state.Version++
 				if err := repoSet.Sessions.Update(state); err != nil {
 					return err
 				}
@@ -303,6 +306,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		} else {
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+			state.Version++
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
@@ -475,6 +479,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				return err
 			}
 			updatedTask = taskRec
+			state.Version++
 			if err := repoSet.Sessions.Update(state); err != nil {
 				return err
 			}
@@ -488,6 +493,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				return err
 			}
 			if finalizedApproval != nil && repoSet.Approvals != nil {
+				finalizedApproval.Version++
 				if err := repoSet.Approvals.Update(*finalizedApproval); err != nil {
 					return err
 				}
@@ -502,6 +508,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	} else {
 		updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 		updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+		state.Version++
 		if err := s.Sessions.Update(state); err != nil {
 			return StepRunOutput{}, err
 		}
@@ -515,6 +522,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			return StepRunOutput{}, err
 		}
 		if finalizedApproval != nil && s.Approvals != nil {
+			finalizedApproval.Version++
 			if err := s.Approvals.Update(*finalizedApproval); err != nil {
 				return StepRunOutput{}, err
 			}
