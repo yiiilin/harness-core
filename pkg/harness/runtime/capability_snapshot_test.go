@@ -36,8 +36,8 @@ func TestRunStepResolvesRequestedCapabilityVersionAndPersistsSnapshot(t *testing
 		CapabilitySnapshots: snapshots,
 	})
 
-	sess := rt.CreateSession("capabilities", "resolve versioned tools")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run the requested capability version"})
+	sess := mustCreateSession(t, rt, "capabilities", "resolve versioned tools")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run the requested capability version"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -64,7 +64,7 @@ func TestRunStepResolvesRequestedCapabilityVersionAndPersistsSnapshot(t *testing
 	if v2.calls != 1 {
 		t.Fatalf("expected v2 handler to be used once, got %d calls", v2.calls)
 	}
-	items := rt.ListCapabilitySnapshots(attached.SessionID)
+	items := mustListCapabilitySnapshots(t, rt, attached.SessionID)
 	if len(items) != 1 {
 		t.Fatalf("expected one persisted capability snapshot, got %#v", items)
 	}

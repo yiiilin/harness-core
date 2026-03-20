@@ -8,10 +8,10 @@ import (
 )
 
 type Store interface {
-	Create(title, goal string) State
+	Create(title, goal string) (State, error)
 	Get(id string) (State, error)
 	Update(next State) error
-	List() []State
+	List() ([]State, error)
 }
 
 type MemoryStore struct {
@@ -23,7 +23,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{sessions: map[string]State{}}
 }
 
-func (s *MemoryStore) Create(title, goal string) State {
+func (s *MemoryStore) Create(title, goal string) (State, error) {
 	now := time.Now().UnixMilli()
 	st := State{
 		SessionID:       uuid.NewString(),
@@ -39,7 +39,7 @@ func (s *MemoryStore) Create(title, goal string) State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[st.SessionID] = st
-	return st
+	return st, nil
 }
 
 func (s *MemoryStore) Get(id string) (State, error) {
@@ -63,12 +63,12 @@ func (s *MemoryStore) Update(next State) error {
 	return nil
 }
 
-func (s *MemoryStore) List() []State {
+func (s *MemoryStore) List() ([]State, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]State, 0, len(s.sessions))
 	for _, v := range s.sessions {
 		out = append(out, v)
 	}
-	return out
+	return out, nil
 }

@@ -114,9 +114,9 @@ type ContextSummary struct {
 }
 
 type ContextSummaryStore interface {
-	Create(spec ContextSummary) ContextSummary
+	Create(spec ContextSummary) (ContextSummary, error)
 	Get(id string) (ContextSummary, error)
-	List(sessionID string) []ContextSummary
+	List(sessionID string) ([]ContextSummary, error)
 }
 
 type Compactor interface {
@@ -140,7 +140,7 @@ func NewMemoryContextSummaryStore() *MemoryContextSummaryStore {
 	return &MemoryContextSummaryStore{items: map[string]ContextSummary{}}
 }
 
-func (s *MemoryContextSummaryStore) Create(spec ContextSummary) ContextSummary {
+func (s *MemoryContextSummaryStore) Create(spec ContextSummary) (ContextSummary, error) {
 	if spec.SummaryID == "" {
 		spec.SummaryID = "ctx_" + uuid.NewString()
 	}
@@ -150,7 +150,7 @@ func (s *MemoryContextSummaryStore) Create(spec ContextSummary) ContextSummary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.SummaryID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryContextSummaryStore) Get(id string) (ContextSummary, error) {
@@ -163,7 +163,7 @@ func (s *MemoryContextSummaryStore) Get(id string) (ContextSummary, error) {
 	return item, nil
 }
 
-func (s *MemoryContextSummaryStore) List(sessionID string) []ContextSummary {
+func (s *MemoryContextSummaryStore) List(sessionID string) ([]ContextSummary, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]ContextSummary, 0, len(s.items))
@@ -173,5 +173,5 @@ func (s *MemoryContextSummaryStore) List(sessionID string) []ContextSummary {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out
+	return out, nil
 }

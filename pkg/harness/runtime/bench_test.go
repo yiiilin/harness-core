@@ -22,7 +22,8 @@ func (denyBenchPolicy) Evaluate(_ context.Context, _ session.State, _ plan.StepS
 	return permission.Decision{Action: permission.Deny, Reason: "bench deny", MatchedRule: "bench/*"}, nil
 }
 
-func newHappyRuntime() (*hruntime.Service, session.State, plan.StepSpec) {
+func newHappyRuntime(tb testing.TB) (*hruntime.Service, session.State, plan.StepSpec) {
+	tb.Helper()
 	sessions := session.NewMemoryStore()
 	tasks := task.NewMemoryStore()
 	plans := plan.NewMemoryStore()
@@ -35,8 +36,8 @@ func newHappyRuntime() (*hruntime.Service, session.State, plan.StepSpec) {
 	verifiers.Register(verify.Definition{Kind: "output_contains", Description: "Verify output contains substring."}, verify.OutputContainsChecker{})
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
-	sess := rt.CreateSession("bench", "benchmark run")
-	tsk := rt.CreateTask(task.Spec{TaskType: "bench", Goal: "run benchmark shell step"})
+	sess := mustCreateSession(tb, rt, "bench", "benchmark run")
+	tsk := mustCreateTask(tb, rt, task.Spec{TaskType: "bench", Goal: "run benchmark shell step"})
 	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	step := plan.StepSpec{
 		StepID: "bench_step",
@@ -50,7 +51,7 @@ func newHappyRuntime() (*hruntime.Service, session.State, plan.StepSpec) {
 
 func BenchmarkRunStepHappyPath(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		rt, sess, step := newHappyRuntime()
+		rt, sess, step := newHappyRuntime(b)
 		_, err := rt.RunStep(context.Background(), sess.SessionID, step)
 		if err != nil {
 			b.Fatal(err)
@@ -67,8 +68,8 @@ func BenchmarkRunStepPolicyDenied(b *testing.B) {
 		verifiers := verify.NewRegistry()
 		audits := audit.NewMemoryStore()
 		rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits}).WithPolicyEvaluator(denyBenchPolicy{})
-		sess := rt.CreateSession("deny", "deny path")
-		tsk := rt.CreateTask(task.Spec{TaskType: "bench", Goal: "deny path"})
+		sess := mustCreateSession(b, rt, "deny", "deny path")
+		tsk := mustCreateTask(b, rt, task.Spec{TaskType: "bench", Goal: "deny path"})
 		sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 		step := plan.StepSpec{StepID: "deny", Title: "deny", Action: action.Spec{ToolName: "windows.native", Args: map[string]any{"action": "click"}}, Verify: verify.Spec{Mode: verify.ModeAll}}
 		_, err := rt.RunStep(context.Background(), sess.SessionID, step)

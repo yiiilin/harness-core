@@ -12,7 +12,10 @@ func ensurePlanRevisionBudgetInStore(store plan.Store, sessionID string, budgets
 	if store == nil || budgets.MaxPlanRevisions <= 0 {
 		return nil
 	}
-	latest, ok := store.LatestBySession(sessionID)
+	latest, ok, err := store.LatestBySession(sessionID)
+	if err != nil {
+		return err
+	}
 	if !ok {
 		return nil
 	}

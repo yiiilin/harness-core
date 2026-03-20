@@ -26,7 +26,10 @@ INSERT INTO sessions (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
 `)).WillReturnRows(createRows)
-	created := repo.Create("demo", "goal")
+	created, err := repo.Create("demo", "goal")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	if created.SessionID != "sess1" {
 		t.Fatalf("expected sess1, got %s", created.SessionID)
 	}
@@ -76,7 +79,10 @@ SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_
 FROM sessions
 ORDER BY updated_at DESC
 `)).WillReturnRows(listRows)
-	items := repo.List()
+	items, err := repo.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
 	if len(items) != 1 || items[0].Summary != "done" {
 		t.Fatalf("unexpected list result: %#v", items)
 	}
@@ -103,5 +109,35 @@ FROM sessions WHERE session_id = $1
 	_, err = repo.Get("sess1")
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected underlying storage error, got %v", err)
+	}
+}
+
+func TestSessionRepoCreateAndListReturnStorageErrors(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := sessionrepo.New(db)
+	createBoom := errors.New("insert failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+INSERT INTO sessions (
+  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+`)).WillReturnError(createBoom)
+	if _, err := repo.Create("demo", "goal"); !errors.Is(err, createBoom) {
+		t.Fatalf("expected create storage error, got %v", err)
+	}
+
+	listBoom := errors.New("list failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+FROM sessions
+ORDER BY updated_at DESC
+`)).WillReturnError(listBoom)
+	if _, err := repo.List(); !errors.Is(err, listBoom) {
+		t.Fatalf("expected list storage error, got %v", err)
 	}
 }

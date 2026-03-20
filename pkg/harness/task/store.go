@@ -8,10 +8,10 @@ import (
 )
 
 type Store interface {
-	Create(spec Spec) Record
+	Create(spec Spec) (Record, error)
 	Get(id string) (Record, error)
 	Update(next Record) error
-	List() []Record
+	List() ([]Record, error)
 }
 
 type MemoryStore struct {
@@ -23,7 +23,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{tasks: map[string]Record{}}
 }
 
-func (s *MemoryStore) Create(spec Spec) Record {
+func (s *MemoryStore) Create(spec Spec) (Record, error) {
 	now := time.Now().UnixMilli()
 	id := spec.TaskID
 	if id == "" {
@@ -42,7 +42,7 @@ func (s *MemoryStore) Create(spec Spec) Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tasks[rec.TaskID] = rec
-	return rec
+	return rec, nil
 }
 
 func (s *MemoryStore) Get(id string) (Record, error) {
@@ -66,12 +66,12 @@ func (s *MemoryStore) Update(next Record) error {
 	return nil
 }
 
-func (s *MemoryStore) List() []Record {
+func (s *MemoryStore) List() ([]Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Record, 0, len(s.tasks))
 	for _, v := range s.tasks {
 		out = append(out, v)
 	}
-	return out
+	return out, nil
 }

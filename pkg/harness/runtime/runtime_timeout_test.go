@@ -27,8 +27,8 @@ func TestRunStepTimeoutPath(t *testing.T) {
 	verifiers.Register(verify.Definition{Kind: "exit_code", Description: "Verify exit code."}, verify.ExitCodeChecker{})
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
-	sess := rt.CreateSession("timeout session", "timeout path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "timeout path"})
+	sess := mustCreateSession(t, rt, "timeout session", "timeout path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "timeout path"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

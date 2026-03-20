@@ -22,8 +22,8 @@ func TestApprovalFlowPersistsAcrossPostgresRuntimeReinit(t *testing.T) {
 
 	rt1, db1 := pg.OpenService(t, opts)
 
-	sess := rt1.CreateSession("postgres approval", "persist approval across runtime restart")
-	tsk := rt1.CreateTask(task.Spec{TaskType: "demo", Goal: "approval persists durably"})
+	sess := mustCreateSession(t, rt1, "postgres approval", "persist approval across runtime restart")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "approval persists durably"})
 	sess, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -86,8 +86,8 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 
 	rt1, db1 := pg.OpenService(t, opts)
 
-	sess := rt1.CreateSession("postgres execution facts", "persist attempts and events")
-	tsk := rt1.CreateTask(task.Spec{TaskType: "demo", Goal: "execution facts should survive runtime restart"})
+	sess := mustCreateSession(t, rt1, "postgres execution facts", "persist attempts and events")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "execution facts should survive runtime restart"})
 	sess, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -106,17 +106,17 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run step: %v", err)
 	}
-	if len(rt1.ListAttempts(sess.SessionID)) != 1 {
-		t.Fatalf("expected attempts in first runtime, got %#v", rt1.ListAttempts(sess.SessionID))
+	if attempts := mustListAttempts(t, rt1, sess.SessionID); len(attempts) != 1 {
+		t.Fatalf("expected attempts in first runtime, got %#v", attempts)
 	}
-	if len(rt1.ListActions(sess.SessionID)) != 1 {
-		t.Fatalf("expected actions in first runtime, got %#v", rt1.ListActions(sess.SessionID))
+	if actions := mustListActions(t, rt1, sess.SessionID); len(actions) != 1 {
+		t.Fatalf("expected actions in first runtime, got %#v", actions)
 	}
-	if len(rt1.ListVerifications(sess.SessionID)) != 1 {
-		t.Fatalf("expected verifications in first runtime, got %#v", rt1.ListVerifications(sess.SessionID))
+	if verifications := mustListVerifications(t, rt1, sess.SessionID); len(verifications) != 1 {
+		t.Fatalf("expected verifications in first runtime, got %#v", verifications)
 	}
-	if len(rt1.ListArtifacts(sess.SessionID)) == 0 {
-		t.Fatalf("expected artifacts in first runtime, got %#v", rt1.ListArtifacts(sess.SessionID))
+	if artifacts := mustListArtifacts(t, rt1, sess.SessionID); len(artifacts) == 0 {
+		t.Fatalf("expected artifacts in first runtime, got %#v", artifacts)
 	}
 	if len(out.Events) == 0 || out.Events[0].AttemptID == "" || out.Events[0].TaskID == "" || out.Events[0].TraceID == "" {
 		t.Fatalf("expected rich event envelope in first runtime, got %#v", out.Events)
@@ -129,20 +129,20 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 	rt2, db2 := pg.OpenService(t, opts)
 	defer db2.Close()
 
-	if len(rt2.ListAttempts(sess.SessionID)) != 1 {
-		t.Fatalf("expected durable attempts after reinit, got %#v", rt2.ListAttempts(sess.SessionID))
+	if attempts := mustListAttempts(t, rt2, sess.SessionID); len(attempts) != 1 {
+		t.Fatalf("expected durable attempts after reinit, got %#v", attempts)
 	}
-	if len(rt2.ListActions(sess.SessionID)) != 1 {
-		t.Fatalf("expected durable actions after reinit, got %#v", rt2.ListActions(sess.SessionID))
+	if actions := mustListActions(t, rt2, sess.SessionID); len(actions) != 1 {
+		t.Fatalf("expected durable actions after reinit, got %#v", actions)
 	}
-	if len(rt2.ListVerifications(sess.SessionID)) != 1 {
-		t.Fatalf("expected durable verifications after reinit, got %#v", rt2.ListVerifications(sess.SessionID))
+	if verifications := mustListVerifications(t, rt2, sess.SessionID); len(verifications) != 1 {
+		t.Fatalf("expected durable verifications after reinit, got %#v", verifications)
 	}
-	if len(rt2.ListArtifacts(sess.SessionID)) == 0 {
-		t.Fatalf("expected durable artifacts after reinit, got %#v", rt2.ListArtifacts(sess.SessionID))
+	if artifacts := mustListArtifacts(t, rt2, sess.SessionID); len(artifacts) == 0 {
+		t.Fatalf("expected durable artifacts after reinit, got %#v", artifacts)
 	}
 
-	events := rt2.ListAuditEvents(sess.SessionID)
+	events := mustListAuditEvents(t, rt2, sess.SessionID)
 	foundRichEnvelope := false
 	for _, event := range events {
 		if event.AttemptID != "" && event.TaskID != "" && event.TraceID != "" {

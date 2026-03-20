@@ -49,9 +49,18 @@ func main() {
 	harness.RegisterBuiltins(&opts)
 	rt := harness.New(opts).WithPlanner(SequencePlanner{})
 
-	sess := rt.CreateSession("planner replan", "derive and replan shell work")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run alpha then beta"})
-	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	sess, err := rt.CreateSession("planner replan", "derive and replan shell work")
+	if err != nil {
+		panic(err)
+	}
+	tsk, err := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run alpha then beta"})
+	if err != nil {
+		panic(err)
+	}
+	sess, err = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		panic(err)
+	}
 
 	initialPlan, _, err := rt.CreatePlanFromPlanner(context.Background(), sess.SessionID, "initial multi-step plan", 2)
 	if err != nil {

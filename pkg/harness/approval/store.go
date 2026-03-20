@@ -61,10 +61,10 @@ type Record struct {
 }
 
 type Store interface {
-	CreatePending(req Request) Record
+	CreatePending(req Request) (Record, error)
 	Get(id string) (Record, error)
 	Update(next Record) error
-	List(sessionID string) []Record
+	List(sessionID string) ([]Record, error)
 }
 
 type ResumePolicy interface {
@@ -113,7 +113,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{approvals: map[string]Record{}}
 }
 
-func (s *MemoryStore) CreatePending(req Request) Record {
+func (s *MemoryStore) CreatePending(req Request) (Record, error) {
 	now := time.Now().UnixMilli()
 	rec := Record{
 		ApprovalID:  uuid.NewString(),
@@ -133,7 +133,7 @@ func (s *MemoryStore) CreatePending(req Request) Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.approvals[rec.ApprovalID] = rec
-	return rec
+	return rec, nil
 }
 
 func (s *MemoryStore) Get(id string) (Record, error) {
@@ -157,7 +157,7 @@ func (s *MemoryStore) Update(next Record) error {
 	return nil
 }
 
-func (s *MemoryStore) List(sessionID string) []Record {
+func (s *MemoryStore) List(sessionID string) ([]Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Record, 0, len(s.approvals))
@@ -172,5 +172,5 @@ func (s *MemoryStore) List(sessionID string) []Record {
 		}
 		return out[i].RequestedAt < out[j].RequestedAt
 	})
-	return out
+	return out, nil
 }

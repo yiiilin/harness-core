@@ -15,15 +15,27 @@ func main() {
 	harness.RegisterBuiltins(&opts)
 	rt := harness.New(opts).WithPlanner(hruntime.DemoPlanner{})
 
-	sess := rt.CreateSession("happy-path", "derive one shell step")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "echo hello"})
-	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	sess, err := rt.CreateSession("happy-path", "derive one shell step")
+	if err != nil {
+		panic(err)
+	}
+	tsk, err := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "echo hello"})
+	if err != nil {
+		panic(err)
+	}
+	sess, err = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		panic(err)
+	}
 	assembled, _ := rt.ContextAssembler.Assemble(context.Background(), sess, task.Spec{TaskID: tsk.TaskID, TaskType: tsk.TaskType, Goal: tsk.Goal, Constraints: tsk.Constraints, Metadata: tsk.Metadata})
 	step, err := rt.Planner.PlanNext(context.Background(), sess, task.Spec{TaskID: tsk.TaskID, TaskType: tsk.TaskType, Goal: tsk.Goal, Constraints: tsk.Constraints, Metadata: tsk.Metadata}, assembled)
 	if err != nil {
 		panic(err)
 	}
-	pl, _ := rt.CreatePlan(sess.SessionID, "planned by demo planner", []plan.StepSpec{step})
+	pl, err := rt.CreatePlan(sess.SessionID, "planned by demo planner", []plan.StepSpec{step})
+	if err != nil {
+		panic(err)
+	}
 	out, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
 	if err != nil {
 		panic(err)

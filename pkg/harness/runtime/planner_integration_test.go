@@ -55,8 +55,8 @@ func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.
 	hruntime.RegisterBuiltins(&opts)
 	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
 
-	sess := rt.CreateSession("planner integration", "execute planner-derived sequence")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run two planned shell steps"})
+	sess := mustCreateSession(t, rt, "planner integration", "execute planner-derived sequence")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run two planned shell steps"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -98,8 +98,8 @@ func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 	hruntime.RegisterBuiltins(&opts)
 	rt := hruntime.New(opts).WithPlanner(failingPlanner{})
 
-	sess := rt.CreateSession("planner failure", "planner failure path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "planner should fail"})
+	sess := mustCreateSession(t, rt, "planner failure", "planner failure path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner should fail"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

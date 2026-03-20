@@ -93,8 +93,8 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 		ContextSummaries: summaries,
 	})
 
-	sess := rt.CreateSession("compaction", "compact planner context")
-	tsk := rt.CreateTask(task.Spec{
+	sess := mustCreateSession(t, rt, "compaction", "compact planner context")
+	tsk := mustCreateTask(t, rt, task.Spec{
 		TaskType: "demo",
 		Goal:     "compact the planner context",
 		Metadata: map[string]any{"notes": "this metadata should go through the compactor hook"},
@@ -125,7 +125,10 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 		t.Fatalf("expected compactor to annotate derived context, got %#v", assembled.Derived)
 	}
 
-	items := summaries.List(attached.SessionID)
+	items, err := summaries.List(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
 	if len(items) != 1 {
 		t.Fatalf("expected one persisted summary, got %#v", items)
 	}
@@ -145,8 +148,8 @@ func TestCreatePlanFromPlannerUsesConfiguredLoopBudgetWhenMaxStepsOmitted(t *tes
 		},
 	}).WithPlanner(budgetedSequencePlanner{})
 
-	sess := rt.CreateSession("budgeted planner", "respect runtime max_steps")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "generate three planner steps"})
+	sess := mustCreateSession(t, rt, "budgeted planner", "respect runtime max_steps")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "generate three planner steps"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

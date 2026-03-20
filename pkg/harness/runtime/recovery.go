@@ -39,13 +39,16 @@ func (s *Service) MarkSessionInterrupted(ctx context.Context, sessionID string) 
 	return st, nil
 }
 
-func (s *Service) ListRecoverableSessions() []session.State {
-	items := s.Sessions.List()
+func (s *Service) ListRecoverableSessions() ([]session.State, error) {
+	items, err := s.Sessions.List()
+	if err != nil {
+		return nil, err
+	}
 	out := make([]session.State, 0)
 	for _, st := range items {
 		if st.ExecutionState == session.ExecutionInFlight || st.ExecutionState == session.ExecutionInterrupted {
 			out = append(out, st)
 		}
 	}
-	return out
+	return out, nil
 }

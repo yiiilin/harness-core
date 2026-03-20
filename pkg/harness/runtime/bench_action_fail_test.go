@@ -41,8 +41,8 @@ func BenchmarkRunStepActionFailure(b *testing.B) {
 		verifiers.Register(verify.Definition{Kind: "exit_code", Description: "Verify exit code."}, verify.ExitCodeChecker{})
 
 		rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
-		sess := rt.CreateSession("action-fail", "action failure path")
-		tsk := rt.CreateTask(task.Spec{TaskType: "bench", Goal: "action failure path"})
+		sess := mustCreateSession(b, rt, "action-fail", "action failure path")
+		tsk := mustCreateTask(b, rt, task.Spec{TaskType: "bench", Goal: "action failure path"})
 		sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 		step := plan.StepSpec{
 			StepID: "step_fail_action",

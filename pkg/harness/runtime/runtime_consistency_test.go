@@ -22,8 +22,8 @@ func TestTaskSessionPlanWiring(t *testing.T) {
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
 
-	sess := rt.CreateSession("wiring", "check wiring")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "task session relation"})
+	sess := mustCreateSession(t, rt, "wiring", "check wiring")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "task session relation"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -46,7 +46,7 @@ func TestTaskSessionPlanWiring(t *testing.T) {
 	if second.Revision != 2 {
 		t.Fatalf("expected second revision 2, got %d", second.Revision)
 	}
-	plansForSession := rt.ListPlans(attached.SessionID)
+	plansForSession := mustListPlans(t, rt, attached.SessionID)
 	if len(plansForSession) != 2 {
 		t.Fatalf("expected 2 plans, got %d", len(plansForSession))
 	}

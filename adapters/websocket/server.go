@@ -93,7 +93,11 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	case "session.create":
 		var payload protocol.SessionCreatePayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		sess := s.runtime.CreateSession(payload.Title, payload.Goal)
+		sess, err := s.runtime.CreateSession(payload.Title, payload.Goal)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "SESSION_CREATE_FAILED", Message: err.Error()}})
+			return
+		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
 	case "session.get":
 		var payload protocol.SessionGetPayload
@@ -105,11 +109,20 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: sess})
 	case "session.list":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListSessions()})
+		items, err := s.runtime.ListSessions()
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "SESSION_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
 	case "task.create":
 		var payload protocol.TaskCreatePayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		tsk := s.runtime.CreateTask(task.Spec{TaskType: payload.TaskType, Goal: payload.Goal, Constraints: payload.Constraints, Metadata: payload.Metadata})
+		tsk, err := s.runtime.CreateTask(task.Spec{TaskType: payload.TaskType, Goal: payload.Goal, Constraints: payload.Constraints, Metadata: payload.Metadata})
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "TASK_CREATE_FAILED", Message: err.Error()}})
+			return
+		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: tsk})
 	case "task.get":
 		var payload struct {
@@ -123,7 +136,12 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: tsk})
 	case "task.list":
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListTasks()})
+		items, err := s.runtime.ListTasks()
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "TASK_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
 	case "session.attach_task":
 		var payload protocol.SessionAttachTaskPayload
 		_ = json.Unmarshal(env.Payload, &payload)
@@ -163,7 +181,12 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	case "plan.list":
 		var payload protocol.PlanListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListPlans(payload.SessionID)})
+		items, err := s.runtime.ListPlans(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "PLAN_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
 	case "step.run":
 		var payload protocol.StepRunPayload
 		_ = json.Unmarshal(env.Payload, &payload)
@@ -223,7 +246,12 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	case "audit.list":
 		var payload protocol.AuditListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListAuditEvents(payload.SessionID)})
+		items, err := s.runtime.ListAuditEvents(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "AUDIT_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
 	case "approval.get":
 		var payload protocol.ApprovalGetPayload
 		_ = json.Unmarshal(env.Payload, &payload)
@@ -236,7 +264,12 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 	case "approval.list":
 		var payload protocol.ApprovalListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
-		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListApprovals(payload.SessionID)})
+		items, err := s.runtime.ListApprovals(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "APPROVAL_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
 	case "approval.respond":
 		var payload protocol.ApprovalRespondPayload
 		_ = json.Unmarshal(env.Payload, &payload)

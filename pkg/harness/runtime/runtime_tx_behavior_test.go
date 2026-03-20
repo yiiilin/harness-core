@@ -37,8 +37,8 @@ func (r *txRecorder) Within(ctx context.Context, fn func(repos persistence.Repos
 
 type failingAuditStore struct{}
 
-func (failingAuditStore) Emit(audit.Event) error    { return errors.New("audit sink failed") }
-func (failingAuditStore) List(string) []audit.Event { return nil }
+func (failingAuditStore) Emit(audit.Event) error             { return errors.New("audit sink failed") }
+func (failingAuditStore) List(string) ([]audit.Event, error) { return nil, nil }
 
 func newRuntimeWithRecorder(rec *txRecorder, aud audit.Store) *hruntime.Service {
 	sessions := session.NewMemoryStore()
@@ -66,9 +66,10 @@ func newRuntimeWithRecorder(rec *txRecorder, aud audit.Store) *hruntime.Service 
 	})
 }
 
-func seedHappyStep(rt *hruntime.Service) (session.State, plan.StepSpec) {
-	sess := rt.CreateSession("tx", "runner tx")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "transaction behavior"})
+func seedHappyStep(tb testing.TB, rt *hruntime.Service) (session.State, plan.StepSpec) {
+	tb.Helper()
+	sess := mustCreateSession(tb, rt, "tx", "runner tx")
+	tsk := mustCreateTask(tb, rt, task.Spec{TaskType: "demo", Goal: "transaction behavior"})
 	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	pl, _ := rt.CreatePlan(sess.SessionID, "initial", []plan.StepSpec{{
 		StepID: "step_1",
@@ -82,7 +83,7 @@ func seedHappyStep(rt *hruntime.Service) (session.State, plan.StepSpec) {
 func TestRunStepTransactionCommitOnSuccess(t *testing.T) {
 	rec := &txRecorder{}
 	rt := newRuntimeWithRecorder(rec, nil)
-	sess, step := seedHappyStep(rt)
+	sess, step := seedHappyStep(t, rt)
 	_, err := rt.RunStep(context.Background(), sess.SessionID, step)
 	if err != nil {
 		t.Fatalf("run step: %v", err)
@@ -101,7 +102,7 @@ func TestRunStepTransactionCommitOnSuccess(t *testing.T) {
 func TestRunStepTransactionRollbackOnAuditFailure(t *testing.T) {
 	rec := &txRecorder{}
 	rt := newRuntimeWithRecorder(rec, failingAuditStore{})
-	sess, step := seedHappyStep(rt)
+	sess, step := seedHappyStep(t, rt)
 	_, err := rt.RunStep(context.Background(), sess.SessionID, step)
 	if err == nil {
 		t.Fatalf("expected error when audit store fails inside runner boundary")

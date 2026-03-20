@@ -14,9 +14,15 @@ func TestSequencePlannerSupportsRevisionedReplan(t *testing.T) {
 	harness.RegisterBuiltins(&opts)
 	rt := harness.New(opts).WithPlanner(SequencePlanner{})
 
-	sess := rt.CreateSession("planner replan", "derive and replan shell work")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run alpha then beta"})
-	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	sess, err := rt.CreateSession("planner replan", "derive and replan shell work")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	tsk, err := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run alpha then beta"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	sess, err = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
 	}

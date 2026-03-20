@@ -18,7 +18,7 @@ func TestRecoveryReadPathAcrossPostgresRuntimeReinit(t *testing.T) {
 	rt1, db1 := pg.OpenService(t, opts)
 	defer db1.Close()
 
-	sess := rt1.CreateSession("durable recovery", "mark in-flight and recover later")
+	sess := mustCreateSession(t, rt1, "durable recovery", "mark in-flight and recover later")
 	if _, err := rt1.MarkSessionInFlight(context.Background(), sess.SessionID, "step_1"); err != nil {
 		t.Fatalf("mark in-flight: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestRecoveryReadPathAcrossPostgresRuntimeReinit(t *testing.T) {
 	rt2, db2 := pg.OpenService(t, opts)
 	defer db2.Close()
 
-	items := rt2.ListRecoverableSessions()
+	items := mustListRecoverableSessions(t, rt2)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 recoverable session, got %d", len(items))
 	}

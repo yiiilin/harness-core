@@ -20,11 +20,13 @@ func New(db postgres.DBTX) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) Create(sessionID, changeReason string, steps []plan.StepSpec) plan.Spec {
+func (r *Repo) Create(sessionID, changeReason string, steps []plan.StepSpec) (plan.Spec, error) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	revision := 1
-	if latest, ok := r.LatestBySession(sessionID); ok {
+	if latest, ok, err := r.LatestBySession(sessionID); err != nil {
+		return plan.Spec{}, err
+	} else if ok {
 		revision = latest.Revision + 1
 	}
 	generatedPlanID := uuid.NewString()
@@ -36,7 +38,7 @@ RETURNING plan_id, session_id, revision, status, change_reason, created_at, upda
 `, generatedPlanID, sessionID, revision, string(plan.StatusActive), nullable(changeReason), now, now)
 	created, err := scanPlan(row.Scan)
 	if err != nil {
-		panic(err)
+		return plan.Spec{}, err
 	}
 	for i := range steps {
 		if steps[i].Status == "" {
@@ -52,14 +54,14 @@ INSERT INTO plan_steps (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `, created.PlanID, i, steps[i].StepID, steps[i].Title, string(actionJSON), string(verifyJSON), nullableJSON(onFailJSON), string(steps[i].Status), steps[i].Attempt, nullable(steps[i].Reason), nullableJSON(metadataJSON), nullableInt64(steps[i].StartedAt), nullableInt64(steps[i].FinishedAt))
 		if err != nil {
-			panic(err)
+			return plan.Spec{}, err
 		}
 	}
 	full, err := r.Get(created.PlanID)
 	if err != nil {
-		panic(err)
+		return plan.Spec{}, err
 	}
-	return full
+	return full, nil
 }
 
 func (r *Repo) Get(id string) (plan.Spec, error) {
@@ -94,7 +96,7 @@ ORDER BY step_index ASC
 	return pl, nil
 }
 
-func (r *Repo) ListBySession(sessionID string) []plan.Spec {
+func (r *Repo) ListBySession(sessionID string) ([]plan.Spec, error) {
 	ctx := context.Background()
 	rows, err := r.db.QueryContext(ctx, `
 SELECT plan_id, session_id, revision, status, change_reason, created_at, updated_at
@@ -102,36 +104,39 @@ FROM plans WHERE session_id = $1
 ORDER BY revision ASC
 `, sessionID)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []plan.Spec{}
 	for rows.Next() {
 		pl, err := scanPlan(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, pl)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	for i := range out {
 		full, err := r.Get(out[i].PlanID)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out[i] = full
 	}
-	return out
+	return out, nil
 }
 
-func (r *Repo) LatestBySession(sessionID string) (plan.Spec, bool) {
-	items := r.ListBySession(sessionID)
-	if len(items) == 0 {
-		return plan.Spec{}, false
+func (r *Repo) LatestBySession(sessionID string) (plan.Spec, bool, error) {
+	items, err := r.ListBySession(sessionID)
+	if err != nil {
+		return plan.Spec{}, false, err
 	}
-	return items[len(items)-1], true
+	if len(items) == 0 {
+		return plan.Spec{}, false, nil
+	}
+	return items[len(items)-1], true, nil
 }
 
 func (r *Repo) Update(next plan.Spec) error {

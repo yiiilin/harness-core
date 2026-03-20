@@ -20,7 +20,7 @@ func New(db postgres.DBTX) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) Create(spec task.Spec) task.Record {
+func (r *Repo) Create(spec task.Spec) (task.Record, error) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	id := spec.TaskID
@@ -37,9 +37,9 @@ RETURNING task_id, task_type, goal, status, session_id, constraints_json, metada
 `, id, spec.TaskType, spec.Goal, string(task.StatusReceived), nil, string(constraintsJSON), string(metadataJSON), now, now)
 	rec, err := scanRecord(row.Scan)
 	if err != nil {
-		panic(err)
+		return task.Record{}, err
 	}
-	return rec
+	return rec, nil
 }
 
 func (r *Repo) Get(id string) (task.Record, error) {
@@ -76,7 +76,7 @@ WHERE task_id = $1
 	return err
 }
 
-func (r *Repo) List() []task.Record {
+func (r *Repo) List() ([]task.Record, error) {
 	ctx := context.Background()
 	rows, err := r.db.QueryContext(ctx, `
 SELECT task_id, task_type, goal, status, session_id, constraints_json, metadata_json, created_at, updated_at
@@ -84,21 +84,21 @@ FROM tasks
 ORDER BY updated_at DESC
 `)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []task.Record{}
 	for rows.Next() {
 		rec, err := scanRecord(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, rec)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 type scanner func(dest ...any) error

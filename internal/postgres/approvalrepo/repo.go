@@ -21,7 +21,7 @@ func New(db postgres.DBTX) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) CreatePending(req approval.Request) approval.Record {
+func (r *Repo) CreatePending(req approval.Request) (approval.Record, error) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	stepJSON, _ := json.Marshal(req.Step)
@@ -34,9 +34,9 @@ RETURNING approval_id, session_id, task_id, step_id, tool_name, reason, matched_
 `, newID(), req.SessionID, nullable(req.TaskID), nullable(req.StepID), nullable(req.ToolName), nullable(req.Reason), nullable(req.MatchedRule), string(approval.StatusPending), nil, string(stepJSON), nullableJSON(metadataJSON), now, nil, nil, now, now)
 	rec, err := scanRecord(row.Scan)
 	if err != nil {
-		panic(err)
+		return approval.Record{}, err
 	}
-	return rec
+	return rec, nil
 }
 
 func (r *Repo) Get(id string) (approval.Record, error) {
@@ -80,7 +80,7 @@ WHERE approval_id = $1
 	return err
 }
 
-func (r *Repo) List(sessionID string) []approval.Record {
+func (r *Repo) List(sessionID string) ([]approval.Record, error) {
 	ctx := context.Background()
 	query := `
 SELECT approval_id, session_id, task_id, step_id, tool_name, reason, matched_rule, status, reply, step_json, metadata_json, requested_at, responded_at, consumed_at, created_at, updated_at
@@ -94,7 +94,7 @@ FROM approvals
 	query += "ORDER BY requested_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -102,12 +102,12 @@ FROM approvals
 	for rows.Next() {
 		rec, err := scanRecord(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, rec)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RequestedAt == out[j].RequestedAt {
@@ -115,7 +115,7 @@ FROM approvals
 		}
 		return out[i].RequestedAt < out[j].RequestedAt
 	})
-	return out
+	return out, nil
 }
 
 type scanner func(dest ...any) error

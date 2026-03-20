@@ -76,8 +76,8 @@ func TestRunStepPolicyAskCreatesApprovalAndDoesNotExecute(t *testing.T) {
 		Audit:     audits,
 	}).WithPolicyEvaluator(askPolicy{})
 
-	sess := rt.CreateSession("ask session", "approval required path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "wait for approval before executing"})
+	sess := mustCreateSession(t, rt, "ask session", "approval required path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "wait for approval before executing"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -116,7 +116,7 @@ func TestRunStepPolicyAskCreatesApprovalAndDoesNotExecute(t *testing.T) {
 
 	foundApprovalRequested := false
 	foundToolCall := false
-	for _, event := range rt.ListAuditEvents(attached.SessionID) {
+	for _, event := range mustListAuditEvents(t, rt, attached.SessionID) {
 		if event.Type == "approval.requested" {
 			foundApprovalRequested = true
 		}
@@ -159,8 +159,8 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 		Audit:     audits,
 	}).WithPolicyEvaluator(askPolicy{})
 
-	sess := rt.CreateSession("resume once", "approval then resume")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "resume after one-time approval"})
+	sess := mustCreateSession(t, rt, "resume once", "approval then resume")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "resume after one-time approval"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -243,8 +243,8 @@ func TestRespondApprovalRejectFailsPendingStepWithoutExecuting(t *testing.T) {
 		Audit:     audits,
 	}).WithPolicyEvaluator(askPolicy{})
 
-	sess := rt.CreateSession("reject approval", "approval rejected path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "reject approval and fail safely"})
+	sess := mustCreateSession(t, rt, "reject approval", "approval rejected path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "reject approval and fail safely"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -313,8 +313,8 @@ func TestReplyAlwaysAllowsFutureMatchingToolWithoutAnotherApproval(t *testing.T)
 		Audit:     audits,
 	}).WithPolicyEvaluator(askPolicy{})
 
-	sess := rt.CreateSession("always approval", "reuse approval for matching tool")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "reuse approval"})
+	sess := mustCreateSession(t, rt, "always approval", "reuse approval for matching tool")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "reuse approval"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -410,8 +410,8 @@ func TestReplyAlwaysDoesNotReuseApprovalAcrossDifferentArgsOrVersion(t *testing.
 		Audit:    audits,
 	}).WithPolicyEvaluator(scopedAskPolicy{})
 
-	sess := rt.CreateSession("always scoped", "approval scope must stay narrow")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "avoid overly broad always approvals"})
+	sess := mustCreateSession(t, rt, "always scoped", "approval scope must stay narrow")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "avoid overly broad always approvals"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -485,8 +485,8 @@ func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
 		Audit:    audits,
 	}).WithPolicyEvaluator(askPolicy{})
 
-	sess := rt.CreateSession("reject blocked attempt", "blocked attempt should be finalized on reject")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "reject approval and reconcile attempt"})
+	sess := mustCreateSession(t, rt, "reject blocked attempt", "blocked attempt should be finalized on reject")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "reject approval and reconcile attempt"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -509,7 +509,7 @@ func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
 	if initial.Execution.PendingApproval == nil {
 		t.Fatalf("expected pending approval")
 	}
-	attempts := rt.ListAttempts(sess.SessionID)
+	attempts := mustListAttempts(t, rt, sess.SessionID)
 	if len(attempts) != 1 || attempts[0].Status != "blocked" {
 		t.Fatalf("expected one blocked attempt after ask path, got %#v", attempts)
 	}
@@ -517,7 +517,7 @@ func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
 	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyReject}); err != nil {
 		t.Fatalf("respond approval: %v", err)
 	}
-	attempts = rt.ListAttempts(sess.SessionID)
+	attempts = mustListAttempts(t, rt, sess.SessionID)
 	if len(attempts) != 1 {
 		t.Fatalf("expected one attempt after reject, got %#v", attempts)
 	}

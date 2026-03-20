@@ -8,10 +8,10 @@ import (
 )
 
 type Store interface {
-	Create(sessionID, changeReason string, steps []StepSpec) Spec
+	Create(sessionID, changeReason string, steps []StepSpec) (Spec, error)
 	Get(id string) (Spec, error)
-	ListBySession(sessionID string) []Spec
-	LatestBySession(sessionID string) (Spec, bool)
+	ListBySession(sessionID string) ([]Spec, error)
+	LatestBySession(sessionID string) (Spec, bool, error)
 	Update(next Spec) error
 }
 
@@ -24,10 +24,12 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{plans: map[string]Spec{}}
 }
 
-func (s *MemoryStore) Create(sessionID, changeReason string, steps []StepSpec) Spec {
+func (s *MemoryStore) Create(sessionID, changeReason string, steps []StepSpec) (Spec, error) {
 	now := time.Now().UnixMilli()
 	revision := 1
-	if latest, ok := s.LatestBySession(sessionID); ok {
+	if latest, ok, err := s.LatestBySession(sessionID); err != nil {
+		return Spec{}, err
+	} else if ok {
 		revision = latest.Revision + 1
 	}
 	cloned := make([]StepSpec, len(steps))
@@ -50,7 +52,7 @@ func (s *MemoryStore) Create(sessionID, changeReason string, steps []StepSpec) S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.plans[plan.PlanID] = plan
-	return plan
+	return plan, nil
 }
 
 func (s *MemoryStore) Get(id string) (Spec, error) {
@@ -63,7 +65,7 @@ func (s *MemoryStore) Get(id string) (Spec, error) {
 	return p, nil
 }
 
-func (s *MemoryStore) ListBySession(sessionID string) []Spec {
+func (s *MemoryStore) ListBySession(sessionID string) ([]Spec, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []Spec{}
@@ -72,13 +74,16 @@ func (s *MemoryStore) ListBySession(sessionID string) []Spec {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, nil
 }
 
-func (s *MemoryStore) LatestBySession(sessionID string) (Spec, bool) {
-	plans := s.ListBySession(sessionID)
+func (s *MemoryStore) LatestBySession(sessionID string) (Spec, bool, error) {
+	plans, err := s.ListBySession(sessionID)
+	if err != nil {
+		return Spec{}, false, err
+	}
 	if len(plans) == 0 {
-		return Spec{}, false
+		return Spec{}, false, nil
 	}
 	latest := plans[0]
 	for _, p := range plans[1:] {
@@ -86,7 +91,7 @@ func (s *MemoryStore) LatestBySession(sessionID string) (Spec, bool) {
 			latest = p
 		}
 	}
-	return latest, true
+	return latest, true, nil
 }
 
 func (s *MemoryStore) Update(next Spec) error {

@@ -31,8 +31,8 @@ func TestLifecycleEntryPointsEmitCreationEventsAndAttachUsesRunner(t *testing.T)
 		Runner:   runner,
 	})
 
-	sess := rt.CreateSession("lifecycle", "emit lifecycle events")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "attach task transactionally"})
+	sess := mustCreateSession(t, rt, "lifecycle", "emit lifecycle events")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "attach task transactionally"})
 	if _, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID); err != nil {
 		t.Fatalf("attach task: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestLifecycleEntryPointsEmitCreationEventsAndAttachUsesRunner(t *testing.T)
 		t.Fatalf("expected runner to be used for lifecycle operations")
 	}
 
-	events := rt.ListAuditEvents(sess.SessionID)
+	events := mustListAuditEvents(t, rt, sess.SessionID)
 	expected := map[string]bool{
 		audit.EventSessionCreated: false,
 		audit.EventTaskCreated:    false,

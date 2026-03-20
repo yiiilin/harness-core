@@ -31,8 +31,8 @@ func TestRunStepPolicyDenied(t *testing.T) {
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits}).WithPolicyEvaluator(denyAllPolicy{})
 
-	sess := rt.CreateSession("deny session", "deny path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "denied action should fail safely"})
+	sess := mustCreateSession(t, rt, "deny session", "deny path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "denied action should fail safely"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -63,7 +63,7 @@ func TestRunStepPolicyDenied(t *testing.T) {
 	if out.UpdatedTask == nil || out.UpdatedTask.Status != task.StatusFailed {
 		t.Fatalf("expected task failed, got %#v", out.UpdatedTask)
 	}
-	stored := rt.ListAuditEvents(attached.SessionID)
+	stored := mustListAuditEvents(t, rt, attached.SessionID)
 	if len(stored) == 0 {
 		t.Fatalf("expected audit events, got none")
 	}

@@ -127,7 +127,10 @@ func TestWebSocketPostgresStepRunHappyPath(t *testing.T) {
 	if len(storedPlan.Steps) != 1 || storedPlan.Steps[0].Status != "completed" {
 		t.Fatalf("expected completed durable step, got %#v", storedPlan.Steps)
 	}
-	events := rt.ListAuditEvents(sessionID)
+	events, err := rt.ListAuditEvents(sessionID)
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
 	if len(events) == 0 {
 		t.Fatalf("expected durable audit events")
 	}
@@ -216,7 +219,10 @@ func TestWebSocketPostgresPolicyDenyPath(t *testing.T) {
 	if storedTask.Status != "failed" {
 		t.Fatalf("expected failed task, got %s", storedTask.Status)
 	}
-	events := rt.ListAuditEvents(sessionID)
+	events, err := rt.ListAuditEvents(sessionID)
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
 	foundDenied := false
 	for _, event := range events {
 		if event.Type == "policy.denied" {

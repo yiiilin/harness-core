@@ -142,7 +142,7 @@ func (s *Service) RuntimeInfo() Info {
 	}
 }
 
-func (s *Service) CreateSession(title, goal string) session.State {
+func (s *Service) CreateSession(title, goal string) (session.State, error) {
 	return s.createSessionWithAudit(title, goal)
 }
 
@@ -150,11 +150,11 @@ func (s *Service) GetSession(id string) (session.State, error) {
 	return s.Sessions.Get(id)
 }
 
-func (s *Service) ListSessions() []session.State {
+func (s *Service) ListSessions() ([]session.State, error) {
 	return s.Sessions.List()
 }
 
-func (s *Service) CreateTask(spec task.Spec) task.Record {
+func (s *Service) CreateTask(spec task.Spec) (task.Record, error) {
 	return s.createTaskWithAudit(spec)
 }
 
@@ -162,7 +162,7 @@ func (s *Service) GetTask(id string) (task.Record, error) {
 	return s.Tasks.Get(id)
 }
 
-func (s *Service) ListTasks() []task.Record {
+func (s *Service) ListTasks() ([]task.Record, error) {
 	return s.Tasks.List()
 }
 
@@ -178,7 +178,7 @@ func (s *Service) GetPlan(planID string) (plan.Spec, error) {
 	return s.Plans.Get(planID)
 }
 
-func (s *Service) ListPlans(sessionID string) []plan.Spec {
+func (s *Service) ListPlans(sessionID string) ([]plan.Spec, error) {
 	return s.Plans.ListBySession(sessionID)
 }
 
@@ -189,51 +189,51 @@ func (s *Service) GetApproval(id string) (approval.Record, error) {
 	return s.Approvals.Get(id)
 }
 
-func (s *Service) ListApprovals(sessionID string) []approval.Record {
+func (s *Service) ListApprovals(sessionID string) ([]approval.Record, error) {
 	if s.Approvals == nil {
-		return nil
+		return nil, nil
 	}
 	return s.Approvals.List(sessionID)
 }
 
-func (s *Service) ListAttempts(sessionID string) []execution.Attempt {
+func (s *Service) ListAttempts(sessionID string) ([]execution.Attempt, error) {
 	if s.Attempts == nil {
-		return nil
+		return nil, nil
 	}
 	return s.Attempts.List(sessionID)
 }
 
-func (s *Service) ListActions(sessionID string) []execution.ActionRecord {
+func (s *Service) ListActions(sessionID string) ([]execution.ActionRecord, error) {
 	if s.Actions == nil {
-		return nil
+		return nil, nil
 	}
 	return s.Actions.List(sessionID)
 }
 
-func (s *Service) ListVerifications(sessionID string) []execution.VerificationRecord {
+func (s *Service) ListVerifications(sessionID string) ([]execution.VerificationRecord, error) {
 	if s.Verifications == nil {
-		return nil
+		return nil, nil
 	}
 	return s.Verifications.List(sessionID)
 }
 
-func (s *Service) ListArtifacts(sessionID string) []execution.Artifact {
+func (s *Service) ListArtifacts(sessionID string) ([]execution.Artifact, error) {
 	if s.Artifacts == nil {
-		return nil
+		return nil, nil
 	}
 	return s.Artifacts.List(sessionID)
 }
 
-func (s *Service) ListCapabilitySnapshots(sessionID string) []capability.Snapshot {
+func (s *Service) ListCapabilitySnapshots(sessionID string) ([]capability.Snapshot, error) {
 	if s.CapabilitySnapshots == nil {
-		return nil
+		return nil, nil
 	}
 	return s.CapabilitySnapshots.List(sessionID)
 }
 
-func (s *Service) ListContextSummaries(sessionID string) []ContextSummary {
+func (s *Service) ListContextSummaries(sessionID string) ([]ContextSummary, error) {
 	if s.ContextSummaries == nil {
-		return nil
+		return nil, nil
 	}
 	return s.ContextSummaries.List(sessionID)
 }
@@ -246,9 +246,9 @@ func (s *Service) ListVerifiers() []verify.Definition {
 	return s.Verifiers.List()
 }
 
-func (s *Service) ListAuditEvents(sessionID string) []audit.Event {
+func (s *Service) ListAuditEvents(sessionID string) ([]audit.Event, error) {
 	if s.Audit == nil {
-		return nil
+		return nil, nil
 	}
 	return s.listRelatedAuditEvents(sessionID)
 }

@@ -9,9 +9,9 @@ import (
 )
 
 type SnapshotStore interface {
-	Create(spec Snapshot) Snapshot
+	Create(spec Snapshot) (Snapshot, error)
 	Get(id string) (Snapshot, error)
-	List(sessionID string) []Snapshot
+	List(sessionID string) ([]Snapshot, error)
 }
 
 type MemorySnapshotStore struct {
@@ -23,7 +23,7 @@ func NewMemorySnapshotStore() *MemorySnapshotStore {
 	return &MemorySnapshotStore{items: map[string]Snapshot{}}
 }
 
-func (s *MemorySnapshotStore) Create(spec Snapshot) Snapshot {
+func (s *MemorySnapshotStore) Create(spec Snapshot) (Snapshot, error) {
 	if spec.SnapshotID == "" {
 		spec.SnapshotID = "cap_" + uuid.NewString()
 	}
@@ -33,7 +33,7 @@ func (s *MemorySnapshotStore) Create(spec Snapshot) Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.SnapshotID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemorySnapshotStore) Get(id string) (Snapshot, error) {
@@ -46,7 +46,7 @@ func (s *MemorySnapshotStore) Get(id string) (Snapshot, error) {
 	return item, nil
 }
 
-func (s *MemorySnapshotStore) List(sessionID string) []Snapshot {
+func (s *MemorySnapshotStore) List(sessionID string) ([]Snapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Snapshot, 0, len(s.items))
@@ -56,5 +56,5 @@ func (s *MemorySnapshotStore) List(sessionID string) []Snapshot {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ResolvedAt < out[j].ResolvedAt })
-	return out
+	return out, nil
 }

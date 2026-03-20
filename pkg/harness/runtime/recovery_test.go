@@ -11,7 +11,7 @@ func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	opts := hruntime.Options{}
 	hruntime.RegisterBuiltins(&opts)
 	rt1 := hruntime.New(opts)
-	sess := rt1.CreateSession("recovery", "mark in-flight and recover later")
+	sess := mustCreateSession(t, rt1, "recovery", "mark in-flight and recover later")
 	_, err := rt1.MarkSessionInFlight(context.Background(), sess.SessionID, "step_1")
 	if err != nil {
 		t.Fatalf("mark in-flight: %v", err)
@@ -19,7 +19,7 @@ func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 
 	// Simulate restart by constructing a new runtime with the same backing stores.
 	rt2 := hruntime.New(opts)
-	items := rt2.ListRecoverableSessions()
+	items := mustListRecoverableSessions(t, rt2)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 recoverable session, got %d", len(items))
 	}

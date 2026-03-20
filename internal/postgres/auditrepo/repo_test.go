@@ -1,6 +1,7 @@
 package auditrepo_test
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -34,7 +35,10 @@ SELECT event_id, type, session_id, task_id, step_id, attempt_id, action_id, trac
 FROM audit_events
 WHERE session_id = $1
 ORDER BY created_at ASC`)).WithArgs("sess1").WillReturnRows(listRows)
-	items := repo.List("sess1")
+	items, err := repo.List("sess1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
 	if len(items) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(items))
 	}
@@ -49,12 +53,34 @@ ORDER BY created_at ASC`)).WithArgs("sess1").WillReturnRows(listRows)
 SELECT event_id, type, session_id, task_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
 FROM audit_events
 ORDER BY created_at ASC`)).WillReturnRows(allRows)
-	all := repo.List("")
+	all, err := repo.List("")
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
 	if len(all) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(all))
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuditRepoListReturnsStorageError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := auditrepo.New(db)
+	boom := errors.New("list failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT event_id, type, session_id, task_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
+FROM audit_events
+WHERE session_id = $1
+ORDER BY created_at ASC`)).WithArgs("sess1").WillReturnError(boom)
+	if _, err := repo.List("sess1"); !errors.Is(err, boom) {
+		t.Fatalf("expected list storage error, got %v", err)
 	}
 }

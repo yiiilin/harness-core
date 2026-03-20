@@ -179,7 +179,11 @@ func (s *Service) ResumePendingApproval(ctx context.Context, sessionID string) (
 
 func (s *Service) findReusableApprovalDecision(ctx context.Context, state session.State, step plan.StepSpec, decision permission.Decision) (*permission.Decision, *approval.Record) {
 	scope := s.buildApprovalReuseScope(ctx, state, step, decision)
-	for _, rec := range s.ListApprovals(state.SessionID) {
+	records, err := s.ListApprovals(state.SessionID)
+	if err != nil {
+		return nil, nil
+	}
+	for _, rec := range records {
 		if rec.Status != approval.StatusApproved || rec.Reply != approval.ReplyAlways {
 			continue
 		}
@@ -304,7 +308,10 @@ func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, appr
 	if store == nil || approvalID == "" {
 		return nil
 	}
-	attempts := store.List(sessionID)
+	attempts, err := store.List(sessionID)
+	if err != nil {
+		return err
+	}
 	for i := len(attempts) - 1; i >= 0; i-- {
 		if attempts[i].ApprovalID != approvalID || attempts[i].Status != execution.AttemptBlocked {
 			continue

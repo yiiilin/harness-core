@@ -44,8 +44,8 @@ func TestRunStepEmitsEventsViaConfiguredEventSink(t *testing.T) {
 		Policy:    permission.DefaultEvaluator{},
 	})
 
-	sess := rt.CreateSession("events", "emit events through sink")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run a step"})
+	sess := mustCreateSession(t, rt, "events", "emit events through sink")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run a step"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -94,8 +94,8 @@ func TestRunStepEmitsEventsViaConfiguredEventSinkWithinRunnerTransaction(t *test
 		Policy: permission.DefaultEvaluator{},
 	})
 
-	sess := rt.CreateSession("tx events", "emit events through sink in tx path")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "run a step in tx path"})
+	sess := mustCreateSession(t, rt, "tx events", "emit events through sink in tx path")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run a step in tx path"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

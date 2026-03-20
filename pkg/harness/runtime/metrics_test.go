@@ -16,8 +16,8 @@ func TestMetricsSnapshotForHappyPath(t *testing.T) {
 	hruntime.RegisterBuiltins(&opts)
 	rt := hruntime.New(opts)
 
-	sess := rt.CreateSession("metrics", "happy path metrics")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "metrics path"})
+	sess := mustCreateSession(t, rt, "metrics", "happy path metrics")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "metrics path"})
 	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	pl, _ := rt.CreatePlan(sess.SessionID, "initial", []plan.StepSpec{{
 		StepID: "step_1",

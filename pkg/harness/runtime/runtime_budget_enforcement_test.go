@@ -27,8 +27,8 @@ func TestCreatePlanRejectsWhenRevisionBudgetExceeded(t *testing.T) {
 		},
 	})
 
-	sess := rt.CreateSession("plan revisions", "cap plan revisions")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "enforce revision budget"})
+	sess := mustCreateSession(t, rt, "plan revisions", "cap plan revisions")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "enforce revision budget"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -70,8 +70,8 @@ func TestRunStepRejectsWhenTotalRuntimeBudgetExceeded(t *testing.T) {
 		},
 	})
 
-	sess := rt.CreateSession("runtime budget", "reject stale sessions")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "runtime budget"})
+	sess := mustCreateSession(t, rt, "runtime budget", "reject stale sessions")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "runtime budget"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -124,8 +124,8 @@ func TestRunStepAbortStrategyFailsSessionOnVerificationFailure(t *testing.T) {
 		Audit:     audits,
 	})
 
-	sess := rt.CreateSession("abort on fail", "abort verification failures")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "abort failed verification"})
+	sess := mustCreateSession(t, rt, "abort on fail", "abort verification failures")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "abort failed verification"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -186,8 +186,8 @@ func TestRunStepRetryBudgetBlocksFurtherAttempts(t *testing.T) {
 		},
 	})
 
-	sess := rt.CreateSession("retry budget", "enforce retry limit")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "enforce retry limit"})
+	sess := mustCreateSession(t, rt, "retry budget", "enforce retry limit")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "enforce retry limit"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

@@ -41,8 +41,8 @@ func TestRunStepUsesRunnerBoundary(t *testing.T) {
 	verifiers.Register(verify.Definition{Kind: "output_contains", Description: "Verify output contains substring."}, verify.OutputContainsChecker{})
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits, Runner: runner})
-	sess := rt.CreateSession("tx", "runner boundary")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "runner boundary"})
+	sess := mustCreateSession(t, rt, "tx", "runner boundary")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "runner boundary"})
 	sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	pl, _ := rt.CreatePlan(sess.SessionID, "initial", []plan.StepSpec{{
 		StepID: "step_1",

@@ -16,7 +16,7 @@ import (
 )
 
 func TestRunStepAssignsStableEventIDs(t *testing.T) {
-	rt, sess, step := newHappyRuntime()
+	rt, sess, step := newHappyRuntime(t)
 
 	out, err := rt.RunStep(context.Background(), sess.SessionID, step)
 	if err != nil {
@@ -34,7 +34,7 @@ func TestRunStepAssignsStableEventIDs(t *testing.T) {
 		seen[event.EventID] = struct{}{}
 	}
 
-	stored := rt.ListAuditEvents(sess.SessionID)
+	stored := mustListAuditEvents(t, rt, sess.SessionID)
 	if len(stored) == 0 {
 		t.Fatalf("expected stored audit events")
 	}
@@ -46,7 +46,7 @@ func TestRunStepAssignsStableEventIDs(t *testing.T) {
 }
 
 func TestRunStepEventOrderingHappyPath(t *testing.T) {
-	rt, sess, step := newHappyRuntime()
+	rt, sess, step := newHappyRuntime(t)
 
 	out, err := rt.RunStep(context.Background(), sess.SessionID, step)
 	if err != nil {
@@ -77,8 +77,8 @@ func TestRunStepEventOrderingPolicyDenied(t *testing.T) {
 		Verifiers: verifiers,
 	}).WithPolicyEvaluator(denyAllPolicy{})
 
-	sess := rt.CreateSession("deny-ordering", "deny path ordering")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "deny ordering"})
+	sess := mustCreateSession(t, rt, "deny-ordering", "deny path ordering")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "deny ordering"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -120,8 +120,8 @@ func TestRunStepEventOrderingVerifyFailure(t *testing.T) {
 		Verifiers: verifiers,
 	})
 
-	sess := rt.CreateSession("verify-ordering", "verify failure ordering")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "verify failure ordering"})
+	sess := mustCreateSession(t, rt, "verify-ordering", "verify failure ordering")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "verify failure ordering"})
 	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)

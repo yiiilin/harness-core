@@ -25,7 +25,7 @@ func NewRuntimeHandleStore(db postgres.DBTX) *RuntimeHandleRepo {
 	return &RuntimeHandleRepo{db: db}
 }
 
-func (r *AttemptRepo) Create(spec execution.Attempt) execution.Attempt {
+func (r *AttemptRepo) Create(spec execution.Attempt) (execution.Attempt, error) {
 	ctx := context.Background()
 	stepJSON, _ := json.Marshal(spec.Step)
 	metadataJSON, _ := json.Marshal(spec.Metadata)
@@ -35,9 +35,9 @@ INSERT INTO attempts (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ApprovalID), nullable(spec.TraceID), string(spec.Status), string(stepJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
-		panic(err)
+		return execution.Attempt{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *AttemptRepo) Get(id string) (execution.Attempt, error) {
@@ -76,7 +76,7 @@ WHERE attempt_id = $1
 	return err
 }
 
-func (r *AttemptRepo) List(sessionID string) []execution.Attempt {
+func (r *AttemptRepo) List(sessionID string) ([]execution.Attempt, error) {
 	ctx := context.Background()
 	query := `
 SELECT attempt_id, session_id, task_id, step_id, approval_id, trace_id, status, step_json, metadata_json, started_at, finished_at
@@ -90,24 +90,24 @@ FROM attempts
 	query += "ORDER BY started_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []execution.Attempt{}
 	for rows.Next() {
 		item, err := scanAttempt(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
-func (r *ActionRepo) Create(spec execution.ActionRecord) execution.ActionRecord {
+func (r *ActionRepo) Create(spec execution.ActionRecord) (execution.ActionRecord, error) {
 	ctx := context.Background()
 	resultJSON, _ := json.Marshal(spec.Result)
 	metadataJSON, _ := json.Marshal(spec.Metadata)
@@ -117,9 +117,9 @@ INSERT INTO action_records (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `, spec.ActionID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ToolName), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
-		panic(err)
+		return execution.ActionRecord{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *ActionRepo) Get(id string) (execution.ActionRecord, error) {
@@ -160,7 +160,7 @@ WHERE action_id = $1
 	return err
 }
 
-func (r *ActionRepo) List(sessionID string) []execution.ActionRecord {
+func (r *ActionRepo) List(sessionID string) ([]execution.ActionRecord, error) {
 	ctx := context.Background()
 	query := `
 SELECT action_id, attempt_id, session_id, task_id, step_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
@@ -174,24 +174,24 @@ FROM action_records
 	query += "ORDER BY started_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []execution.ActionRecord{}
 	for rows.Next() {
 		item, err := scanAction(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
-func (r *VerificationRepo) Create(spec execution.VerificationRecord) execution.VerificationRecord {
+func (r *VerificationRepo) Create(spec execution.VerificationRecord) (execution.VerificationRecord, error) {
 	ctx := context.Background()
 	specJSON, _ := json.Marshal(spec.Spec)
 	resultJSON, _ := json.Marshal(spec.Result)
@@ -202,9 +202,9 @@ INSERT INTO verification_records (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 `, spec.VerificationID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ActionID), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(specJSON), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
-		panic(err)
+		return execution.VerificationRecord{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *VerificationRepo) Get(id string) (execution.VerificationRecord, error) {
@@ -250,7 +250,7 @@ WHERE verification_id = $1
 	return err
 }
 
-func (r *VerificationRepo) List(sessionID string) []execution.VerificationRecord {
+func (r *VerificationRepo) List(sessionID string) ([]execution.VerificationRecord, error) {
 	ctx := context.Background()
 	query := `
 SELECT verification_id, attempt_id, session_id, task_id, step_id, action_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
@@ -264,24 +264,24 @@ FROM verification_records
 	query += "ORDER BY started_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []execution.VerificationRecord{}
 	for rows.Next() {
 		item, err := scanVerification(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
-func (r *ArtifactRepo) Create(spec execution.Artifact) execution.Artifact {
+func (r *ArtifactRepo) Create(spec execution.Artifact) (execution.Artifact, error) {
 	ctx := context.Background()
 	payloadJSON, _ := json.Marshal(spec.Payload)
 	metadataJSON, _ := json.Marshal(spec.Metadata)
@@ -291,9 +291,9 @@ INSERT INTO artifacts (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `, spec.ArtifactID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.AttemptID), nullable(spec.ActionID), nullable(spec.VerificationID), nullable(spec.TraceID), nullable(spec.Name), nullable(spec.Kind), nullableJSON(payloadJSON), nullableJSON(metadataJSON), spec.CreatedAt)
 	if err != nil {
-		panic(err)
+		return execution.Artifact{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *ArtifactRepo) Get(id string) (execution.Artifact, error) {
@@ -334,7 +334,7 @@ WHERE artifact_id = $1
 	return err
 }
 
-func (r *ArtifactRepo) List(sessionID string) []execution.Artifact {
+func (r *ArtifactRepo) List(sessionID string) ([]execution.Artifact, error) {
 	ctx := context.Background()
 	query := `
 SELECT artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, trace_id, name, kind, payload_json, metadata_json, created_at
@@ -348,25 +348,25 @@ FROM artifacts
 	query += "ORDER BY created_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []execution.Artifact{}
 	for rows.Next() {
 		item, err := scanArtifact(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out
+	return out, nil
 }
 
-func (r *RuntimeHandleRepo) Create(spec execution.RuntimeHandle) execution.RuntimeHandle {
+func (r *RuntimeHandleRepo) Create(spec execution.RuntimeHandle) (execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
@@ -375,9 +375,9 @@ INSERT INTO runtime_handles (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `, spec.HandleID, spec.SessionID, nullable(spec.TaskID), nullable(spec.AttemptID), nullable(spec.TraceID), nullable(spec.Kind), nullable(spec.Value), nullableJSON(metadataJSON), spec.CreatedAt, spec.UpdatedAt)
 	if err != nil {
-		panic(err)
+		return execution.RuntimeHandle{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *RuntimeHandleRepo) Get(id string) (execution.RuntimeHandle, error) {
@@ -411,7 +411,7 @@ WHERE handle_id = $1
 	return err
 }
 
-func (r *RuntimeHandleRepo) List(sessionID string) []execution.RuntimeHandle {
+func (r *RuntimeHandleRepo) List(sessionID string) ([]execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	query := `
 SELECT handle_id, session_id, task_id, attempt_id, trace_id, kind, value, metadata_json, created_at, updated_at
@@ -425,21 +425,21 @@ FROM runtime_handles
 	query += "ORDER BY created_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []execution.RuntimeHandle{}
 	for rows.Next() {
 		item, err := scanRuntimeHandle(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 type scanner func(dest ...any) error

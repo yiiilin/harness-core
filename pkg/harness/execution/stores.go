@@ -12,38 +12,38 @@ import (
 var ErrRecordNotFound = errors.New("execution record not found")
 
 type AttemptStore interface {
-	Create(spec Attempt) Attempt
+	Create(spec Attempt) (Attempt, error)
 	Get(id string) (Attempt, error)
 	Update(next Attempt) error
-	List(sessionID string) []Attempt
+	List(sessionID string) ([]Attempt, error)
 }
 
 type ActionStore interface {
-	Create(spec ActionRecord) ActionRecord
+	Create(spec ActionRecord) (ActionRecord, error)
 	Get(id string) (ActionRecord, error)
 	Update(next ActionRecord) error
-	List(sessionID string) []ActionRecord
+	List(sessionID string) ([]ActionRecord, error)
 }
 
 type VerificationStore interface {
-	Create(spec VerificationRecord) VerificationRecord
+	Create(spec VerificationRecord) (VerificationRecord, error)
 	Get(id string) (VerificationRecord, error)
 	Update(next VerificationRecord) error
-	List(sessionID string) []VerificationRecord
+	List(sessionID string) ([]VerificationRecord, error)
 }
 
 type ArtifactStore interface {
-	Create(spec Artifact) Artifact
+	Create(spec Artifact) (Artifact, error)
 	Get(id string) (Artifact, error)
 	Update(next Artifact) error
-	List(sessionID string) []Artifact
+	List(sessionID string) ([]Artifact, error)
 }
 
 type RuntimeHandleStore interface {
-	Create(spec RuntimeHandle) RuntimeHandle
+	Create(spec RuntimeHandle) (RuntimeHandle, error)
 	Get(id string) (RuntimeHandle, error)
 	Update(next RuntimeHandle) error
-	List(sessionID string) []RuntimeHandle
+	List(sessionID string) ([]RuntimeHandle, error)
 }
 
 type MemoryAttemptStore struct {
@@ -91,7 +91,7 @@ func NewMemoryRuntimeHandleStore() *MemoryRuntimeHandleStore {
 	return &MemoryRuntimeHandleStore{items: map[string]RuntimeHandle{}}
 }
 
-func (s *MemoryAttemptStore) Create(spec Attempt) Attempt {
+func (s *MemoryAttemptStore) Create(spec Attempt) (Attempt, error) {
 	if spec.AttemptID == "" {
 		spec.AttemptID = uuid.NewString()
 	}
@@ -101,7 +101,7 @@ func (s *MemoryAttemptStore) Create(spec Attempt) Attempt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.AttemptID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryAttemptStore) Get(id string) (Attempt, error) {
@@ -124,7 +124,7 @@ func (s *MemoryAttemptStore) Update(next Attempt) error {
 	return nil
 }
 
-func (s *MemoryAttemptStore) List(sessionID string) []Attempt {
+func (s *MemoryAttemptStore) List(sessionID string) ([]Attempt, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Attempt, 0, len(s.items))
@@ -134,10 +134,10 @@ func (s *MemoryAttemptStore) List(sessionID string) []Attempt {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
-	return out
+	return out, nil
 }
 
-func (s *MemoryActionStore) Create(spec ActionRecord) ActionRecord {
+func (s *MemoryActionStore) Create(spec ActionRecord) (ActionRecord, error) {
 	if spec.ActionID == "" {
 		spec.ActionID = uuid.NewString()
 	}
@@ -147,7 +147,7 @@ func (s *MemoryActionStore) Create(spec ActionRecord) ActionRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.ActionID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryActionStore) Get(id string) (ActionRecord, error) {
@@ -170,7 +170,7 @@ func (s *MemoryActionStore) Update(next ActionRecord) error {
 	return nil
 }
 
-func (s *MemoryActionStore) List(sessionID string) []ActionRecord {
+func (s *MemoryActionStore) List(sessionID string) ([]ActionRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]ActionRecord, 0, len(s.items))
@@ -180,10 +180,10 @@ func (s *MemoryActionStore) List(sessionID string) []ActionRecord {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
-	return out
+	return out, nil
 }
 
-func (s *MemoryVerificationStore) Create(spec VerificationRecord) VerificationRecord {
+func (s *MemoryVerificationStore) Create(spec VerificationRecord) (VerificationRecord, error) {
 	if spec.VerificationID == "" {
 		spec.VerificationID = uuid.NewString()
 	}
@@ -193,7 +193,7 @@ func (s *MemoryVerificationStore) Create(spec VerificationRecord) VerificationRe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.VerificationID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryVerificationStore) Get(id string) (VerificationRecord, error) {
@@ -216,7 +216,7 @@ func (s *MemoryVerificationStore) Update(next VerificationRecord) error {
 	return nil
 }
 
-func (s *MemoryVerificationStore) List(sessionID string) []VerificationRecord {
+func (s *MemoryVerificationStore) List(sessionID string) ([]VerificationRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]VerificationRecord, 0, len(s.items))
@@ -226,10 +226,10 @@ func (s *MemoryVerificationStore) List(sessionID string) []VerificationRecord {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
-	return out
+	return out, nil
 }
 
-func (s *MemoryArtifactStore) Create(spec Artifact) Artifact {
+func (s *MemoryArtifactStore) Create(spec Artifact) (Artifact, error) {
 	if spec.ArtifactID == "" {
 		spec.ArtifactID = uuid.NewString()
 	}
@@ -239,7 +239,7 @@ func (s *MemoryArtifactStore) Create(spec Artifact) Artifact {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.ArtifactID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryArtifactStore) Get(id string) (Artifact, error) {
@@ -262,7 +262,7 @@ func (s *MemoryArtifactStore) Update(next Artifact) error {
 	return nil
 }
 
-func (s *MemoryArtifactStore) List(sessionID string) []Artifact {
+func (s *MemoryArtifactStore) List(sessionID string) ([]Artifact, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Artifact, 0, len(s.items))
@@ -272,10 +272,10 @@ func (s *MemoryArtifactStore) List(sessionID string) []Artifact {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out
+	return out, nil
 }
 
-func (s *MemoryRuntimeHandleStore) Create(spec RuntimeHandle) RuntimeHandle {
+func (s *MemoryRuntimeHandleStore) Create(spec RuntimeHandle) (RuntimeHandle, error) {
 	now := time.Now().UnixMilli()
 	if spec.HandleID == "" {
 		spec.HandleID = uuid.NewString()
@@ -289,7 +289,7 @@ func (s *MemoryRuntimeHandleStore) Create(spec RuntimeHandle) RuntimeHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.HandleID] = spec
-	return spec
+	return spec, nil
 }
 
 func (s *MemoryRuntimeHandleStore) Get(id string) (RuntimeHandle, error) {
@@ -313,7 +313,7 @@ func (s *MemoryRuntimeHandleStore) Update(next RuntimeHandle) error {
 	return nil
 }
 
-func (s *MemoryRuntimeHandleStore) List(sessionID string) []RuntimeHandle {
+func (s *MemoryRuntimeHandleStore) List(sessionID string) ([]RuntimeHandle, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]RuntimeHandle, 0, len(s.items))
@@ -323,5 +323,5 @@ func (s *MemoryRuntimeHandleStore) List(sessionID string) []RuntimeHandle {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out
+	return out, nil
 }

@@ -20,7 +20,7 @@ func New(db postgres.DBTX) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) Create(title, goal string) session.State {
+func (r *Repo) Create(title, goal string) (session.State, error) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	id := uuid.NewString()
@@ -34,9 +34,9 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 `, id, nil, nil, title, goal, string(session.PhaseReceived), nil, nil, 0, string(session.ExecutionIdle), nil, nil, now, nil, string(metaJSON), now, now)
 	st, err := scanState(row.Scan)
 	if err != nil {
-		panic(err)
+		return session.State{}, err
 	}
-	return st
+	return st, nil
 }
 
 func (r *Repo) Get(id string) (session.State, error) {
@@ -77,7 +77,7 @@ WHERE session_id = $1
 	return err
 }
 
-func (r *Repo) List() []session.State {
+func (r *Repo) List() ([]session.State, error) {
 	ctx := context.Background()
 	rows, err := r.db.QueryContext(ctx, `
 SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
@@ -85,21 +85,21 @@ FROM sessions
 ORDER BY updated_at DESC
 `)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []session.State{}
 	for rows.Next() {
 		st, err := scanState(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, st)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 type scanner func(dest ...any) error

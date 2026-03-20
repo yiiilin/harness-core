@@ -1,6 +1,7 @@
 package taskrepo_test
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -25,7 +26,10 @@ INSERT INTO tasks (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING task_id, task_type, goal, status, session_id, constraints_json, metadata_json, created_at, updated_at
 `)).WillReturnRows(createRows)
-	created := repo.Create(task.Spec{TaskType: "demo", Goal: "goal"})
+	created, err := repo.Create(task.Spec{TaskType: "demo", Goal: "goal"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	if created.TaskID != "task1" {
 		t.Fatalf("expected task1, got %s", created.TaskID)
 	}
@@ -67,12 +71,45 @@ SELECT task_id, task_type, goal, status, session_id, constraints_json, metadata_
 FROM tasks
 ORDER BY updated_at DESC
 `)).WillReturnRows(listRows)
-	items := repo.List()
+	items, err := repo.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
 	if len(items) != 1 || items[0].Status != task.StatusCompleted {
 		t.Fatalf("unexpected list result: %#v", items)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestTaskRepoCreateAndListReturnStorageErrors(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := taskrepo.New(db)
+	createBoom := errors.New("insert failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+INSERT INTO tasks (
+  task_id, task_type, goal, status, session_id, constraints_json, metadata_json, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING task_id, task_type, goal, status, session_id, constraints_json, metadata_json, created_at, updated_at
+`)).WillReturnError(createBoom)
+	if _, err := repo.Create(task.Spec{TaskType: "demo", Goal: "goal"}); !errors.Is(err, createBoom) {
+		t.Fatalf("expected create storage error, got %v", err)
+	}
+
+	listBoom := errors.New("list failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT task_id, task_type, goal, status, session_id, constraints_json, metadata_json, created_at, updated_at
+FROM tasks
+ORDER BY updated_at DESC
+`)).WillReturnError(listBoom)
+	if _, err := repo.List(); !errors.Is(err, listBoom) {
+		t.Fatalf("expected list storage error, got %v", err)
 	}
 }

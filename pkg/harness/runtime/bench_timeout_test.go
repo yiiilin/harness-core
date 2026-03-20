@@ -11,7 +11,7 @@ import (
 
 func BenchmarkRunStepTimeoutPath(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		rt, sess, _ := newHappyRuntime()
+		rt, sess, _ := newHappyRuntime(b)
 		step := plan.StepSpec{
 			StepID: "bench_timeout",
 			Title:  "sleep past timeout",

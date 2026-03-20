@@ -1,6 +1,7 @@
 package planrepo_test
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -52,13 +53,16 @@ FROM plan_steps WHERE plan_id = $1
 ORDER BY step_index ASC
 `)).WithArgs("plan1").WillReturnRows(createdStepRows)
 
-	pl := repo.Create("sess1", "initial", []plan.StepSpec{{
+	pl, err := repo.Create("sess1", "initial", []plan.StepSpec{{
 		StepID: "step1",
 		Title:  "title",
 		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{}},
 		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{}},
 		OnFail: plan.OnFailSpec{Strategy: "abort"},
 	}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	if pl.PlanID != "plan1" {
 		t.Fatalf("expected plan1, got %s", pl.PlanID)
 	}
@@ -125,7 +129,10 @@ SELECT step_id, title, action_json, verify_json, on_fail_json, status, attempt, 
 FROM plan_steps WHERE plan_id = $1
 ORDER BY step_index ASC
 `)).WithArgs("plan1").WillReturnRows(listStepRows)
-	items := repo.ListBySession("sess1")
+	items, err := repo.ListBySession("sess1")
+	if err != nil {
+		t.Fatalf("list by session: %v", err)
+	}
 	if len(items) != 1 || items[0].Status != plan.StatusCompleted {
 		t.Fatalf("unexpected list result: %#v", items)
 	}
@@ -171,5 +178,40 @@ ORDER BY step_index ASC
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestPlanRepoCreateAndListReturnStorageErrors(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := planrepo.New(db)
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT plan_id, session_id, revision, status, change_reason, created_at, updated_at
+FROM plans WHERE session_id = $1
+ORDER BY revision ASC
+`)).WithArgs("sess1").WillReturnRows(sqlmock.NewRows([]string{"plan_id", "session_id", "revision", "status", "change_reason", "created_at", "updated_at"}))
+	createBoom := errors.New("insert failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+INSERT INTO plans (
+  plan_id, session_id, revision, status, change_reason, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING plan_id, session_id, revision, status, change_reason, created_at, updated_at
+`)).WillReturnError(createBoom)
+	if _, err := repo.Create("sess1", "initial", []plan.StepSpec{{StepID: "step1", Title: "title"}}); !errors.Is(err, createBoom) {
+		t.Fatalf("expected create storage error, got %v", err)
+	}
+
+	listBoom := errors.New("list failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT plan_id, session_id, revision, status, change_reason, created_at, updated_at
+FROM plans WHERE session_id = $1
+ORDER BY revision ASC
+`)).WithArgs("sess2").WillReturnError(listBoom)
+	if _, err := repo.ListBySession("sess2"); !errors.Is(err, listBoom) {
+		t.Fatalf("expected list storage error, got %v", err)
 	}
 }

@@ -16,7 +16,7 @@ type SnapshotRepo struct{ db postgres.DBTX }
 
 func New(db postgres.DBTX) *SnapshotRepo { return &SnapshotRepo{db: db} }
 
-func (r *SnapshotRepo) Create(spec capability.Snapshot) capability.Snapshot {
+func (r *SnapshotRepo) Create(spec capability.Snapshot) (capability.Snapshot, error) {
 	if spec.SnapshotID == "" {
 		spec.SnapshotID = "cap_" + uuid.NewString()
 	}
@@ -31,9 +31,9 @@ INSERT INTO capability_snapshots (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `, spec.SnapshotID, nullable(spec.SessionID), nullable(spec.TaskID), nullable(spec.StepID), spec.ToolName, nullable(spec.Version), nullable(spec.CapabilityType), nullable(string(spec.RiskLevel)), nullableJSON(metadataJSON), spec.ResolvedAt)
 	if err != nil {
-		panic(err)
+		return capability.Snapshot{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *SnapshotRepo) Get(id string) (capability.Snapshot, error) {
@@ -61,7 +61,7 @@ WHERE snapshot_id = $1
 	return item, nil
 }
 
-func (r *SnapshotRepo) List(sessionID string) []capability.Snapshot {
+func (r *SnapshotRepo) List(sessionID string) ([]capability.Snapshot, error) {
 	ctx := context.Background()
 	query := `
 SELECT snapshot_id, session_id, task_id, step_id, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
@@ -75,7 +75,7 @@ FROM capability_snapshots
 	query += "ORDER BY resolved_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -84,7 +84,7 @@ FROM capability_snapshots
 		var item capability.Snapshot
 		var rawSessionID, taskID, stepID, version, capabilityType, riskLevel, metadataRaw sql.NullString
 		if err := rows.Scan(&item.SnapshotID, &rawSessionID, &taskID, &stepID, &item.ToolName, &version, &capabilityType, &riskLevel, &metadataRaw, &item.ResolvedAt); err != nil {
-			panic(err)
+			return nil, err
 		}
 		item.SessionID = rawSessionID.String
 		item.TaskID = taskID.String
@@ -98,9 +98,9 @@ FROM capability_snapshots
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 func nullable(value string) any {

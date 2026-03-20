@@ -98,7 +98,10 @@ func (s *Service) assembleAndCompactContext(ctx context.Context, state session.S
 		if summary.TaskID == "" {
 			summary.TaskID = spec.TaskID
 		}
-		persisted := s.ContextSummaries.Create(*summary)
+		persisted, err := s.ContextSummaries.Create(*summary)
+		if err != nil {
+			return ContextPackage{}, err
+		}
 		assembled.Compaction = &ContextCompaction{
 			SummaryID:      persisted.SummaryID,
 			Strategy:       persisted.Strategy,

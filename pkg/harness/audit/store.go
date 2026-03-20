@@ -4,7 +4,7 @@ import "sync"
 
 type Store interface {
 	Emit(event Event) error
-	List(sessionID string) []Event
+	List(sessionID string) ([]Event, error)
 }
 
 type MemoryStore struct {
@@ -23,7 +23,7 @@ func (s *MemoryStore) Emit(event Event) error {
 	return nil
 }
 
-func (s *MemoryStore) List(sessionID string) []Event {
+func (s *MemoryStore) List(sessionID string) ([]Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []Event{}
@@ -32,5 +32,5 @@ func (s *MemoryStore) List(sessionID string) []Event {
 			out = append(out, e)
 		}
 	}
-	return out
+	return out, nil
 }

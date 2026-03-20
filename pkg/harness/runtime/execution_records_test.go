@@ -8,14 +8,14 @@ import (
 )
 
 func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
-	rt, sess, step := newHappyRuntime()
+	rt, sess, step := newHappyRuntime(t)
 
 	out, err := rt.RunStep(context.Background(), sess.SessionID, step)
 	if err != nil {
 		t.Fatalf("run step: %v", err)
 	}
 
-	attempts := rt.ListAttempts(sess.SessionID)
+	attempts := mustListAttempts(t, rt, sess.SessionID)
 	if len(attempts) != 1 {
 		t.Fatalf("expected one attempt record, got %#v", attempts)
 	}
@@ -24,7 +24,7 @@ func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
 		t.Fatalf("expected attempt identifiers to be populated, got %#v", attempt)
 	}
 
-	actions := rt.ListActions(sess.SessionID)
+	actions := mustListActions(t, rt, sess.SessionID)
 	if len(actions) != 1 {
 		t.Fatalf("expected one action record, got %#v", actions)
 	}
@@ -33,7 +33,7 @@ func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
 		t.Fatalf("expected action record to link to attempt, got %#v", actionRec)
 	}
 
-	verifications := rt.ListVerifications(sess.SessionID)
+	verifications := mustListVerifications(t, rt, sess.SessionID)
 	if len(verifications) != 1 {
 		t.Fatalf("expected one verification record, got %#v", verifications)
 	}
@@ -42,7 +42,7 @@ func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
 		t.Fatalf("expected verification record to link to attempt, got %#v", verifyRec)
 	}
 
-	artifacts := rt.ListArtifacts(sess.SessionID)
+	artifacts := mustListArtifacts(t, rt, sess.SessionID)
 	if len(artifacts) == 0 {
 		t.Fatalf("expected at least one artifact record for execution output")
 	}

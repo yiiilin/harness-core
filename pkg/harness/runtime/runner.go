@@ -141,7 +141,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				if repos.Approvals == nil {
 					return approval.ErrApprovalNotFound
 				}
-				rec := repos.Approvals.CreatePending(request)
+				rec, err := repos.Approvals.CreatePending(request)
+				if err != nil {
+					return err
+				}
 				pendingApproval = &rec
 				attemptRecord.ApprovalID = rec.ApprovalID
 				state.PendingApprovalID = rec.ApprovalID
@@ -159,7 +162,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				if err := repos.Sessions.Update(state); err != nil {
 					return err
 				}
-				persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil)
+				if err := persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil); err != nil {
+					return err
+				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
 					return err
 				}
@@ -171,7 +176,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if s.Approvals == nil {
 				return StepRunOutput{}, approval.ErrApprovalNotFound
 			}
-			rec := s.Approvals.CreatePending(request)
+			rec, err := s.Approvals.CreatePending(request)
+			if err != nil {
+				return StepRunOutput{}, err
+			}
 			pendingApproval = &rec
 			attemptRecord.ApprovalID = rec.ApprovalID
 			state.PendingApprovalID = rec.ApprovalID
@@ -181,7 +189,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
-			s.persistExecutionFacts(attemptRecord, nil, nil, nil)
+			if err := s.persistExecutionFacts(attemptRecord, nil, nil, nil); err != nil {
+				return StepRunOutput{}, err
+			}
 		}
 		if pendingApproval != nil {
 			execResult.PendingApproval = pendingApproval
@@ -248,7 +258,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 				if err := repos.Sessions.Update(state); err != nil {
 					return err
 				}
-				persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil)
+				if err := persistExecutionFactsInRepos(repos, attemptRecord, nil, nil, nil); err != nil {
+					return err
+				}
 				if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events); err != nil {
 					return err
 				}
@@ -262,7 +274,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := s.Sessions.Update(state); err != nil {
 				return StepRunOutput{}, err
 			}
-			s.persistExecutionFacts(attemptRecord, nil, nil, nil)
+			if err := s.persistExecutionFacts(attemptRecord, nil, nil, nil); err != nil {
+				return StepRunOutput{}, err
+			}
 		}
 		if s.Runner == nil {
 			if err := s.emitEvents(ctx, events); err != nil {
@@ -428,8 +442,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 			if err := repos.Sessions.Update(state); err != nil {
 				return err
 			}
-			persistExecutionFactsInRepos(repos, attemptRecord, actionRecord, verificationRecord, artifactRecords)
-			persistCapabilitySnapshotInRepos(repos, capabilitySnapshot)
+			if err := persistExecutionFactsInRepos(repos, attemptRecord, actionRecord, verificationRecord, artifactRecords); err != nil {
+				return err
+			}
+			if err := persistCapabilitySnapshotInRepos(repos, capabilitySnapshot); err != nil {
+				return err
+			}
 			if finalizedApproval != nil && repos.Approvals != nil {
 				if err := repos.Approvals.Update(*finalizedApproval); err != nil {
 					return err
@@ -448,8 +466,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		if err := s.Sessions.Update(state); err != nil {
 			return StepRunOutput{}, err
 		}
-		s.persistExecutionFacts(attemptRecord, actionRecord, verificationRecord, artifactRecords)
-		s.persistCapabilitySnapshot(capabilitySnapshot)
+		if err := s.persistExecutionFacts(attemptRecord, actionRecord, verificationRecord, artifactRecords); err != nil {
+			return StepRunOutput{}, err
+		}
+		if err := s.persistCapabilitySnapshot(capabilitySnapshot); err != nil {
+			return StepRunOutput{}, err
+		}
 		if finalizedApproval != nil && s.Approvals != nil {
 			if err := s.Approvals.Update(*finalizedApproval); err != nil {
 				return StepRunOutput{}, err
@@ -480,7 +502,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 }
 
 func updateLatestPlanStepInStore(store plan.Store, sessionID string, step plan.StepSpec) (*plan.Spec, error) {
-	latest, ok := store.LatestBySession(sessionID)
+	latest, ok, err := store.LatestBySession(sessionID)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -544,8 +569,8 @@ func latestPlanHasRemainingSteps(store plan.Store, sessionID, completedStepID st
 	if store == nil {
 		return false
 	}
-	latest, ok := store.LatestBySession(sessionID)
-	if !ok {
+	latest, ok, err := store.LatestBySession(sessionID)
+	if err != nil || !ok {
 		return false
 	}
 	for _, st := range latest.Steps {
@@ -567,52 +592,72 @@ func actionErrorMessage(result action.Result) string {
 	return "tool failed"
 }
 
-func persistExecutionFactsInRepos(repos persistence.RepositorySet, attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) {
+func persistExecutionFactsInRepos(repos persistence.RepositorySet, attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
 	if repos.Attempts != nil {
-		repos.Attempts.Create(attempt)
+		if _, err := repos.Attempts.Create(attempt); err != nil {
+			return err
+		}
 	}
 	if actionRecord != nil && repos.Actions != nil {
-		repos.Actions.Create(*actionRecord)
+		if _, err := repos.Actions.Create(*actionRecord); err != nil {
+			return err
+		}
 	}
 	if verificationRecord != nil && repos.Verifications != nil {
-		repos.Verifications.Create(*verificationRecord)
+		if _, err := repos.Verifications.Create(*verificationRecord); err != nil {
+			return err
+		}
 	}
 	if repos.Artifacts != nil {
 		for _, artifact := range artifacts {
-			repos.Artifacts.Create(artifact)
+			if _, err := repos.Artifacts.Create(artifact); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func persistCapabilitySnapshotInRepos(repos persistence.RepositorySet, snapshot *capability.Snapshot) {
+func persistCapabilitySnapshotInRepos(repos persistence.RepositorySet, snapshot *capability.Snapshot) error {
 	if snapshot == nil || repos.CapabilitySnapshots == nil {
-		return
+		return nil
 	}
-	repos.CapabilitySnapshots.Create(*snapshot)
+	_, err := repos.CapabilitySnapshots.Create(*snapshot)
+	return err
 }
 
-func (s *Service) persistExecutionFacts(attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) {
+func (s *Service) persistExecutionFacts(attempt execution.Attempt, actionRecord *execution.ActionRecord, verificationRecord *execution.VerificationRecord, artifacts []execution.Artifact) error {
 	if s.Attempts != nil {
-		s.Attempts.Create(attempt)
+		if _, err := s.Attempts.Create(attempt); err != nil {
+			return err
+		}
 	}
 	if actionRecord != nil && s.Actions != nil {
-		s.Actions.Create(*actionRecord)
+		if _, err := s.Actions.Create(*actionRecord); err != nil {
+			return err
+		}
 	}
 	if verificationRecord != nil && s.Verifications != nil {
-		s.Verifications.Create(*verificationRecord)
+		if _, err := s.Verifications.Create(*verificationRecord); err != nil {
+			return err
+		}
 	}
 	if s.Artifacts != nil {
 		for _, artifact := range artifacts {
-			s.Artifacts.Create(artifact)
+			if _, err := s.Artifacts.Create(artifact); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func (s *Service) persistCapabilitySnapshot(snapshot *capability.Snapshot) {
+func (s *Service) persistCapabilitySnapshot(snapshot *capability.Snapshot) error {
 	if snapshot == nil || s.CapabilitySnapshots == nil {
-		return
+		return nil
 	}
-	s.CapabilitySnapshots.Create(*snapshot)
+	_, err := s.CapabilitySnapshots.Create(*snapshot)
+	return err
 }
 
 func (s *Service) emitEvents(ctx context.Context, events []audit.Event) error {

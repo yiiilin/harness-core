@@ -39,8 +39,8 @@ func TestHappyPathRunStep(t *testing.T) {
 
 	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
 
-	sess := rt.CreateSession("test session", "run a shell command")
-	tsk := rt.CreateTask(task.Spec{TaskType: "demo", Goal: "execute one verified shell step"})
+	sess := mustCreateSession(t, rt, "test session", "run a shell command")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "execute one verified shell step"})
 	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
@@ -86,7 +86,7 @@ func TestHappyPathRunStep(t *testing.T) {
 	if len(out.Events) == 0 {
 		t.Fatalf("expected runtime events, got none")
 	}
-	stored := rt.ListAuditEvents(attached.SessionID)
+	stored := mustListAuditEvents(t, rt, attached.SessionID)
 	if len(stored) == 0 {
 		t.Fatalf("expected stored audit events, got none")
 	}

@@ -36,7 +36,7 @@ INSERT INTO audit_events (
 	return err
 }
 
-func (r *Repo) List(sessionID string) []audit.Event {
+func (r *Repo) List(sessionID string) ([]audit.Event, error) {
 	ctx := context.Background()
 	query := `
 SELECT event_id, type, session_id, task_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
@@ -50,19 +50,19 @@ FROM audit_events
 	query += "ORDER BY created_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 	out := []audit.Event{}
 	for rows.Next() {
 		evt, err := scanEvent(rows.Scan)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		out = append(out, evt)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].CreatedAt == out[j].CreatedAt {
@@ -70,7 +70,7 @@ FROM audit_events
 		}
 		return out[i].CreatedAt < out[j].CreatedAt
 	})
-	return out
+	return out, nil
 }
 
 type scanner func(dest ...any) error

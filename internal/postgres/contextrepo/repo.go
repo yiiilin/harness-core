@@ -15,7 +15,7 @@ type SummaryRepo struct{ db postgres.DBTX }
 
 func New(db postgres.DBTX) *SummaryRepo { return &SummaryRepo{db: db} }
 
-func (r *SummaryRepo) Create(spec hruntime.ContextSummary) hruntime.ContextSummary {
+func (r *SummaryRepo) Create(spec hruntime.ContextSummary) (hruntime.ContextSummary, error) {
 	if spec.SummaryID == "" {
 		spec.SummaryID = "ctx_" + uuid.NewString()
 	}
@@ -31,9 +31,9 @@ INSERT INTO context_summaries (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `, spec.SummaryID, nullable(spec.SessionID), nullable(spec.TaskID), nullable(spec.Strategy), nullableJSON(summaryJSON), nullableJSON(metadataJSON), spec.OriginalBytes, spec.CompactedBytes, spec.CreatedAt)
 	if err != nil {
-		panic(err)
+		return hruntime.ContextSummary{}, err
 	}
-	return spec
+	return spec, nil
 }
 
 func (r *SummaryRepo) Get(id string) (hruntime.ContextSummary, error) {
@@ -61,7 +61,7 @@ WHERE summary_id = $1
 	return item, nil
 }
 
-func (r *SummaryRepo) List(sessionID string) []hruntime.ContextSummary {
+func (r *SummaryRepo) List(sessionID string) ([]hruntime.ContextSummary, error) {
 	ctx := context.Background()
 	query := `
 SELECT summary_id, session_id, task_id, strategy, summary_json, metadata_json, original_bytes, compacted_bytes, created_at
@@ -75,7 +75,7 @@ FROM context_summaries
 	query += "ORDER BY created_at ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -84,7 +84,7 @@ FROM context_summaries
 		var item hruntime.ContextSummary
 		var rawSessionID, taskID, strategy, summaryRaw, metadataRaw sql.NullString
 		if err := rows.Scan(&item.SummaryID, &rawSessionID, &taskID, &strategy, &summaryRaw, &metadataRaw, &item.OriginalBytes, &item.CompactedBytes, &item.CreatedAt); err != nil {
-			panic(err)
+			return nil, err
 		}
 		item.SessionID = rawSessionID.String
 		item.TaskID = taskID.String
@@ -98,9 +98,9 @@ FROM context_summaries
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 func nullable(value string) any {
