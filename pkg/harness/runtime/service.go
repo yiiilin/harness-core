@@ -5,7 +5,10 @@ import (
 	"errors"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -31,39 +34,63 @@ type Info struct {
 }
 
 type Service struct {
-	Sessions         session.Store
-	Tasks            task.Store
-	Plans            plan.Store
-	Tools            *tool.Registry
-	Verifiers        *verify.Registry
-	Audit            audit.Store
-	Runner           persistence.Runner
-	Policy           permission.Evaluator
-	ContextAssembler ContextAssembler
-	Planner          Planner
-	EventSink        EventSink
-	Metrics          Metrics
-	MetricsRecorder  *observability.MemoryRecorder
-	StorageMode      string
+	Sessions            session.Store
+	Tasks               task.Store
+	Plans               plan.Store
+	Approvals           approval.Store
+	Attempts            execution.AttemptStore
+	Actions             execution.ActionStore
+	Verifications       execution.VerificationStore
+	Artifacts           execution.ArtifactStore
+	RuntimeHandles      execution.RuntimeHandleStore
+	CapabilitySnapshots capability.SnapshotStore
+	ResumePolicy        approval.ResumePolicy
+	Tools               *tool.Registry
+	CapabilityResolver  capability.Resolver
+	Verifiers           *verify.Registry
+	Audit               audit.Store
+	Runner              persistence.Runner
+	Policy              permission.Evaluator
+	ContextAssembler    ContextAssembler
+	ContextSummaries    ContextSummaryStore
+	Compactor           Compactor
+	LoopBudgets         LoopBudgets
+	Planner             Planner
+	EventSink           EventSink
+	Metrics             Metrics
+	MetricsRecorder     *observability.MemoryRecorder
+	StorageMode         string
 }
 
 func New(opts Options) *Service {
 	opts = WithDefaults(opts)
 	return &Service{
-		Sessions:         opts.Sessions,
-		Tasks:            opts.Tasks,
-		Plans:            opts.Plans,
-		Tools:            opts.Tools,
-		Verifiers:        opts.Verifiers,
-		Audit:            opts.Audit,
-		Runner:           opts.Runner,
-		Policy:           opts.Policy,
-		ContextAssembler: opts.ContextAssembler,
-		Planner:          opts.Planner,
-		EventSink:        opts.EventSink,
-		Metrics:          metricsOrNoop(opts.Metrics),
-		MetricsRecorder:  opts.MetricsRecorder,
-		StorageMode:      opts.StorageMode,
+		Sessions:            opts.Sessions,
+		Tasks:               opts.Tasks,
+		Plans:               opts.Plans,
+		Approvals:           opts.Approvals,
+		Attempts:            opts.Attempts,
+		Actions:             opts.Actions,
+		Verifications:       opts.Verifications,
+		Artifacts:           opts.Artifacts,
+		RuntimeHandles:      opts.RuntimeHandles,
+		CapabilitySnapshots: opts.CapabilitySnapshots,
+		ResumePolicy:        opts.ResumePolicy,
+		Tools:               opts.Tools,
+		CapabilityResolver:  opts.CapabilityResolver,
+		Verifiers:           opts.Verifiers,
+		Audit:               opts.Audit,
+		Runner:              opts.Runner,
+		Policy:              opts.Policy,
+		ContextAssembler:    opts.ContextAssembler,
+		ContextSummaries:    opts.ContextSummaries,
+		Compactor:           opts.Compactor,
+		LoopBudgets:         opts.LoopBudgets,
+		Planner:             opts.Planner,
+		EventSink:           opts.EventSink,
+		Metrics:             metricsOrNoop(opts.Metrics),
+		MetricsRecorder:     opts.MetricsRecorder,
+		StorageMode:         opts.StorageMode,
 	}
 }
 
@@ -177,6 +204,62 @@ func (s *Service) ListPlans(sessionID string) []plan.Spec {
 	return s.Plans.ListBySession(sessionID)
 }
 
+func (s *Service) GetApproval(id string) (approval.Record, error) {
+	if s.Approvals == nil {
+		return approval.Record{}, approval.ErrApprovalNotFound
+	}
+	return s.Approvals.Get(id)
+}
+
+func (s *Service) ListApprovals(sessionID string) []approval.Record {
+	if s.Approvals == nil {
+		return nil
+	}
+	return s.Approvals.List(sessionID)
+}
+
+func (s *Service) ListAttempts(sessionID string) []execution.Attempt {
+	if s.Attempts == nil {
+		return nil
+	}
+	return s.Attempts.List(sessionID)
+}
+
+func (s *Service) ListActions(sessionID string) []execution.ActionRecord {
+	if s.Actions == nil {
+		return nil
+	}
+	return s.Actions.List(sessionID)
+}
+
+func (s *Service) ListVerifications(sessionID string) []execution.VerificationRecord {
+	if s.Verifications == nil {
+		return nil
+	}
+	return s.Verifications.List(sessionID)
+}
+
+func (s *Service) ListArtifacts(sessionID string) []execution.Artifact {
+	if s.Artifacts == nil {
+		return nil
+	}
+	return s.Artifacts.List(sessionID)
+}
+
+func (s *Service) ListCapabilitySnapshots(sessionID string) []capability.Snapshot {
+	if s.CapabilitySnapshots == nil {
+		return nil
+	}
+	return s.CapabilitySnapshots.List(sessionID)
+}
+
+func (s *Service) ListContextSummaries(sessionID string) []ContextSummary {
+	if s.ContextSummaries == nil {
+		return nil
+	}
+	return s.ContextSummaries.List(sessionID)
+}
+
 func (s *Service) ListTools() []tool.Definition {
 	return s.Tools.List()
 }
@@ -208,8 +291,22 @@ func (s *Service) EvaluatePolicy(ctx context.Context, state session.State, step 
 	return s.Policy.Evaluate(ctx, state, step)
 }
 
+func (s *Service) ResolveCapability(ctx context.Context, req capability.Request) (capability.Resolution, error) {
+	if s.CapabilityResolver == nil {
+		return capability.Resolution{}, capability.ErrCapabilityNotFound
+	}
+	return s.CapabilityResolver.Resolve(ctx, req)
+}
+
 func (s *Service) InvokeAction(ctx context.Context, spec action.Spec) (action.Result, error) {
-	return s.Tools.Invoke(ctx, spec)
+	resolution, err := s.ResolveCapability(ctx, capability.Request{Action: spec})
+	if err != nil {
+		return capabilityErrorResult(spec, err), err
+	}
+	if resolution.Handler == nil {
+		return action.Result{OK: false, Error: &action.Error{Code: "TOOL_NOT_IMPLEMENTED", Message: spec.ToolName}}, nil
+	}
+	return resolution.Handler.Invoke(ctx, spec.Args)
 }
 
 func (s *Service) EvaluateVerify(ctx context.Context, spec verify.Spec, result action.Result, state session.State) (verify.Result, error) {

@@ -45,6 +45,9 @@ type PermissionDecision = permission.Decision
 type PermissionAction = permission.Action
 
 type ContextAssembler = hruntime.ContextAssembler
+type ContextPackage = hruntime.ContextPackage
+type ContextSummary = hruntime.ContextSummary
+type LoopBudgets = hruntime.LoopBudgets
 type Planner = hruntime.Planner
 type EventSink = hruntime.EventSink
 

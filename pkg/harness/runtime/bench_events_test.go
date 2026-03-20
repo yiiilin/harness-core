@@ -24,7 +24,7 @@ func BenchmarkEmitEventsBatch100(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		store := audit.NewMemoryStore()
-		svc := Service{Audit: store}
+		svc := Service{Audit: store, EventSink: AuditStoreSink{Store: store}}
 		svc.emitEvents(ctx, events)
 	}
 }

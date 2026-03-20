@@ -31,7 +31,9 @@ These belong in `pkg/harness/*` because they affect the execution kernel itself.
 Examples:
 - `PolicyEvaluator`
 - `ContextAssembler`
+- `Compactor`
 - `Planner`
+- `CapabilityResolver`
 - `EventSink`
 - metrics hook
 - storage interfaces
@@ -95,6 +97,7 @@ rt := harness.New(opts)
 Good:
 - shell module exposes `Backend`
 - shell module exposes `SandboxHook`
+- modules expose `DefaultPolicyRules()` while core keeps the evaluator/composition logic
 
 ### Avoid: global ad-hoc flags
 Avoid:
@@ -127,6 +130,7 @@ This is why `modules/shell` can expose:
 - `RegisterWithOptions(...)`
 - `Backend`
 - `SandboxHook`
+- `DefaultPolicyRules()`
 
 without polluting `harness-core` with shell-specific policy logic.
 

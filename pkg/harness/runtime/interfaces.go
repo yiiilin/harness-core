@@ -15,12 +15,12 @@ import (
 // ContextAssembler is responsible for producing the minimal sufficient context
 // for the current step decision.
 type ContextAssembler interface {
-	Assemble(ctx context.Context, state session.State, spec task.Spec) (map[string]any, error)
+	Assemble(ctx context.Context, state session.State, spec task.Spec) (ContextPackage, error)
 }
 
 // Planner decides the next step or plan revision based on the current session state.
 type Planner interface {
-	PlanNext(ctx context.Context, state session.State, spec task.Spec, assembled map[string]any) (plan.StepSpec, error)
+	PlanNext(ctx context.Context, state session.State, spec task.Spec, assembled ContextPackage) (plan.StepSpec, error)
 }
 
 // ToolInvoker executes a tool action.

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -27,10 +28,11 @@ type PolicyDecision struct {
 }
 
 type ExecutionResult struct {
-	Step   plan.StepSpec  `json:"step"`
-	Action action.Result  `json:"action"`
-	Verify verify.Result  `json:"verify"`
-	Policy PolicyDecision `json:"policy"`
+	Step            plan.StepSpec    `json:"step"`
+	Action          action.Result    `json:"action"`
+	Verify          verify.Result    `json:"verify"`
+	Policy          PolicyDecision   `json:"policy"`
+	PendingApproval *approval.Record `json:"pending_approval,omitempty"`
 }
 
 type TransitionDecision struct {

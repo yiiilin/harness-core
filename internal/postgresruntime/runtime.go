@@ -9,11 +9,18 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/yiiilin/harness-core/internal/postgres"
+	"github.com/yiiilin/harness-core/internal/postgres/approvalrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/auditrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/capabilityrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/contextrepo"
+	"github.com/yiiilin/harness-core/internal/postgres/executionrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/planrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/sessionrepo"
 	"github.com/yiiilin/harness-core/internal/postgres/taskrepo"
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -49,14 +56,35 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 	opts.Sessions = sessionrepo.New(db)
 	opts.Tasks = taskrepo.New(db)
 	opts.Plans = planrepo.New(db)
+	opts.Approvals = approvalrepo.New(db)
+	opts.Attempts = executionrepo.NewAttemptStore(db)
+	opts.Actions = executionrepo.NewActionStore(db)
+	opts.Verifications = executionrepo.NewVerificationStore(db)
+	opts.Artifacts = executionrepo.NewArtifactStore(db)
+	opts.RuntimeHandles = executionrepo.NewRuntimeHandleStore(db)
+	opts.CapabilitySnapshots = capabilityrepo.New(db)
 	opts.Audit = auditrepo.New(db)
+	opts.ContextSummaries = contextrepo.New(db)
 	opts.Runner = persistence.TransactionalRunner{
 		Manager: postgres.TxManager{DB: db},
 		Factory: postgres.RepositoryFactory{
-			SessionFactory: func(dbtx postgres.DBTX) session.Store { return sessionrepo.New(dbtx) },
-			TaskFactory:    func(dbtx postgres.DBTX) task.Store { return taskrepo.New(dbtx) },
-			PlanFactory:    func(dbtx postgres.DBTX) plan.Store { return planrepo.New(dbtx) },
-			AuditFactory:   func(dbtx postgres.DBTX) audit.Store { return auditrepo.New(dbtx) },
+			SessionFactory:  func(dbtx postgres.DBTX) session.Store { return sessionrepo.New(dbtx) },
+			TaskFactory:     func(dbtx postgres.DBTX) task.Store { return taskrepo.New(dbtx) },
+			PlanFactory:     func(dbtx postgres.DBTX) plan.Store { return planrepo.New(dbtx) },
+			AuditFactory:    func(dbtx postgres.DBTX) audit.Store { return auditrepo.New(dbtx) },
+			ApprovalFactory: func(dbtx postgres.DBTX) approval.Store { return approvalrepo.New(dbtx) },
+			CapabilitySnapshotFactory: func(dbtx postgres.DBTX) capability.SnapshotStore {
+				return capabilityrepo.New(dbtx)
+			},
+			AttemptFactory: func(dbtx postgres.DBTX) execution.AttemptStore { return executionrepo.NewAttemptStore(dbtx) },
+			ActionFactory:  func(dbtx postgres.DBTX) execution.ActionStore { return executionrepo.NewActionStore(dbtx) },
+			VerificationFactory: func(dbtx postgres.DBTX) execution.VerificationStore {
+				return executionrepo.NewVerificationStore(dbtx)
+			},
+			ArtifactFactory: func(dbtx postgres.DBTX) execution.ArtifactStore { return executionrepo.NewArtifactStore(dbtx) },
+			RuntimeHandleFactory: func(dbtx postgres.DBTX) execution.RuntimeHandleStore {
+				return executionrepo.NewRuntimeHandleStore(dbtx)
+			},
 		},
 	}
 	opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}

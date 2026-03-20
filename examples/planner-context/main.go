@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
@@ -14,32 +15,37 @@ type LayeredContextAssembler struct {
 	MaxPreviewBytes int
 }
 
-func (a LayeredContextAssembler) Assemble(_ context.Context, state session.State, spec task.Spec) (map[string]any, error) {
+func (a LayeredContextAssembler) Assemble(_ context.Context, state session.State, spec task.Spec) (hruntime.ContextPackage, error) {
 	limit := a.MaxPreviewBytes
 	if limit <= 0 {
 		limit = 48
 	}
-	return map[string]any{
-		"task": map[string]any{
-			"task_id":   spec.TaskID,
-			"task_type": spec.TaskType,
-			"goal":      spec.Goal,
+	return hruntime.ContextPackage{
+		Task: hruntime.ContextTask{
+			TaskID:   spec.TaskID,
+			TaskType: spec.TaskType,
+			Goal:     spec.Goal,
 		},
-		"session": map[string]any{
-			"session_id":      state.SessionID,
-			"phase":           state.Phase,
-			"current_step_id": state.CurrentStepID,
-			"retry_count":     state.RetryCount,
+		Session: hruntime.ContextSession{
+			SessionID:      state.SessionID,
+			Phase:          state.Phase,
+			CurrentStepID:  state.CurrentStepID,
+			RetryCount:     state.RetryCount,
+			ExecutionState: state.ExecutionState,
 		},
-		"derived": map[string]any{
+		Constraints: spec.Constraints,
+		Metadata:    spec.Metadata,
+		Derived: map[string]any{
 			"goal_word_count": len(strings.Fields(spec.Goal)),
 			"has_constraints": len(spec.Constraints) > 0,
 			"has_metadata":    len(spec.Metadata) > 0,
 		},
-		"compaction": map[string]any{
-			"limit_bytes":         limit,
-			"metadata_preview":    compactMap(spec.Metadata, limit),
-			"constraints_preview": compactMap(spec.Constraints, limit),
+		Extras: map[string]any{
+			"compaction": map[string]any{
+				"limit_bytes":         limit,
+				"metadata_preview":    compactMap(spec.Metadata, limit),
+				"constraints_preview": compactMap(spec.Constraints, limit),
+			},
 		},
 	}, nil
 }
@@ -89,6 +95,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	body, _ := json.MarshalIndent(assembled, "", "  ")
+	body, _ := json.MarshalIndent(assembled.ToMap(), "", "  ")
 	fmt.Println(string(body))
 }

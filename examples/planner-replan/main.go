@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
@@ -14,7 +15,7 @@ import (
 
 type SequencePlanner struct{}
 
-func (SequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+func (SequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ hruntime.ContextPackage) (plan.StepSpec, error) {
 	switch state.CurrentStepID {
 	case "":
 		return plan.StepSpec{

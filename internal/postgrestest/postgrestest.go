@@ -107,6 +107,12 @@ func (i *Instance) prepareDatabase(t testing.TB) {
 
 func resetDatabase(ctx context.Context, db *sql.DB) error {
 	statements := []string{
+		"DELETE FROM runtime_handles",
+		"DELETE FROM artifacts",
+		"DELETE FROM verification_records",
+		"DELETE FROM action_records",
+		"DELETE FROM attempts",
+		"DELETE FROM approvals",
 		"DELETE FROM plan_steps",
 		"DELETE FROM plans",
 		"DELETE FROM tasks",

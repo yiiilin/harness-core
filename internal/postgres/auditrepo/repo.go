@@ -30,16 +30,16 @@ func (r *Repo) Emit(event audit.Event) error {
 	payloadJSON, _ := json.Marshal(event.Payload)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO audit_events (
-  event_id, type, session_id, step_id, payload_json, created_at
-) VALUES ($1, $2, $3, $4, $5, $6)
-`, event.EventID, event.Type, nullable(event.SessionID), nullable(event.StepID), nullableJSON(payloadJSON), event.CreatedAt)
+  event_id, type, session_id, task_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+`, event.EventID, event.Type, nullable(event.SessionID), nullable(event.TaskID), nullable(event.StepID), nullable(event.AttemptID), nullable(event.ActionID), nullable(event.TraceID), nullable(event.CausationID), nullableJSON(payloadJSON), event.CreatedAt)
 	return err
 }
 
 func (r *Repo) List(sessionID string) []audit.Event {
 	ctx := context.Background()
 	query := `
-SELECT event_id, type, session_id, step_id, payload_json, created_at
+SELECT event_id, type, session_id, task_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
 FROM audit_events
 `
 	args := []any{}
@@ -100,12 +100,17 @@ func (n *sqlNullString) Scan(value any) error {
 
 func scanEvent(scan scanner) (audit.Event, error) {
 	var evt audit.Event
-	var sessionID, stepID, payloadRaw sqlNullString
-	if err := scan(&evt.EventID, &evt.Type, &sessionID, &stepID, &payloadRaw, &evt.CreatedAt); err != nil {
+	var sessionID, taskID, stepID, attemptID, actionID, traceID, causationID, payloadRaw sqlNullString
+	if err := scan(&evt.EventID, &evt.Type, &sessionID, &taskID, &stepID, &attemptID, &actionID, &traceID, &causationID, &payloadRaw, &evt.CreatedAt); err != nil {
 		return audit.Event{}, err
 	}
 	evt.SessionID = sessionID.String
+	evt.TaskID = taskID.String
 	evt.StepID = stepID.String
+	evt.AttemptID = attemptID.String
+	evt.ActionID = actionID.String
+	evt.TraceID = traceID.String
+	evt.CausationID = causationID.String
 	if payloadRaw.String != "" {
 		_ = json.Unmarshal([]byte(payloadRaw.String), &evt.Payload)
 	}

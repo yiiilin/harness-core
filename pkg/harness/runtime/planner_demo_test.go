@@ -13,7 +13,7 @@ func TestDemoPlannerDerivesShellStep(t *testing.T) {
 	planner := hruntime.DemoPlanner{}
 	state := session.State{SessionID: "s1", Phase: session.PhasePlan}
 	spec := task.Spec{TaskID: "t1", TaskType: "demo", Goal: "echo hello"}
-	assembled := map[string]any{"task": map[string]any{"goal": "echo hello"}}
+	assembled := hruntime.ContextPackage{Task: hruntime.ContextTask{Goal: "echo hello"}}
 	step, err := planner.PlanNext(context.Background(), state, spec, assembled)
 	if err != nil {
 		t.Fatalf("plan next: %v", err)

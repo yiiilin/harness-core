@@ -174,6 +174,28 @@ A simple kernel can own deterministic transitions such as:
 
 ---
 
+## Execution records and event envelope
+
+The runtime now treats execution facts as first-class records, not only opaque step payloads.
+
+That includes:
+- attempts
+- action records
+- verification records
+- artifacts
+- runtime handles
+
+The runtime event envelope also carries stable identifiers for:
+- `task_id`
+- `attempt_id`
+- `action_id`
+- `trace_id`
+- `causation_id`
+
+These identifiers exist to support replay, recovery, debugging, and observability consumers.
+
+---
+
 ## Loop budgets
 
 To avoid drift and runaway loops, the runtime should support bounded execution.
@@ -186,6 +208,28 @@ Recommended controls:
 - `max_tool_output_chars`
 
 These should be configurable, but present in v1.
+
+The current runtime exposes these via `runtime.Options.LoopBudgets`.
+Today they are used for planner step bounds, compactor input, and tool-output truncation boundaries.
+
+---
+
+## Approval and resume
+
+`permission.Ask` is a blocking runtime state, not only a semantic hint.
+
+Current runtime behavior:
+- create a durable approval record
+- keep the step blocked until a reply exists
+- expose `RespondApproval(...)`
+- expose `ResumePendingApproval(...)`
+- support `once`, `always`, and `reject`
+
+WebSocket adapters surface the same kernel path through:
+- `approval.get`
+- `approval.list`
+- `approval.respond`
+- `session.resume`
 
 ---
 
@@ -220,6 +264,31 @@ When session context gets too large:
 
 This should happen under explicit runtime control, not hidden model magic.
 
+The current runtime exposes:
+- typed `ContextPackage` assembly
+- a replaceable `Compactor`
+- durable `ContextSummaryStore` hooks
+
+Compaction currently runs through the planner-context assembly path so the kernel, not demo code, owns the entry point.
+
+---
+
+## Capability resolution
+
+Tool execution now resolves a capability snapshot before invoking the handler.
+
+The runtime exposes:
+- `CapabilityResolver`
+- `CapabilitySnapshots`
+
+The resolved snapshot captures stable capability metadata such as:
+- tool name
+- version
+- capability type
+- risk level
+
+This keeps action execution replay-friendly even when the live registry continues to evolve.
+
 ---
 
 
@@ -228,13 +297,15 @@ This should happen under explicit runtime control, not hidden model magic.
 The current runtime ships with small, explicitly limited defaults:
 
 - `DefaultContextAssembler`
-  - returns a minimal structured context view of task + session + metadata
+  - returns a minimal typed context package for task + session + metadata
+- `NoopCompactor`
+  - preserves assembled context unchanged until an embedding app installs a real compactor
 - `NoopPlanner`
   - returns `ErrNoPlannerConfigured` and is safe by default
 - `DemoPlanner`
   - a tiny example planner that can derive a shell step for trivial goals such as `echo hello`
 - `AuditStoreSink`
-  - bridges runtime events into the in-memory audit store
+  - bridges runtime events into the configured audit store and can be rebound inside transaction scopes
 
 These defaults are intentionally simple. Their purpose is to:
 - demonstrate composition
@@ -258,6 +329,7 @@ Exclude from v1:
 - distributed runtime scheduling
 - complex multi-agent orchestration
 - long-lived public tenant runtime controls
+- multi-user ownership / session listing / UI projections
 - deeply coupled model-provider logic
 
 ---

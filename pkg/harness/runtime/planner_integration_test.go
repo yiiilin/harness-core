@@ -15,7 +15,7 @@ import (
 
 type sequencePlanner struct{}
 
-func (sequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+func (sequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ hruntime.ContextPackage) (plan.StepSpec, error) {
 	switch state.CurrentStepID {
 	case "":
 		return plan.StepSpec{
@@ -46,7 +46,7 @@ func (sequencePlanner) PlanNext(_ context.Context, state session.State, _ task.S
 
 type failingPlanner struct{}
 
-func (failingPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+func (failingPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, _ hruntime.ContextPackage) (plan.StepSpec, error) {
 	return plan.StepSpec{}, errors.New("planner failed")
 }
 

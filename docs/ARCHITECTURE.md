@@ -77,6 +77,12 @@ Registry-backed postcondition checker.
 ### Event
 Structured runtime/audit/observability record.
 
+### Approval
+Durable pending-approval record plus explicit resume decision.
+
+### Capability snapshot
+Resolved tool metadata captured before invocation for replay/debug stability.
+
 ---
 
 ## Runtime architecture
@@ -87,11 +93,14 @@ caller
  -> runtime kernel
     -> state machine
     -> context assembler
+    -> context compactor / summary store
     -> planner hook
     -> tool registry
+    -> capability resolver / snapshot store
     -> executor
     -> verifier registry
     -> policy engine
+    -> approval store / resume policy
     -> event sink / audit hooks
     -> metrics hook
 ```
@@ -108,6 +117,7 @@ The embedding application should own:
 - user auth integration
 - external storage/runtime wiring
 - UI / operator experience
+- multi-user / tenant ownership and projections
 
 ---
 

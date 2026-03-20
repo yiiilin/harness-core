@@ -12,6 +12,7 @@ import (
 	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -177,6 +178,15 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 			return
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: out})
+	case "session.resume":
+		var payload protocol.SessionResumePayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		out, err := s.runtime.ResumePendingApproval(context.Background(), payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "SESSION_RESUME_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: out})
 	case "action.invoke":
 		var spec action.Spec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
@@ -214,6 +224,28 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 		var payload protocol.AuditListPayload
 		_ = json.Unmarshal(env.Payload, &payload)
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListAuditEvents(payload.SessionID)})
+	case "approval.get":
+		var payload protocol.ApprovalGetPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.GetApproval(payload.ApprovalID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "NOT_FOUND", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "approval.list":
+		var payload protocol.ApprovalListPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: s.runtime.ListApprovals(payload.SessionID)})
+	case "approval.respond":
+		var payload protocol.ApprovalRespondPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, st, err := s.runtime.RespondApproval(payload.ApprovalID, approval.Response{Reply: approval.Reply(payload.Reply), Metadata: payload.Metadata})
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "APPROVAL_RESPOND_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: map[string]any{"approval": rec, "session": st}})
 	case "verify.evaluate":
 		var payload struct {
 			SessionID string        `json:"session_id"`

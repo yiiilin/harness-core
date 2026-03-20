@@ -42,6 +42,8 @@ Resolved during this phase:
 - the shipped adapter/bootstrap path can now run in in-memory mode or Postgres mode
 - config now exposes durable runtime selection and Postgres DSN wiring
 - durable storage is now exercised through shipped server/runtime integration tests
+- approval / resume is now a real kernel state machine with durable storage
+- execution facts, capability snapshots, and planner-context compaction hooks now exist in core contracts
 
 ---
 
@@ -433,7 +435,7 @@ The final command shape is an output of the roadmap work and should be recorded 
 - [ ] Knowledge / retrieval module
 - [ ] Multi-process / distributed runtime
 - [ ] Advanced tenant/user auth
-- [ ] Production-grade approval workflow persistence
+- [ ] Organization-specific approval UI / delegation workflow
 
 ---
 

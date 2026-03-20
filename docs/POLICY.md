@@ -10,7 +10,8 @@ This document is intentionally runtime-core oriented, not product-specific.
 
 ## Core principle
 
-Default deny. Allow by explicit capability.
+Block unregistered or disabled capabilities by default.
+For registered capabilities, allow / ask / deny should come from explicit policy data and evaluator composition.
 
 The runtime should never assume that because a model requested an action, the action should run.
 
@@ -81,6 +82,21 @@ Recommended approval replies:
 
 The runtime should support these as generic concepts even if a host app presents them in a custom UI.
 
+## Approval lifecycle
+
+When policy returns `ask`, the runtime should:
+- create a durable pending approval record
+- mark the step `blocked`
+- move session execution state to `awaiting_approval`
+- avoid invoking the tool until a reply is recorded
+
+Recommended resume path:
+- host records a reply through `RespondApproval(...)` or transport-equivalent APIs
+- `once` allows exactly one resumed execution
+- `always` allows reuse for future matching steps
+- `reject` fails the blocked step without executing the tool
+- `ResumePendingApproval(...)` re-enters the step loop explicitly
+
 ---
 
 ## What must be explicit in v1
@@ -114,7 +130,10 @@ The runtime should emit structured audit events for:
 At minimum, each audit event should include:
 - event type
 - session id
+- task id when available
 - step id if relevant
+- attempt id / action id when relevant
+- trace / causation ids for replay and debugging
 - tool name if relevant
 - timestamp
 - structured payload
@@ -170,5 +189,5 @@ This keeps the runtime explainable and testable.
 It should centralize:
 - risk classification
 - allow/ask/deny decisions
-- approval flow hooks
+- approval / resume mechanics
 - audit emission

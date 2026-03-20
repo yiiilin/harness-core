@@ -26,10 +26,10 @@ func (r *Repo) Create(title, goal string) session.State {
 	metaJSON, _ := json.Marshal(metadata)
 	row := r.db.QueryRowContext(ctx, `
 INSERT INTO sessions (
-  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
-`, id, nil, nil, title, goal, string(session.PhaseReceived), nil, nil, 0, string(session.ExecutionIdle), nil, now, nil, string(metaJSON), now, now)
+  session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+`, id, nil, nil, title, goal, string(session.PhaseReceived), nil, nil, 0, string(session.ExecutionIdle), nil, nil, now, nil, string(metaJSON), now, now)
 	st, err := scanState(row.Scan)
 	if err != nil {
 		panic(err)
@@ -40,7 +40,7 @@ RETURNING session_id, task_id, parent_session_id, title, goal, phase, current_st
 func (r *Repo) Get(id string) (session.State, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
 FROM sessions WHERE session_id = $1
 `, id)
 	return scanState(row.Scan)
@@ -65,19 +65,20 @@ SET task_id = $2,
     retry_count = $9,
     execution_state = $10,
     in_flight_step_id = $11,
-    last_heartbeat_at = $12,
-    interrupted_at = $13,
-    metadata_json = $14,
-    updated_at = $15
+    pending_approval_id = $12,
+    last_heartbeat_at = $13,
+    interrupted_at = $14,
+    metadata_json = $15,
+    updated_at = $16
 WHERE session_id = $1
-`, next.SessionID, nullable(next.TaskID), nullable(next.ParentSessionID), next.Title, nullable(next.Goal), string(next.Phase), nullable(next.CurrentStepID), nullable(next.Summary), next.RetryCount, string(next.ExecutionState), nullable(next.InFlightStepID), nullableInt64(next.LastHeartbeatAt), nullableInt64(next.InterruptedAt), string(metaJSON), next.UpdatedAt)
+`, next.SessionID, nullable(next.TaskID), nullable(next.ParentSessionID), next.Title, nullable(next.Goal), string(next.Phase), nullable(next.CurrentStepID), nullable(next.Summary), next.RetryCount, string(next.ExecutionState), nullable(next.InFlightStepID), nullable(next.PendingApprovalID), nullableInt64(next.LastHeartbeatAt), nullableInt64(next.InterruptedAt), string(metaJSON), next.UpdatedAt)
 	return err
 }
 
 func (r *Repo) List() []session.State {
 	ctx := context.Background()
 	rows, err := r.db.QueryContext(ctx, `
-SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
+SELECT session_id, task_id, parent_session_id, title, goal, phase, current_step_id, summary, retry_count, execution_state, in_flight_step_id, pending_approval_id, last_heartbeat_at, interrupted_at, metadata_json, created_at, updated_at
 FROM sessions
 ORDER BY updated_at DESC
 `)
@@ -151,11 +152,11 @@ func (n *sqlNullInt64) Scan(value any) error {
 
 func scanState(scan scanner) (session.State, error) {
 	var st session.State
-	var taskID, parentID, goal, currentStepID, summary, executionState, inFlightStepID sqlNullString
+	var taskID, parentID, goal, currentStepID, summary, executionState, inFlightStepID, pendingApprovalID sqlNullString
 	var lastHeartbeatAt, interruptedAt sqlNullInt64
 	var phase string
 	var metaRaw string
-	if err := scan(&st.SessionID, &taskID, &parentID, &st.Title, &goal, &phase, &currentStepID, &summary, &st.RetryCount, &executionState, &inFlightStepID, &lastHeartbeatAt, &interruptedAt, &metaRaw, &st.CreatedAt, &st.UpdatedAt); err != nil {
+	if err := scan(&st.SessionID, &taskID, &parentID, &st.Title, &goal, &phase, &currentStepID, &summary, &st.RetryCount, &executionState, &inFlightStepID, &pendingApprovalID, &lastHeartbeatAt, &interruptedAt, &metaRaw, &st.CreatedAt, &st.UpdatedAt); err != nil {
 		return session.State{}, translateErr(err)
 	}
 	st.TaskID = taskID.String
@@ -166,6 +167,7 @@ func scanState(scan scanner) (session.State, error) {
 	st.Summary = summary.String
 	st.ExecutionState = session.ExecutionState(executionState.String)
 	st.InFlightStepID = inFlightStepID.String
+	st.PendingApprovalID = pendingApprovalID.String
 	st.LastHeartbeatAt = lastHeartbeatAt.Int64
 	st.InterruptedAt = interruptedAt.Int64
 	if metaRaw != "" {

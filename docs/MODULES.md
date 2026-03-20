@@ -94,6 +94,9 @@ func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts 
 
 This keeps module wiring consistent across the ecosystem while still allowing controlled extension.
 
+When `runtime.RegisterBuiltins()` is used, these `DefaultPolicyRules()` are no longer documentation-only hints.
+They are composed into the default built-in policy evaluator path unless the embedding app overrides `opts.Policy`.
+
 ---
 
 ## Current reference modules
@@ -150,6 +153,11 @@ This ensures:
 - one source of truth
 - less drift
 - easier future extraction into a companion module repository
+
+It also means:
+- tool registration stays in the module
+- suggested policy rules stay in the module
+- policy evaluation stays in core
 
 ---
 

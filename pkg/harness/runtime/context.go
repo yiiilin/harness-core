@@ -9,20 +9,21 @@ import (
 
 type DefaultContextAssembler struct{}
 
-func (DefaultContextAssembler) Assemble(_ context.Context, state session.State, spec task.Spec) (map[string]any, error) {
-	return map[string]any{
-		"task": map[string]any{
-			"task_id":   spec.TaskID,
-			"task_type": spec.TaskType,
-			"goal":      spec.Goal,
+func (DefaultContextAssembler) Assemble(_ context.Context, state session.State, spec task.Spec) (ContextPackage, error) {
+	return ContextPackage{
+		Task: ContextTask{
+			TaskID:   spec.TaskID,
+			TaskType: spec.TaskType,
+			Goal:     spec.Goal,
 		},
-		"session": map[string]any{
-			"session_id":      state.SessionID,
-			"phase":           state.Phase,
-			"current_step_id": state.CurrentStepID,
-			"retry_count":     state.RetryCount,
+		Session: ContextSession{
+			SessionID:      state.SessionID,
+			Phase:          state.Phase,
+			CurrentStepID:  state.CurrentStepID,
+			RetryCount:     state.RetryCount,
+			ExecutionState: state.ExecutionState,
 		},
-		"constraints": spec.Constraints,
-		"metadata":    spec.Metadata,
+		Constraints: spec.Constraints,
+		Metadata:    spec.Metadata,
 	}, nil
 }

@@ -70,6 +70,24 @@ type StepRunPayload struct {
 	Step      json.RawMessage `json:"step"`
 }
 
+type SessionResumePayload struct {
+	SessionID string `json:"session_id"`
+}
+
 type AuditListPayload struct {
 	SessionID string `json:"session_id,omitempty"`
+}
+
+type ApprovalGetPayload struct {
+	ApprovalID string `json:"approval_id"`
+}
+
+type ApprovalListPayload struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type ApprovalRespondPayload struct {
+	ApprovalID string         `json:"approval_id"`
+	Reply      string         `json:"reply"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }

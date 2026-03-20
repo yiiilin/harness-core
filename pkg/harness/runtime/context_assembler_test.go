@@ -31,20 +31,21 @@ func TestDefaultContextAssemblerProducesMinimalExpectedShape(t *testing.T) {
 		t.Fatalf("assemble: %v", err)
 	}
 
+	assembledMap := assembled.ToMap()
 	expectedKeys := []string{"constraints", "metadata", "session", "task"}
-	gotKeys := make([]string, 0, len(assembled))
-	for key := range assembled {
+	gotKeys := make([]string, 0, len(assembledMap))
+	for key := range assembledMap {
 		gotKeys = append(gotKeys, key)
 	}
 	if !reflect.DeepEqual(sortStrings(gotKeys), expectedKeys) {
 		t.Fatalf("expected keys %#v, got %#v", expectedKeys, sortStrings(gotKeys))
 	}
 
-	taskMap, _ := assembled["task"].(map[string]any)
+	taskMap, _ := assembledMap["task"].(map[string]any)
 	if taskMap["task_id"] != "task_1" || taskMap["goal"] != "echo hello" {
 		t.Fatalf("unexpected task section: %#v", taskMap)
 	}
-	sessionMap, _ := assembled["session"].(map[string]any)
+	sessionMap, _ := assembledMap["session"].(map[string]any)
 	if sessionMap["session_id"] != "sess_1" || sessionMap["current_step_id"] != "step_1" || sessionMap["retry_count"] != 2 {
 		t.Fatalf("unexpected session section: %#v", sessionMap)
 	}

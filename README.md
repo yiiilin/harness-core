@@ -29,18 +29,24 @@ Implemented today:
 - shared state-machine transitions
 - tool registry
 - verifier registry
-- default policy evaluator
+- composable default policy path for built-in modules
+- durable approval / resume kernel with `once` / `always` / `reject`
+- execution facts for attempts / actions / verifications / artifacts
 - shell pipe executor
 - Postgres-backed repository implementations for session/task/plan/audit
+- Postgres-backed approval / execution / capability snapshot / context summary storage
 - Postgres-backed transaction runner and server bootstrap wiring
 - step runner (`policy -> action -> verify -> transition -> state update`)
 - in-memory audit/event sink
-- stable runtime-emitted `event_id` values
+- stable runtime-emitted `event_id` values plus task / attempt / action / trace identifiers
 - default context assembler
+- typed planner `ContextPackage`, compactor hook, and loop-budget defaults
+- capability resolution with persisted capability snapshots
 - default planner placeholder
 - planner-assisted plan creation via `CreatePlanFromPlanner(...)`
 - default event sink bridge
 - WebSocket adapter
+- WebSocket approval / resume commands
 - Postgres-backed WebSocket happy-path / deny-path E2E coverage
 - durable restart-read coverage
 - Go example clients

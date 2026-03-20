@@ -1,8 +1,9 @@
 package action
 
 type Spec struct {
-	ToolName string         `json:"tool_name"`
-	Args     map[string]any `json:"args,omitempty"`
+	ToolName    string         `json:"tool_name"`
+	ToolVersion string         `json:"tool_version,omitempty"`
+	Args        map[string]any `json:"args,omitempty"`
 }
 
 type Result struct {

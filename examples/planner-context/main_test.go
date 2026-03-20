@@ -26,13 +26,14 @@ func TestLayeredContextAssemblerBuildsExpectedSections(t *testing.T) {
 		t.Fatalf("assemble: %v", err)
 	}
 
+	assembledMap := assembled.ToMap()
 	for _, key := range []string{"task", "session", "derived", "compaction"} {
-		if _, ok := assembled[key]; !ok {
-			t.Fatalf("expected section %q in assembled context: %#v", key, assembled)
+		if _, ok := assembledMap[key]; !ok {
+			t.Fatalf("expected section %q in assembled context: %#v", key, assembledMap)
 		}
 	}
 
-	compaction, _ := assembled["compaction"].(map[string]any)
+	compaction, _ := assembledMap["compaction"].(map[string]any)
 	metadataPreview, _ := compaction["metadata_preview"].(map[string]any)
 	notesPreview, _ := metadataPreview["notes"].(map[string]any)
 	if truncated, _ := notesPreview["truncated"].(bool); !truncated {

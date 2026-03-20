@@ -18,6 +18,7 @@ const (
 
 	StepPending   StepStatus = "pending"
 	StepRunning   StepStatus = "running"
+	StepBlocked   StepStatus = "blocked"
 	StepCompleted StepStatus = "completed"
 	StepFailed    StepStatus = "failed"
 	StepSkipped   StepStatus = "skipped"

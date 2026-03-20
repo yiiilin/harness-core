@@ -17,18 +17,16 @@ var ErrNoPlannerConfigured = errors.New("no planner configured")
 
 type NoopPlanner struct{}
 
-func (NoopPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, _ map[string]any) (plan.StepSpec, error) {
+func (NoopPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, _ ContextPackage) (plan.StepSpec, error) {
 	return plan.StepSpec{}, ErrNoPlannerConfigured
 }
 
 type DemoPlanner struct{}
 
-func (DemoPlanner) PlanNext(_ context.Context, _ session.State, spec task.Spec, assembled map[string]any) (plan.StepSpec, error) {
+func (DemoPlanner) PlanNext(_ context.Context, _ session.State, spec task.Spec, assembled ContextPackage) (plan.StepSpec, error) {
 	goal := spec.Goal
 	if goal == "" {
-		if taskMap, ok := assembled["task"].(map[string]any); ok {
-			goal, _ = taskMap["goal"].(string)
-		}
+		goal = assembled.Task.Goal
 	}
 	if goal == "" {
 		return plan.StepSpec{}, errors.New("missing goal")

@@ -1,7 +1,10 @@
 package runtime
 
 import (
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -13,20 +16,32 @@ import (
 )
 
 type Options struct {
-	Sessions         session.Store
-	Tasks            task.Store
-	Plans            plan.Store
-	Tools            *tool.Registry
-	Verifiers        *verify.Registry
-	Audit            audit.Store
-	Runner           persistence.Runner
-	Policy           permission.Evaluator
-	ContextAssembler ContextAssembler
-	Planner          Planner
-	EventSink        EventSink
-	Metrics          Metrics
-	MetricsRecorder  *observability.MemoryRecorder
-	StorageMode      string
+	Sessions            session.Store
+	Tasks               task.Store
+	Plans               plan.Store
+	Approvals           approval.Store
+	Attempts            execution.AttemptStore
+	Actions             execution.ActionStore
+	Verifications       execution.VerificationStore
+	Artifacts           execution.ArtifactStore
+	RuntimeHandles      execution.RuntimeHandleStore
+	CapabilitySnapshots capability.SnapshotStore
+	ResumePolicy        approval.ResumePolicy
+	Tools               *tool.Registry
+	CapabilityResolver  capability.Resolver
+	Verifiers           *verify.Registry
+	Audit               audit.Store
+	Runner              persistence.Runner
+	Policy              permission.Evaluator
+	ContextAssembler    ContextAssembler
+	ContextSummaries    ContextSummaryStore
+	Compactor           Compactor
+	LoopBudgets         LoopBudgets
+	Planner             Planner
+	EventSink           EventSink
+	Metrics             Metrics
+	MetricsRecorder     *observability.MemoryRecorder
+	StorageMode         string
 }
 
 func WithDefaults(opts Options) Options {
@@ -39,8 +54,35 @@ func WithDefaults(opts Options) Options {
 	if opts.Plans == nil {
 		opts.Plans = plan.NewMemoryStore()
 	}
+	if opts.Approvals == nil {
+		opts.Approvals = approval.NewMemoryStore()
+	}
+	if opts.Attempts == nil {
+		opts.Attempts = execution.NewMemoryAttemptStore()
+	}
+	if opts.Actions == nil {
+		opts.Actions = execution.NewMemoryActionStore()
+	}
+	if opts.Verifications == nil {
+		opts.Verifications = execution.NewMemoryVerificationStore()
+	}
+	if opts.Artifacts == nil {
+		opts.Artifacts = execution.NewMemoryArtifactStore()
+	}
+	if opts.RuntimeHandles == nil {
+		opts.RuntimeHandles = execution.NewMemoryRuntimeHandleStore()
+	}
 	if opts.Tools == nil {
 		opts.Tools = tool.NewRegistry()
+	}
+	if opts.CapabilitySnapshots == nil {
+		opts.CapabilitySnapshots = capability.NewMemorySnapshotStore()
+	}
+	if opts.ResumePolicy == nil {
+		opts.ResumePolicy = approval.DefaultResumePolicy{}
+	}
+	if opts.CapabilityResolver == nil {
+		opts.CapabilityResolver = capability.RegistryResolver{Registry: opts.Tools}
 	}
 	if opts.Verifiers == nil {
 		opts.Verifiers = verify.NewRegistry()
@@ -53,20 +95,57 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Runner == nil {
 		opts.Runner = persistence.NewMemoryUnitOfWork(persistence.RepositorySet{
-			Sessions: opts.Sessions,
-			Tasks:    opts.Tasks,
-			Plans:    opts.Plans,
-			Audits:   opts.Audit,
+			Sessions:            opts.Sessions,
+			Tasks:               opts.Tasks,
+			Plans:               opts.Plans,
+			Audits:              opts.Audit,
+			Attempts:            opts.Attempts,
+			Actions:             opts.Actions,
+			Verifications:       opts.Verifications,
+			Artifacts:           opts.Artifacts,
+			RuntimeHandles:      opts.RuntimeHandles,
+			Approvals:           opts.Approvals,
+			CapabilitySnapshots: opts.CapabilitySnapshots,
 		})
 	}
 	if opts.ContextAssembler == nil {
 		opts.ContextAssembler = DefaultContextAssembler{}
+	}
+	if opts.ContextSummaries == nil {
+		opts.ContextSummaries = NewMemoryContextSummaryStore()
+	}
+	if opts.Compactor == nil {
+		opts.Compactor = NoopCompactor{}
+	}
+	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxRetriesPerStep <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
+		defaults := DefaultLoopBudgets()
+		if opts.LoopBudgets.MaxSteps <= 0 {
+			opts.LoopBudgets.MaxSteps = defaults.MaxSteps
+		}
+		if opts.LoopBudgets.MaxRetriesPerStep <= 0 {
+			opts.LoopBudgets.MaxRetriesPerStep = defaults.MaxRetriesPerStep
+		}
+		if opts.LoopBudgets.MaxPlanRevisions <= 0 {
+			opts.LoopBudgets.MaxPlanRevisions = defaults.MaxPlanRevisions
+		}
+		if opts.LoopBudgets.MaxTotalRuntimeMS <= 0 {
+			opts.LoopBudgets.MaxTotalRuntimeMS = defaults.MaxTotalRuntimeMS
+		}
+		if opts.LoopBudgets.MaxToolOutputChars <= 0 {
+			opts.LoopBudgets.MaxToolOutputChars = defaults.MaxToolOutputChars
+		}
 	}
 	if opts.Planner == nil {
 		opts.Planner = NoopPlanner{}
 	}
 	if opts.EventSink == nil {
 		opts.EventSink = AuditStoreSink{Store: opts.Audit}
+	} else if opts.Audit != nil {
+		if aware, ok := opts.EventSink.(auditStoreAwareSink); ok {
+			opts.EventSink = aware.WithAuditStore(opts.Audit)
+		} else {
+			opts.EventSink = FanoutEventSink{Sinks: []EventSink{opts.EventSink, AuditStoreSink{Store: opts.Audit}}}
+		}
 	}
 	if opts.MetricsRecorder == nil {
 		opts.MetricsRecorder = observability.NewMemoryRecorder()
