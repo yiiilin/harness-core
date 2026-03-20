@@ -1,7 +1,9 @@
 package harness_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness"
 )
@@ -30,5 +32,53 @@ func TestNewWithBuiltinsRegistersBuiltins(t *testing.T) {
 	}
 	if len(rt.ListVerifiers()) < 2 {
 		t.Fatalf("expected built-in verifiers to be registered")
+	}
+}
+
+func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
+	var _ harness.StepRunOutput
+	var _ harness.SessionRunOutput
+	var _ harness.AbortRequest
+	var _ harness.AbortOutput
+	var _ harness.RuntimeHandleUpdate
+	var _ harness.RuntimeHandleCloseRequest
+	var _ harness.RuntimeHandleInvalidateRequest
+	var _ harness.CompactionPolicy
+	var _ harness.CompactionTrigger = harness.CompactionTriggerPlan
+}
+
+func TestFacadeSupportsKernelSessionControlEntryPoints(t *testing.T) {
+	rt := harness.NewDefault()
+
+	sess, err := rt.CreateSession("facade", "exercise kernel entry points")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	tsk, err := rt.CreateTask(harness.TaskSpec{TaskType: "demo", Goal: "facade session control"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	sess, err = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	if _, _, err := rt.CompactSessionContext(context.Background(), sess.SessionID, harness.CompactionTriggerPlan); err != nil {
+		t.Fatalf("compact session context: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !ok || claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected claimed session %s, got %#v ok=%v", sess.SessionID, claimed, ok)
+	}
+
+	if _, err := rt.ReleaseSessionLease(context.Background(), claimed.SessionID, claimed.LeaseID); err != nil {
+		t.Fatalf("release session lease: %v", err)
+	}
+	if _, err := rt.AbortSession(context.Background(), sess.SessionID, harness.AbortRequest{Code: "facade.abort", Reason: "stop from facade"}); err != nil {
+		t.Fatalf("abort session: %v", err)
 	}
 }

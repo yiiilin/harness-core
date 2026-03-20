@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -80,7 +81,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	}
 
 	var updatedTask *task.Record
-	persist := func(sessStore session.Store, taskStore task.Store) error {
+	persist := func(sessStore session.Store, taskStore task.Store, handleStore execution.RuntimeHandleStore) error {
 		taskRec, err := updateTaskForTerminalInStore(taskStore, aborted)
 		if err != nil {
 			return err
@@ -100,6 +101,9 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 				CreatedAt: time.Now().UnixMilli(),
 			})
 		}
+		if err := reconcileActiveRuntimeHandlesInStore(handleStore, current.SessionID, "session aborted"); err != nil {
+			return err
+		}
 		if err := sessStore.Update(aborted); err != nil {
 			return err
 		}
@@ -109,7 +113,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			if err := persist(repoSet.Sessions, repoSet.Tasks); err != nil {
+			if err := persist(repoSet.Sessions, repoSet.Tasks, repoSet.RuntimeHandles); err != nil {
 				return err
 			}
 			return s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events)
@@ -119,7 +123,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 	}
 
-	if err := persist(s.Sessions, s.Tasks); err != nil {
+	if err := persist(s.Sessions, s.Tasks, s.RuntimeHandles); err != nil {
 		return AbortOutput{}, err
 	}
 	_ = s.emitEventsWithSink(ctx, s.EventSink, events)

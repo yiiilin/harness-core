@@ -28,7 +28,7 @@ func (s *Service) AssembleContextForSession(ctx context.Context, sessionID strin
 		Constraints: rec.Constraints,
 		Metadata:    rec.Metadata,
 	}
-	assembled, err := s.assembleAndCompactContext(ctx, state, spec)
+	assembled, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerPlan)
 	if err != nil {
 		return ContextPackage{}, session.State{}, task.Spec{}, err
 	}
@@ -54,6 +54,11 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 	if err != nil {
 		return plan.Spec{}, ContextPackage{}, err
 	}
+	view, err := s.freezeCapabilityView(ctx, planningState.SessionID, spec.TaskID)
+	if err != nil {
+		return plan.Spec{}, ContextPackage{}, err
+	}
+	assembled = attachCapabilityViewToContext(assembled, view)
 
 	steps := make([]plan.StepSpec, 0, maxSteps)
 	lastAssembled := assembled
@@ -65,57 +70,27 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			}
 			break
 		}
-		steps = append(steps, step)
-		planningState.CurrentStepID = step.StepID
-		planningState.Phase = session.PhasePlan
-		lastAssembled, err = s.assembleAndCompactContext(ctx, planningState, spec)
+		step, err = pinStepToCapabilityView(step, view)
 		if err != nil {
 			return plan.Spec{}, ContextPackage{}, err
 		}
+		steps = append(steps, step)
+		planningState.CurrentStepID = step.StepID
+		planningState.Phase = session.PhasePlan
+		lastAssembled, _, err = s.compactAssembledContext(ctx, planningState, spec, CompactionTriggerPlan)
+		if err != nil {
+			return plan.Spec{}, ContextPackage{}, err
+		}
+		lastAssembled = attachCapabilityViewToContext(lastAssembled, view)
 	}
 
 	if len(steps) == 0 {
 		return plan.Spec{}, ContextPackage{}, errors.New("planner did not produce any steps")
 	}
 
-	pl, err := s.CreatePlan(sessionID, changeReason, steps)
+	pl, err := s.createPlanWithCapabilityView(ctx, sessionID, changeReason, steps, view)
 	if err != nil {
 		return plan.Spec{}, ContextPackage{}, err
 	}
 	return pl, assembled, nil
-}
-
-func (s *Service) assembleAndCompactContext(ctx context.Context, state session.State, spec task.Spec) (ContextPackage, error) {
-	assembled, err := s.ContextAssembler.Assemble(ctx, state, spec)
-	if err != nil {
-		return ContextPackage{}, err
-	}
-	if s.Compactor == nil {
-		return assembled, nil
-	}
-	compacted, summary, err := s.Compactor.Compact(ctx, assembled, state, spec, s.LoopBudgets)
-	if err != nil {
-		return ContextPackage{}, err
-	}
-	assembled = compacted
-	if summary != nil && s.ContextSummaries != nil {
-		if summary.SessionID == "" {
-			summary.SessionID = state.SessionID
-		}
-		if summary.TaskID == "" {
-			summary.TaskID = spec.TaskID
-		}
-		persisted, err := s.ContextSummaries.Create(*summary)
-		if err != nil {
-			return ContextPackage{}, err
-		}
-		assembled.Compaction = &ContextCompaction{
-			SummaryID:      persisted.SummaryID,
-			Strategy:       persisted.Strategy,
-			OriginalBytes:  persisted.OriginalBytes,
-			CompactedBytes: persisted.CompactedBytes,
-			Metadata:       persisted.Metadata,
-		}
-	}
-	return assembled, nil
 }

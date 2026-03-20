@@ -68,9 +68,20 @@ type PermissionAction = permission.Action
 type ContextAssembler = hruntime.ContextAssembler
 type ContextPackage = hruntime.ContextPackage
 type ContextSummary = hruntime.ContextSummary
+type StepRunOutput = hruntime.StepRunOutput
+type SessionRunOutput = hruntime.SessionRunOutput
+type AbortRequest = hruntime.AbortRequest
+type AbortOutput = hruntime.AbortOutput
+type RuntimeHandleUpdate = hruntime.RuntimeHandleUpdate
+type RuntimeHandleCloseRequest = hruntime.RuntimeHandleCloseRequest
+type RuntimeHandleInvalidateRequest = hruntime.RuntimeHandleInvalidateRequest
+type CompactionTrigger = hruntime.CompactionTrigger
+type CompactionPolicy = hruntime.CompactionPolicy
 type LoopBudgets = hruntime.LoopBudgets
 type Planner = hruntime.Planner
 type EventSink = hruntime.EventSink
+type MetricsExporter = hruntime.MetricsExporter
+type TraceExporter = hruntime.TraceExporter
 
 type PolicyEvaluator = permission.Evaluator
 
@@ -82,6 +93,10 @@ const (
 	Allow = permission.Allow
 	Ask   = permission.Ask
 	Deny  = permission.Deny
+
+	CompactionTriggerPlan    = hruntime.CompactionTriggerPlan
+	CompactionTriggerExecute = hruntime.CompactionTriggerExecute
+	CompactionTriggerRecover = hruntime.CompactionTriggerRecover
 )
 
 // New constructs a runtime service with defaults applied.

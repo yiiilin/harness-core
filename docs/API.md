@@ -22,14 +22,60 @@ See `docs/KERNEL_SCOPE.md`.
 - `harness.NewDefault()`
 - `harness.NewWithBuiltins()`
 - `harness.RegisterBuiltins(&opts)`
-- `(*harness.Service).CreatePlanFromPlanner(...)`
+
+### Recommended kernel entrypoints
+- session/task/plan lifecycle:
+  - `CreateSession`
+  - `CreateTask`
+  - `AttachTaskToSession`
+  - `CreatePlan`
+  - `CreatePlanFromPlanner`
+- governed execution:
+  - `RunStep`
+  - `RunSession`
+  - `RecoverSession`
+  - `AbortSession`
+- approval / coordination control plane:
+  - `RespondApproval`
+  - `ResumePendingApproval`
+  - `ClaimRunnableSession`
+  - `ClaimRecoverableSession`
+  - `RenewSessionLease`
+  - `ReleaseSessionLease`
+- durable runtime facts / maintenance:
+  - `CompactSessionContext`
+  - `UpdateRuntimeHandle`
+  - `CloseRuntimeHandle`
+  - `InvalidateRuntimeHandle`
+  - `ListAttempts`
+  - `ListActions`
+  - `ListVerifications`
+  - `ListArtifacts`
+  - `ListRuntimeHandles`
+  - `ListCapabilitySnapshots`
+  - `ListContextSummaries`
 
 ### Re-exported core types
 - task/session/plan/action/verify domain types
 - tool definition and risk types
 - permission decision/action types
 - audit event type
-- runtime interfaces: planner/context assembler/event sink
+- runtime execution/control types:
+  - `StepRunOutput`
+  - `SessionRunOutput`
+  - `AbortRequest`
+  - `AbortOutput`
+  - `RuntimeHandleUpdate`
+  - `RuntimeHandleCloseRequest`
+  - `RuntimeHandleInvalidateRequest`
+  - `CompactionTrigger`
+  - `CompactionPolicy`
+- runtime interfaces:
+  - planner
+  - context assembler
+  - event sink
+  - metrics exporter
+  - trace exporter
 
 ### Lower-level packages
 Consumers may import lower-level packages directly when they need finer control, but the default path should begin with `pkg/harness`.
@@ -78,6 +124,7 @@ The planner/context API is intentionally narrow:
 - planner decides the next step
 - context assembler produces the structured input for that decision
 - runtime execution remains explicit
+- the top-level facade does not wrap transport or identity concerns
 
 Typical construction path:
 

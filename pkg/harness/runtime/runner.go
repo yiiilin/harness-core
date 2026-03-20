@@ -255,6 +255,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 
 	if decision.Action == permission.Deny {
 		s.Metrics.Record("step.run", map[string]any{"success": false, "policy_denied": true, "verify_failed": false, "action_failed": false, "duration_ms": int64(0)})
+		s.exportStepMetricSample(ctx, state, step, attemptRecord, nil, nil, false, true, false, false, 0)
 		step.Status = plan.StepFailed
 		step.FinishedAt = time.Now().UnixMilli()
 		attemptRecord.Status = execution.AttemptFailed
@@ -334,11 +335,16 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, state, step)
 	if resolution != nil {
 		snapshot := resolution.Snapshot
+		snapshot.Scope = capability.SnapshotScopeAction
+		snapshot.ViewID = capabilityViewIDFromStep(step)
 		capabilitySnapshot = &snapshot
 		if actionRecord.Metadata == nil {
 			actionRecord.Metadata = map[string]any{}
 		}
 		actionRecord.Metadata["capability_snapshot_id"] = snapshot.SnapshotID
+		if snapshot.ViewID != "" {
+			actionRecord.Metadata["capability_view_id"] = snapshot.ViewID
+		}
 		actionRecord.Metadata["tool_version"] = resolution.Definition.Version
 		actionRecord.Metadata["capability_type"] = resolution.Definition.CapabilityType
 		actionRecord.Metadata["risk_level"] = string(resolution.Definition.RiskLevel)
@@ -407,7 +413,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 	execResult.Verify = verifyResult
 	verificationRecord.Result = verifyResult
 	verificationRecord.FinishedAt = time.Now().UnixMilli()
+	verifyEventIndex := len(events)
 	appendEvent(audit.EventVerifyCompleted, step.StepID, map[string]any{"success": verifyResult.Success, "reason": verifyResult.Reason}, actionRecord.ActionID, actionRecord.ActionID)
+	events[verifyEventIndex].VerificationID = verificationRecord.VerificationID
 	verified := verifyErr == nil && verifyResult.Success
 	if verified {
 		verificationRecord.Status = execution.VerificationCompleted
@@ -538,6 +546,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID string, ste
 		"action_failed": !actResult.OK,
 		"duration_ms":   time.Now().UnixMilli() - now,
 	})
+	s.exportStepMetricSample(ctx, state, step, attemptRecord, actionRecord, verificationRecord, verified, false, !verified, !actResult.OK, time.Now().UnixMilli()-now)
+	s.exportTraceSpans(ctx, state, step, attemptRecord, actionRecord, verificationRecord)
 
 	return StepRunOutput{
 		Session:     state,
@@ -685,7 +695,7 @@ func persistRuntimeHandlesInRepos(repos persistence.RepositorySet, handles []exe
 		return nil
 	}
 	for _, handle := range handles {
-		if _, err := repos.RuntimeHandles.Create(handle); err != nil {
+		if err := upsertRuntimeHandle(repos.RuntimeHandles, handle); err != nil {
 			return err
 		}
 	}
@@ -737,9 +747,25 @@ func (s *Service) persistRuntimeHandles(handles []execution.RuntimeHandle) error
 		return nil
 	}
 	for _, handle := range handles {
-		if _, err := s.RuntimeHandles.Create(handle); err != nil {
+		if err := upsertRuntimeHandle(s.RuntimeHandles, handle); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func upsertRuntimeHandle(store execution.RuntimeHandleStore, handle execution.RuntimeHandle) error {
+	if store == nil {
+		return nil
+	}
+	if handle.Status == "" {
+		handle.Status = execution.RuntimeHandleActive
+	}
+	if _, err := store.Create(handle); err != nil {
+		if _, getErr := store.Get(handle.HandleID); getErr == nil {
+			return store.Update(handle)
+		}
+		return err
 	}
 	return nil
 }
@@ -912,6 +938,7 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 			TaskID:    attempt.TaskID,
 			AttemptID: attempt.AttemptID,
 			TraceID:   attempt.TraceID,
+			Status:    execution.RuntimeHandleActive,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
@@ -944,6 +971,12 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 		if v, _ := mapItem["value"].(string); v != "" {
 			handle.Value = v
 		}
+		if v, _ := mapItem["status"].(string); v != "" {
+			handle.Status = execution.RuntimeHandleStatus(v)
+		}
+		if v, _ := mapItem["status_reason"].(string); v != "" {
+			handle.StatusReason = v
+		}
 		if metadata, ok := mapItem["metadata"].(map[string]any); ok {
 			handle.Metadata = mergeMaps(handle.Metadata, metadata)
 		}
@@ -954,6 +987,12 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 			handle.UpdatedAt = updatedAt
 		} else {
 			handle.UpdatedAt = handle.CreatedAt
+		}
+		if closedAt, ok := asInt64(mapItem["closed_at"]); ok && closedAt > 0 {
+			handle.ClosedAt = closedAt
+		}
+		if invalidatedAt, ok := asInt64(mapItem["invalidated_at"]); ok && invalidatedAt > 0 {
+			handle.InvalidatedAt = invalidatedAt
 		}
 		if handle.Kind == "" && handle.Value == "" {
 			return execution.RuntimeHandle{}, false
@@ -982,6 +1021,9 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 	}
 	if handle.UpdatedAt == 0 {
 		handle.UpdatedAt = handle.CreatedAt
+	}
+	if handle.Status == "" {
+		handle.Status = execution.RuntimeHandleActive
 	}
 	if actionRecord != nil {
 		if handle.Metadata == nil {

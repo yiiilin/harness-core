@@ -133,7 +133,10 @@ CREATE TABLE IF NOT EXISTS capability_snapshots (
   snapshot_id TEXT PRIMARY KEY,
   session_id TEXT,
   task_id TEXT,
+  plan_id TEXT,
   step_id TEXT,
+  view_id TEXT,
+  scope TEXT,
   tool_name TEXT NOT NULL,
   version TEXT,
   capability_type TEXT,
@@ -243,9 +246,13 @@ CREATE TABLE IF NOT EXISTS runtime_handles (
   trace_id TEXT,
   kind TEXT,
   value TEXT,
+  status TEXT NOT NULL,
+  status_reason TEXT,
   metadata_json TEXT,
   created_at BIGINT NOT NULL,
-  updated_at BIGINT NOT NULL
+  updated_at BIGINT NOT NULL,
+  closed_at BIGINT,
+  invalidated_at BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS idx_runtime_handles_session_created

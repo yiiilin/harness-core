@@ -5,6 +5,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -41,4 +42,14 @@ type PolicyEvaluator interface {
 // EventSink records runtime and audit events.
 type EventSink interface {
 	Emit(ctx context.Context, event audit.Event) error
+}
+
+// MetricsExporter ships vendor-neutral metric samples out of the kernel.
+type MetricsExporter interface {
+	ExportMetric(ctx context.Context, sample observability.MetricSample) error
+}
+
+// TraceExporter ships vendor-neutral trace spans out of the kernel.
+type TraceExporter interface {
+	ExportTrace(ctx context.Context, span observability.TraceSpan) error
 }

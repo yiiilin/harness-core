@@ -20,6 +20,20 @@ type LoopBudgets struct {
 	MaxToolOutputChars int   `json:"max_tool_output_chars"`
 }
 
+type CompactionTrigger string
+
+const (
+	CompactionTriggerPlan    CompactionTrigger = "plan"
+	CompactionTriggerExecute CompactionTrigger = "execute"
+	CompactionTriggerRecover CompactionTrigger = "recover"
+)
+
+type CompactionPolicy struct {
+	OnPlan    bool `json:"on_plan"`
+	OnExecute bool `json:"on_execute"`
+	OnRecover bool `json:"on_recover"`
+}
+
 func DefaultLoopBudgets() LoopBudgets {
 	return LoopBudgets{
 		MaxSteps:           8,
@@ -27,6 +41,14 @@ func DefaultLoopBudgets() LoopBudgets {
 		MaxPlanRevisions:   8,
 		MaxTotalRuntimeMS:  300000,
 		MaxToolOutputChars: 8192,
+	}
+}
+
+func DefaultCompactionPolicy() CompactionPolicy {
+	return CompactionPolicy{
+		OnPlan:    true,
+		OnExecute: true,
+		OnRecover: true,
 	}
 }
 
@@ -45,11 +67,13 @@ type ContextSession struct {
 }
 
 type ContextCompaction struct {
-	SummaryID      string         `json:"summary_id,omitempty"`
-	Strategy       string         `json:"strategy,omitempty"`
-	OriginalBytes  int            `json:"original_bytes,omitempty"`
-	CompactedBytes int            `json:"compacted_bytes,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	SummaryID         string            `json:"summary_id,omitempty"`
+	PreviousSummaryID string            `json:"previous_summary_id,omitempty"`
+	Trigger           CompactionTrigger `json:"trigger,omitempty"`
+	Strategy          string            `json:"strategy,omitempty"`
+	OriginalBytes     int               `json:"original_bytes,omitempty"`
+	CompactedBytes    int               `json:"compacted_bytes,omitempty"`
+	Metadata          map[string]any    `json:"metadata,omitempty"`
 }
 
 type ContextPackage struct {
@@ -88,11 +112,13 @@ func (pkg ContextPackage) ToMap() map[string]any {
 	}
 	if pkg.Compaction != nil {
 		out["compaction"] = map[string]any{
-			"summary_id":      pkg.Compaction.SummaryID,
-			"strategy":        pkg.Compaction.Strategy,
-			"original_bytes":  pkg.Compaction.OriginalBytes,
-			"compacted_bytes": pkg.Compaction.CompactedBytes,
-			"metadata":        pkg.Compaction.Metadata,
+			"summary_id":          pkg.Compaction.SummaryID,
+			"previous_summary_id": pkg.Compaction.PreviousSummaryID,
+			"trigger":             pkg.Compaction.Trigger,
+			"strategy":            pkg.Compaction.Strategy,
+			"original_bytes":      pkg.Compaction.OriginalBytes,
+			"compacted_bytes":     pkg.Compaction.CompactedBytes,
+			"metadata":            pkg.Compaction.Metadata,
 		}
 	}
 	for key, value := range pkg.Extras {
@@ -102,15 +128,17 @@ func (pkg ContextPackage) ToMap() map[string]any {
 }
 
 type ContextSummary struct {
-	SummaryID      string         `json:"summary_id"`
-	SessionID      string         `json:"session_id,omitempty"`
-	TaskID         string         `json:"task_id,omitempty"`
-	Strategy       string         `json:"strategy,omitempty"`
-	Summary        map[string]any `json:"summary,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	OriginalBytes  int            `json:"original_bytes,omitempty"`
-	CompactedBytes int            `json:"compacted_bytes,omitempty"`
-	CreatedAt      int64          `json:"created_at"`
+	SummaryID           string            `json:"summary_id"`
+	SessionID           string            `json:"session_id,omitempty"`
+	TaskID              string            `json:"task_id,omitempty"`
+	Trigger             CompactionTrigger `json:"trigger,omitempty"`
+	SupersedesSummaryID string            `json:"supersedes_summary_id,omitempty"`
+	Strategy            string            `json:"strategy,omitempty"`
+	Summary             map[string]any    `json:"summary,omitempty"`
+	Metadata            map[string]any    `json:"metadata,omitempty"`
+	OriginalBytes       int               `json:"original_bytes,omitempty"`
+	CompactedBytes      int               `json:"compacted_bytes,omitempty"`
+	CreatedAt           int64             `json:"created_at"`
 }
 
 type ContextSummaryStore interface {

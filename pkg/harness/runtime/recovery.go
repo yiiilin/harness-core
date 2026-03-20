@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
@@ -88,6 +89,9 @@ func (s *Service) recoverSession(ctx context.Context, sessionID string) (Session
 		return SessionRunOutput{}, err
 	}
 	out.Session = normalized
+	if _, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerRecover); err != nil {
+		return SessionRunOutput{}, err
+	}
 	next, err := s.runSession(ctx, sessionID)
 	if err != nil {
 		return SessionRunOutput{}, err
@@ -100,24 +104,58 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 	if err != nil {
 		return session.State{}, err
 	}
-	normalized := current
-	if current.ExecutionState == session.ExecutionInFlight || current.ExecutionState == session.ExecutionInterrupted {
-		normalized.ExecutionState = session.ExecutionIdle
-		if !isTerminalPhase(current.Phase) {
-			normalized.Phase = session.PhaseRecover
+	shouldReconcileHandles := current.ExecutionState == session.ExecutionInFlight ||
+		current.ExecutionState == session.ExecutionInterrupted ||
+		current.Phase == session.PhaseRecover
+	var updated session.State
+	normalize := func(sessStore session.Store, handleStore execution.RuntimeHandleStore) error {
+		st, err := sessStore.Get(sessionID)
+		if err != nil {
+			return err
 		}
-		if normalized.CurrentStepID == "" && normalized.InFlightStepID != "" {
-			normalized.CurrentStepID = normalized.InFlightStepID
+		next := st
+		if st.ExecutionState == session.ExecutionInFlight || st.ExecutionState == session.ExecutionInterrupted {
+			next.ExecutionState = session.ExecutionIdle
+			if !isTerminalPhase(st.Phase) {
+				next.Phase = session.PhaseRecover
+			}
+			if next.CurrentStepID == "" && next.InFlightStepID != "" {
+				next.CurrentStepID = next.InFlightStepID
+			}
 		}
+		if shouldReconcileHandles {
+			if err := reconcileActiveRuntimeHandlesInStore(handleStore, sessionID, "session recovered"); err != nil {
+				return err
+			}
+		}
+		if next.ExecutionState == st.ExecutionState &&
+			next.Phase == st.Phase &&
+			next.CurrentStepID == st.CurrentStepID {
+			updated = st
+			return nil
+		}
+		next.Version++
+		if err := sessStore.Update(next); err != nil {
+			return err
+		}
+		updated = next
+		return nil
 	}
-	if normalized.ExecutionState == current.ExecutionState &&
-		normalized.Phase == current.Phase &&
-		normalized.CurrentStepID == current.CurrentStepID {
-		return current, nil
+
+	if s.Runner != nil {
+		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			repoSet := s.repositoriesWithFallback(repos)
+			return normalize(repoSet.Sessions, repoSet.RuntimeHandles)
+		}); err != nil {
+			return session.State{}, err
+		}
+		return updated, nil
 	}
-	return s.updateRecoveryState(ctx, func(session.State) session.State {
-		return normalized
-	}, sessionID)
+
+	if err := normalize(s.Sessions, s.RuntimeHandles); err != nil {
+		return session.State{}, err
+	}
+	return updated, nil
 }
 
 func (s *Service) updateRecoveryState(ctx context.Context, mutate func(session.State) session.State, sessionID string) (session.State, error) {

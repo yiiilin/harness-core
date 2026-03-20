@@ -31,6 +31,17 @@ Boundary rule:
 
 See `docs/KERNEL_SCOPE.md`.
 
+For the stable embedding path, prefer `pkg/harness` as the first import.
+That facade is intended to expose the kernel constructor plus the session-level control plane:
+- `RunStep`
+- `RunSession`
+- `RecoverSession`
+- `AbortSession`
+- approval response / resume
+- coordination lease primitives
+- context compaction
+- runtime handle lifecycle control
+
 ---
 
 ## Main state machine

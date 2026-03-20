@@ -26,6 +26,7 @@ type Options struct {
 	Artifacts           execution.ArtifactStore
 	RuntimeHandles      execution.RuntimeHandleStore
 	CapabilitySnapshots capability.SnapshotStore
+	CapabilityFreezer   capability.Freezer
 	ResumePolicy        approval.ResumePolicy
 	Tools               *tool.Registry
 	CapabilityResolver  capability.Resolver
@@ -36,10 +37,13 @@ type Options struct {
 	ContextAssembler    ContextAssembler
 	ContextSummaries    ContextSummaryStore
 	Compactor           Compactor
+	CompactionPolicy    CompactionPolicy
 	LoopBudgets         LoopBudgets
 	Planner             Planner
 	EventSink           EventSink
 	Metrics             Metrics
+	MetricsExporter     MetricsExporter
+	TraceExporter       TraceExporter
 	MetricsRecorder     *observability.MemoryRecorder
 	StorageMode         string
 }
@@ -77,6 +81,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.CapabilitySnapshots == nil {
 		opts.CapabilitySnapshots = capability.NewMemorySnapshotStore()
+	}
+	if opts.CapabilityFreezer == nil {
+		opts.CapabilityFreezer = capability.RegistryFreezer{Registry: opts.Tools}
 	}
 	if opts.ResumePolicy == nil {
 		opts.ResumePolicy = approval.DefaultResumePolicy{}
@@ -116,6 +123,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Compactor == nil {
 		opts.Compactor = NoopCompactor{}
+	}
+	if !opts.CompactionPolicy.OnPlan && !opts.CompactionPolicy.OnExecute && !opts.CompactionPolicy.OnRecover {
+		opts.CompactionPolicy = DefaultCompactionPolicy()
 	}
 	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxRetriesPerStep <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
 		defaults := DefaultLoopBudgets()

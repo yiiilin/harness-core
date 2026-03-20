@@ -44,6 +44,7 @@ type Service struct {
 	Artifacts           execution.ArtifactStore
 	RuntimeHandles      execution.RuntimeHandleStore
 	CapabilitySnapshots capability.SnapshotStore
+	CapabilityFreezer   capability.Freezer
 	ResumePolicy        approval.ResumePolicy
 	Tools               *tool.Registry
 	CapabilityResolver  capability.Resolver
@@ -54,10 +55,13 @@ type Service struct {
 	ContextAssembler    ContextAssembler
 	ContextSummaries    ContextSummaryStore
 	Compactor           Compactor
+	CompactionPolicy    CompactionPolicy
 	LoopBudgets         LoopBudgets
 	Planner             Planner
 	EventSink           EventSink
 	Metrics             Metrics
+	MetricsExporter     MetricsExporter
+	TraceExporter       TraceExporter
 	MetricsRecorder     *observability.MemoryRecorder
 	StorageMode         string
 }
@@ -75,6 +79,7 @@ func New(opts Options) *Service {
 		Artifacts:           opts.Artifacts,
 		RuntimeHandles:      opts.RuntimeHandles,
 		CapabilitySnapshots: opts.CapabilitySnapshots,
+		CapabilityFreezer:   opts.CapabilityFreezer,
 		ResumePolicy:        opts.ResumePolicy,
 		Tools:               opts.Tools,
 		CapabilityResolver:  opts.CapabilityResolver,
@@ -85,10 +90,13 @@ func New(opts Options) *Service {
 		ContextAssembler:    opts.ContextAssembler,
 		ContextSummaries:    opts.ContextSummaries,
 		Compactor:           opts.Compactor,
+		CompactionPolicy:    opts.CompactionPolicy,
 		LoopBudgets:         opts.LoopBudgets,
 		Planner:             opts.Planner,
 		EventSink:           opts.EventSink,
 		Metrics:             metricsOrNoop(opts.Metrics),
+		MetricsExporter:     opts.MetricsExporter,
+		TraceExporter:       opts.TraceExporter,
 		MetricsRecorder:     opts.MetricsRecorder,
 		StorageMode:         opts.StorageMode,
 	}

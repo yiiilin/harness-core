@@ -27,6 +27,9 @@ func (s *MemorySnapshotStore) Create(spec Snapshot) (Snapshot, error) {
 	if spec.SnapshotID == "" {
 		spec.SnapshotID = "cap_" + uuid.NewString()
 	}
+	if spec.Scope == "" {
+		spec.Scope = SnapshotScopeAction
+	}
 	if spec.ResolvedAt == 0 {
 		spec.ResolvedAt = time.Now().UnixMilli()
 	}

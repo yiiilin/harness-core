@@ -23,13 +23,16 @@ func (r *SnapshotRepo) Create(spec capability.Snapshot) (capability.Snapshot, er
 	if spec.ResolvedAt == 0 {
 		spec.ResolvedAt = time.Now().UnixMilli()
 	}
+	if spec.Scope == "" {
+		spec.Scope = capability.SnapshotScopeAction
+	}
 	ctx := context.Background()
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO capability_snapshots (
-  snapshot_id, session_id, task_id, step_id, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-`, spec.SnapshotID, nullable(spec.SessionID), nullable(spec.TaskID), nullable(spec.StepID), spec.ToolName, nullable(spec.Version), nullable(spec.CapabilityType), nullable(string(spec.RiskLevel)), nullableJSON(metadataJSON), spec.ResolvedAt)
+  snapshot_id, session_id, task_id, plan_id, step_id, view_id, scope, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+`, spec.SnapshotID, nullable(spec.SessionID), nullable(spec.TaskID), nullable(spec.PlanID), nullable(spec.StepID), nullable(spec.ViewID), nullable(string(spec.Scope)), spec.ToolName, nullable(spec.Version), nullable(spec.CapabilityType), nullable(string(spec.RiskLevel)), nullableJSON(metadataJSON), spec.ResolvedAt)
 	if err != nil {
 		return capability.Snapshot{}, err
 	}
@@ -39,19 +42,25 @@ INSERT INTO capability_snapshots (
 func (r *SnapshotRepo) Get(id string) (capability.Snapshot, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT snapshot_id, session_id, task_id, step_id, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
+SELECT snapshot_id, session_id, task_id, plan_id, step_id, view_id, scope, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
 FROM capability_snapshots
 WHERE snapshot_id = $1
 `, id)
 
 	var item capability.Snapshot
-	var sessionID, taskID, stepID, version, capabilityType, riskLevel, metadataRaw sql.NullString
-	if err := row.Scan(&item.SnapshotID, &sessionID, &taskID, &stepID, &item.ToolName, &version, &capabilityType, &riskLevel, &metadataRaw, &item.ResolvedAt); err != nil {
+	var sessionID, taskID, planID, stepID, viewID, scope, version, capabilityType, riskLevel, metadataRaw sql.NullString
+	if err := row.Scan(&item.SnapshotID, &sessionID, &taskID, &planID, &stepID, &viewID, &scope, &item.ToolName, &version, &capabilityType, &riskLevel, &metadataRaw, &item.ResolvedAt); err != nil {
 		return capability.Snapshot{}, err
 	}
 	item.SessionID = sessionID.String
 	item.TaskID = taskID.String
+	item.PlanID = planID.String
 	item.StepID = stepID.String
+	item.ViewID = viewID.String
+	item.Scope = capability.SnapshotScope(scope.String)
+	if item.Scope == "" {
+		item.Scope = capability.SnapshotScopeAction
+	}
 	item.Version = version.String
 	item.CapabilityType = capabilityType.String
 	item.RiskLevel = tool.RiskLevel(riskLevel.String)
@@ -64,7 +73,7 @@ WHERE snapshot_id = $1
 func (r *SnapshotRepo) List(sessionID string) ([]capability.Snapshot, error) {
 	ctx := context.Background()
 	query := `
-SELECT snapshot_id, session_id, task_id, step_id, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
+SELECT snapshot_id, session_id, task_id, plan_id, step_id, view_id, scope, tool_name, version, capability_type, risk_level, metadata_json, resolved_at
 FROM capability_snapshots
 `
 	args := []any{}
@@ -82,13 +91,19 @@ FROM capability_snapshots
 	out := []capability.Snapshot{}
 	for rows.Next() {
 		var item capability.Snapshot
-		var rawSessionID, taskID, stepID, version, capabilityType, riskLevel, metadataRaw sql.NullString
-		if err := rows.Scan(&item.SnapshotID, &rawSessionID, &taskID, &stepID, &item.ToolName, &version, &capabilityType, &riskLevel, &metadataRaw, &item.ResolvedAt); err != nil {
+		var rawSessionID, taskID, planID, stepID, viewID, scope, version, capabilityType, riskLevel, metadataRaw sql.NullString
+		if err := rows.Scan(&item.SnapshotID, &rawSessionID, &taskID, &planID, &stepID, &viewID, &scope, &item.ToolName, &version, &capabilityType, &riskLevel, &metadataRaw, &item.ResolvedAt); err != nil {
 			return nil, err
 		}
 		item.SessionID = rawSessionID.String
 		item.TaskID = taskID.String
+		item.PlanID = planID.String
 		item.StepID = stepID.String
+		item.ViewID = viewID.String
+		item.Scope = capability.SnapshotScope(scope.String)
+		if item.Scope == "" {
+			item.Scope = capability.SnapshotScopeAction
+		}
 		item.Version = version.String
 		item.CapabilityType = capabilityType.String
 		item.RiskLevel = tool.RiskLevel(riskLevel.String)

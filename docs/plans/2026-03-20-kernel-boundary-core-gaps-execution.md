@@ -125,10 +125,10 @@ Kernel admission test for new concepts:
 - Test: `pkg/harness/runtime/runtime_handle_test.go`
 - Test: `internal/postgres/executionrepo/*_test.go`
 
-- [ ] Extend `RuntimeHandle` so it can represent lifecycle state rather than only a passive opaque record.
-- [ ] Add minimal kernel APIs for updating, closing, or invalidating runtime handles without encoding PTY-shell or browser-specific behavior in core.
-- [ ] Ensure abort/recovery paths can reconcile dangling handles deterministically.
-- [ ] Add regression coverage proving handle lifecycle changes survive persistence boundaries and restart/recovery flows.
+- [x] Extend `RuntimeHandle` so it can represent lifecycle state rather than only a passive opaque record.
+- [x] Add minimal kernel APIs for updating, closing, or invalidating runtime handles without encoding PTY-shell or browser-specific behavior in core.
+- [x] Ensure abort/recovery paths can reconcile dangling handles deterministically.
+- [x] Add regression coverage proving handle lifecycle changes survive persistence boundaries and restart/recovery flows.
 
 ### Task 6: Freeze capability visibility at the plan/session boundary
 
@@ -141,10 +141,10 @@ Kernel admission test for new concepts:
 - Modify: `internal/postgres/capabilityrepo/*`
 - Test: `pkg/harness/runtime/*capability*_test.go`
 
-- [ ] Add a kernel concept for freezing the capability set visible to planning/execution so replay and recovery do not depend on a drifting live registry.
-- [ ] Keep existing per-action capability snapshots, but relate them to the frozen plan/session-level capability view.
-- [ ] Ensure replanning creates an explicit new frozen capability view rather than silently reusing mutable live registry state.
-- [ ] Add coverage proving replay/recovery semantics stay stable even when the live tool registry changes after planning.
+- [x] Add a kernel concept for freezing the capability set visible to planning/execution so replay and recovery do not depend on a drifting live registry.
+- [x] Keep existing per-action capability snapshots, but relate them to the frozen plan/session-level capability view.
+- [x] Ensure replanning creates an explicit new frozen capability view rather than silently reusing mutable live registry state.
+- [x] Add coverage proving replay/recovery semantics stay stable even when the live tool registry changes after planning.
 
 ### Task 7: Promote context compaction into a full runtime lifecycle concern
 
@@ -156,10 +156,10 @@ Kernel admission test for new concepts:
 - Test: `pkg/harness/runtime/context_budget_test.go`
 - Test: `pkg/harness/runtime/*session*_test.go`
 
-- [ ] Move compaction triggers beyond planner assembly so long-running sessions can compact durable context under explicit runtime control.
-- [ ] Define when summaries are created, superseded, or reused across plan, execute, and recover phases.
-- [ ] Keep the abstraction generic; do not add vector DB, retrieval product logic, or tenant memory concepts to core.
-- [ ] Add tests proving compaction and summary persistence work for long-running sessions outside the planner-only path.
+- [x] Move compaction triggers beyond planner assembly so long-running sessions can compact durable context under explicit runtime control.
+- [x] Define when summaries are created, superseded, or reused across plan, execute, and recover phases.
+- [x] Keep the abstraction generic; do not add vector DB, retrieval product logic, or tenant memory concepts to core.
+- [x] Add tests proving compaction and summary persistence work for long-running sessions outside the planner-only path.
 
 ### Task 8: Tighten kernel observability contracts without leaking vendor concerns
 
@@ -172,10 +172,10 @@ Kernel admission test for new concepts:
 - Test: `pkg/harness/runtime/*event*_test.go`
 - Test: `pkg/harness/runtime/*metrics*_test.go`
 
-- [ ] Keep audit events as the canonical runtime event envelope, but define any remaining required correlation fields and invariants as explicit kernel contract.
-- [ ] Add transport-neutral exporter hooks for richer metrics and tracing labels without coupling core to Prometheus, OpenTelemetry, or any other vendor surface.
-- [ ] Ensure observability contracts remain compatible with adapter replay/streaming but do not encode adapter message formats into core types.
-- [ ] Add tests/docs proving the kernel observability surface is complete enough for replay/debugging without requiring platform projection logic.
+- [x] Keep audit events as the canonical runtime event envelope, but define any remaining required correlation fields and invariants as explicit kernel contract.
+- [x] Add transport-neutral exporter hooks for richer metrics and tracing labels without coupling core to Prometheus, OpenTelemetry, or any other vendor surface.
+- [x] Ensure observability contracts remain compatible with adapter replay/streaming but do not encode adapter message formats into core types.
+- [x] Add tests/docs proving the kernel observability surface is complete enough for replay/debugging without requiring platform projection logic.
 
 ### Task 9: Stabilize the public kernel API surface around actual runtime entrypoints
 
@@ -185,18 +185,18 @@ Kernel admission test for new concepts:
 - Modify: `docs/RUNTIME.md`
 - Test: `pkg/harness/harness_test.go`
 
-- [ ] Reconcile the top-level public facade and docs with the actual kernel entrypoints already present in `runtime.Service`, especially session-level execution and recovery.
-- [ ] Re-export or document any kernel-first output types needed so consumers can embed the runtime without importing adapter-only concepts.
-- [ ] Keep the public facade small; do not add transport, auth, or tenant abstractions to make the API feel “complete.”
-- [ ] Add facade-level tests/docs that establish the intended stable embedding path for a kernel consumer.
+- [x] Reconcile the top-level public facade and docs with the actual kernel entrypoints already present in `runtime.Service`, especially session-level execution and recovery.
+- [x] Re-export or document any kernel-first output types needed so consumers can embed the runtime without importing adapter-only concepts.
+- [x] Keep the public facade small; do not add transport, auth, or tenant abstractions to make the API feel “complete.”
+- [x] Add facade-level tests/docs that establish the intended stable embedding path for a kernel consumer.
 
 ### Task 10: Full verification and scope check
 
 **Files:**
 - Modify: `docs/plans/2026-03-20-kernel-boundary-core-gaps-execution.md`
 
-- [ ] Re-read every completed task and confirm it introduces no user/tenant/auth/transport/UI/product-provider concepts into `pkg/harness/*`.
-- [ ] Run the relevant focused test commands for each completed kernel task before marking it done.
-- [ ] Run `go test ./pkg/harness/... -count=1`.
-- [ ] Run `go test ./... -count=1`.
-- [ ] Mark all completed tasks in this file and leave no unchecked items.
+- [x] Re-read every completed task and confirm it introduces no user/tenant/auth/transport/UI/product-provider concepts into `pkg/harness/*`.
+- [x] Run the relevant focused test commands for each completed kernel task before marking it done.
+- [x] Run `go test ./pkg/harness/... -count=1`.
+- [x] Run `go test ./... -count=1`.
+- [x] Mark all completed tasks in this file and leave no unchecked items.

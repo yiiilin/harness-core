@@ -280,6 +280,9 @@ func (s *MemoryRuntimeHandleStore) Create(spec RuntimeHandle) (RuntimeHandle, er
 	if spec.HandleID == "" {
 		spec.HandleID = uuid.NewString()
 	}
+	if spec.Status == "" {
+		spec.Status = RuntimeHandleActive
+	}
 	if spec.CreatedAt == 0 {
 		spec.CreatedAt = now
 	}
@@ -307,6 +310,9 @@ func (s *MemoryRuntimeHandleStore) Update(next RuntimeHandle) error {
 	defer s.mu.Unlock()
 	if _, ok := s.items[next.HandleID]; !ok {
 		return ErrRecordNotFound
+	}
+	if next.Status == "" {
+		next.Status = RuntimeHandleActive
 	}
 	next.UpdatedAt = time.Now().UnixMilli()
 	s.items[next.HandleID] = next

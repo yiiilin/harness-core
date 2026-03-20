@@ -1,6 +1,9 @@
 package observability
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 type Snapshot struct {
 	StepRuns        int   `json:"step_runs"`
@@ -10,6 +13,38 @@ type Snapshot struct {
 	VerifyFailure   int   `json:"verify_failure"`
 	ActionFailure   int   `json:"action_failure"`
 	TotalDurationMS int64 `json:"total_duration_ms"`
+}
+
+type MetricSample struct {
+	Name       string            `json:"name"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	Fields     map[string]any    `json:"fields,omitempty"`
+	RecordedAt int64             `json:"recorded_at"`
+}
+
+type TraceSpan struct {
+	Name           string         `json:"name"`
+	TraceID        string         `json:"trace_id,omitempty"`
+	SpanID         string         `json:"span_id,omitempty"`
+	ParentID       string         `json:"parent_id,omitempty"`
+	SessionID      string         `json:"session_id,omitempty"`
+	TaskID         string         `json:"task_id,omitempty"`
+	StepID         string         `json:"step_id,omitempty"`
+	AttemptID      string         `json:"attempt_id,omitempty"`
+	ActionID       string         `json:"action_id,omitempty"`
+	VerificationID string         `json:"verification_id,omitempty"`
+	CausationID    string         `json:"causation_id,omitempty"`
+	StartedAt      int64          `json:"started_at"`
+	FinishedAt     int64          `json:"finished_at"`
+	Attributes     map[string]any `json:"attributes,omitempty"`
+}
+
+type MetricsExporter interface {
+	ExportMetric(ctx context.Context, sample MetricSample) error
+}
+
+type TraceExporter interface {
+	ExportTrace(ctx context.Context, span TraceSpan) error
 }
 
 type Recorder interface {

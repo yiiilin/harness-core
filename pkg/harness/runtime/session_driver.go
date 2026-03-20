@@ -76,6 +76,9 @@ func (s *Service) runSession(ctx context.Context, sessionID string) (SessionRunO
 		if stepOut.UpdatedPlan != nil {
 			out.Plan = stepOut.UpdatedPlan
 		}
+		if _, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerExecute); err != nil {
+			return SessionRunOutput{}, err
+		}
 		if isTerminalPhase(stepOut.Session.Phase) || stepOut.Session.PendingApprovalID != "" {
 			return out, nil
 		}

@@ -85,6 +85,36 @@ func TestWithDefaultsSetsLoopBudgetAndCompactionDefaults(t *testing.T) {
 	}
 }
 
+type lifecycleCompactor struct {
+	calls int
+}
+
+func (c *lifecycleCompactor) Compact(_ context.Context, pkg hruntime.ContextPackage, state session.State, spec task.Spec, _ hruntime.LoopBudgets) (hruntime.ContextPackage, *hruntime.ContextSummary, error) {
+	c.calls++
+	if pkg.Derived == nil {
+		pkg.Derived = map[string]any{}
+	}
+	pkg.Derived["compacted"] = true
+	summary := &hruntime.ContextSummary{
+		SessionID:      state.SessionID,
+		TaskID:         spec.TaskID,
+		Strategy:       "anchored",
+		OriginalBytes:  256,
+		CompactedBytes: 96,
+		Summary:        map[string]any{"goal": spec.Goal},
+		Metadata:       map[string]any{"call_index": c.calls},
+	}
+	if previous, ok := pkg.Extras["previous_summary"].(map[string]any); ok {
+		if summary.Metadata == nil {
+			summary.Metadata = map[string]any{}
+		}
+		if previousID, _ := previous["summary_id"].(string); previousID != "" {
+			summary.Metadata["reused_previous_summary_id"] = previousID
+		}
+	}
+	return pkg, summary, nil
+}
+
 func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.T) {
 	compactor := &recordingCompactor{}
 	summaries := hruntime.NewMemoryContextSummaryStore()
@@ -165,5 +195,57 @@ func TestCreatePlanFromPlannerUsesConfiguredLoopBudgetWhenMaxStepsOmitted(t *tes
 	}
 	if assembled.Task.TaskID != tsk.TaskID {
 		t.Fatalf("expected typed context package to expose task info, got %#v", assembled)
+	}
+}
+
+func TestCompactSessionContextSupersedesPreviousSummaryAcrossTriggers(t *testing.T) {
+	compactor := &lifecycleCompactor{}
+	summaries := hruntime.NewMemoryContextSummaryStore()
+	rt := hruntime.New(hruntime.Options{
+		Compactor:        compactor,
+		ContextSummaries: summaries,
+	})
+
+	sess := mustCreateSession(t, rt, "context lifecycle", "compact across runtime triggers")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "promote compaction into runtime lifecycle"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	firstPkg, firstSummary, err := rt.CompactSessionContext(context.Background(), attached.SessionID, hruntime.CompactionTriggerPlan)
+	if err != nil {
+		t.Fatalf("compact session context (plan): %v", err)
+	}
+	if firstSummary == nil || firstSummary.Trigger != hruntime.CompactionTriggerPlan {
+		t.Fatalf("expected persisted plan summary, got %#v", firstSummary)
+	}
+	if firstPkg.Compaction == nil || firstPkg.Compaction.Trigger != hruntime.CompactionTriggerPlan {
+		t.Fatalf("expected compaction metadata for plan trigger, got %#v", firstPkg.Compaction)
+	}
+
+	secondPkg, secondSummary, err := rt.CompactSessionContext(context.Background(), attached.SessionID, hruntime.CompactionTriggerExecute)
+	if err != nil {
+		t.Fatalf("compact session context (execute): %v", err)
+	}
+	if secondSummary == nil || secondSummary.Trigger != hruntime.CompactionTriggerExecute {
+		t.Fatalf("expected persisted execution summary, got %#v", secondSummary)
+	}
+	if secondSummary.SupersedesSummaryID != firstSummary.SummaryID {
+		t.Fatalf("expected execution summary to supersede plan summary, got %#v", secondSummary)
+	}
+	if secondPkg.Compaction == nil || secondPkg.Compaction.PreviousSummaryID != firstSummary.SummaryID || secondPkg.Compaction.Trigger != hruntime.CompactionTriggerExecute {
+		t.Fatalf("expected execution compaction metadata to reference previous summary, got %#v", secondPkg.Compaction)
+	}
+	if reused, _ := secondSummary.Metadata["reused_previous_summary_id"].(string); reused != firstSummary.SummaryID {
+		t.Fatalf("expected compactor to receive previous summary context, got %#v", secondSummary.Metadata)
+	}
+
+	items, err := summaries.List(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected two persisted lifecycle summaries, got %#v", items)
 	}
 }

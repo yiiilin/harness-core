@@ -34,6 +34,7 @@ func (r RegistryResolver) Resolve(_ context.Context, req Request) (Resolution, e
 			SessionID:      req.SessionID,
 			TaskID:         req.TaskID,
 			StepID:         req.StepID,
+			Scope:          SnapshotScopeAction,
 			ToolName:       entry.Definition.ToolName,
 			Version:        entry.Definition.Version,
 			CapabilityType: entry.Definition.CapabilityType,

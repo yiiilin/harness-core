@@ -12,6 +12,8 @@ type ActionStatus string
 
 type VerificationStatus string
 
+type RuntimeHandleStatus string
+
 const (
 	AttemptBlocked   AttemptStatus = "blocked"
 	AttemptCompleted AttemptStatus = "completed"
@@ -22,6 +24,10 @@ const (
 
 	VerificationCompleted VerificationStatus = "completed"
 	VerificationFailed    VerificationStatus = "failed"
+
+	RuntimeHandleActive      RuntimeHandleStatus = "active"
+	RuntimeHandleClosed      RuntimeHandleStatus = "closed"
+	RuntimeHandleInvalidated RuntimeHandleStatus = "invalidated"
 )
 
 type Attempt struct {
@@ -88,14 +94,18 @@ type Artifact struct {
 }
 
 type RuntimeHandle struct {
-	HandleID  string         `json:"handle_id"`
-	SessionID string         `json:"session_id"`
-	TaskID    string         `json:"task_id,omitempty"`
-	AttemptID string         `json:"attempt_id,omitempty"`
-	TraceID   string         `json:"trace_id,omitempty"`
-	Kind      string         `json:"kind,omitempty"`
-	Value     string         `json:"value,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	CreatedAt int64          `json:"created_at"`
-	UpdatedAt int64          `json:"updated_at"`
+	HandleID      string              `json:"handle_id"`
+	SessionID     string              `json:"session_id"`
+	TaskID        string              `json:"task_id,omitempty"`
+	AttemptID     string              `json:"attempt_id,omitempty"`
+	TraceID       string              `json:"trace_id,omitempty"`
+	Kind          string              `json:"kind,omitempty"`
+	Value         string              `json:"value,omitempty"`
+	Status        RuntimeHandleStatus `json:"status"`
+	StatusReason  string              `json:"status_reason,omitempty"`
+	Metadata      map[string]any      `json:"metadata,omitempty"`
+	CreatedAt     int64               `json:"created_at"`
+	UpdatedAt     int64               `json:"updated_at"`
+	ClosedAt      int64               `json:"closed_at,omitempty"`
+	InvalidatedAt int64               `json:"invalidated_at,omitempty"`
 }

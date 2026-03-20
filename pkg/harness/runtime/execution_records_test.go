@@ -60,6 +60,9 @@ func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
 				t.Fatalf("expected causation_id on tool event, got %#v", event)
 			}
 		case audit.EventVerifyCompleted:
+			if event.VerificationID == "" {
+				t.Fatalf("expected verification_id on verify event, got %#v", event)
+			}
 			if event.CausationID == "" {
 				t.Fatalf("expected causation_id on verify event, got %#v", event)
 			}
