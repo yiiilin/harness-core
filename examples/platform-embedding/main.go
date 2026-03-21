@@ -154,6 +154,7 @@ func NewPlatform() (*Platform, error) {
 		Policy:    ptyApprovalPolicy{},
 	})
 	workerHelper, err := harness.NewWorkerHelper(harness.WorkerOptions{
+		Name:          "platform-worker",
 		Runtime:       rt,
 		LeaseTTL:      time.Minute,
 		RenewInterval: 25 * time.Millisecond,

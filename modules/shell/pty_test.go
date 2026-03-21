@@ -339,6 +339,83 @@ func TestShellPTYVerifiersSupportExplicitInspector(t *testing.T) {
 	}
 }
 
+func TestPTYHandleActiveVerifierUsesCallerContext(t *testing.T) {
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+		PTYBackend:   &stubPTYBackend{},
+		PTYInspector: contextAwarePTYInspector{},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := verifiers.Evaluate(ctx, verify.Spec{
+		Mode: verify.ModeAll,
+		Checks: []verify.Check{
+			{Kind: "pty_handle_active"},
+		},
+	}, action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handle": map[string]any{"handle_id": "hdl-cancelled"},
+		},
+	}, session.State{})
+	if err != nil {
+		t.Fatalf("evaluate pty_handle_active with canceled context: %v", err)
+	}
+	if result.Success || !strings.Contains(result.Reason, context.Canceled.Error()) {
+		t.Fatalf("expected canceled context to reach inspector, got %#v", result)
+	}
+}
+
+func TestPTYStreamVerifierSupportsRuntimeHandlesSliceAndShellStreamOffset(t *testing.T) {
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	inspector := &recordingPTYInspector{
+		fakePTYInspector: fakePTYInspector{
+			inspect: map[string]shellmodule.PTYInspectResult{
+				"hdl-slice": {Status: "active"},
+			},
+			read: map[string]shellmodule.PTYReadResult{
+				"hdl-slice": {Status: "active", Data: "remote verifier output", NextOffset: 41},
+			},
+		},
+	}
+	shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+		PTYBackend:   &stubPTYBackend{},
+		PTYInspector: inspector,
+	})
+
+	result, err := verifiers.Evaluate(context.Background(), verify.Spec{
+		Mode: verify.ModeAll,
+		Checks: []verify.Check{
+			{Kind: "pty_stream_contains", Args: map[string]any{"text": "verifier output", "timeout_ms": 50}},
+		},
+	}, action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handles": []map[string]any{
+				{"handle_id": "hdl-slice"},
+			},
+			"shell_stream": map[string]any{
+				"handle_id":   "hdl-slice",
+				"next_offset": 19,
+				"status":      "active",
+			},
+		},
+	}, session.State{})
+	if err != nil {
+		t.Fatalf("evaluate pty_stream_contains with runtime_handles slice: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected stream verifier to succeed from runtime_handles slice, got %#v", result)
+	}
+	if len(inspector.readRequests) != 1 || inspector.readRequests[0].Offset != 19 {
+		t.Fatalf("expected verifier to start from shell_stream next_offset, got %#v", inspector.readRequests)
+	}
+}
+
 func readPTYOutputEventually(t *testing.T, manager *shellmodule.PTYManager, handleID string, offset int64, needle string) shellmodule.PTYReadResult {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -397,6 +474,13 @@ type fakePTYInspector struct {
 	read    map[string]shellmodule.PTYReadResult
 }
 
+type recordingPTYInspector struct {
+	fakePTYInspector
+	readRequests []shellmodule.PTYReadRequest
+}
+
+type contextAwarePTYInspector struct{}
+
 func (f fakePTYInspector) Inspect(_ context.Context, handleID string) (shellmodule.PTYInspectResult, error) {
 	result, ok := f.inspect[handleID]
 	if !ok {
@@ -413,6 +497,33 @@ func (f fakePTYInspector) Read(_ context.Context, handleID string, _ shellmodule
 	}
 	result.HandleID = handleID
 	return result, nil
+}
+
+func (r *recordingPTYInspector) Inspect(ctx context.Context, handleID string) (shellmodule.PTYInspectResult, error) {
+	return r.fakePTYInspector.Inspect(ctx, handleID)
+}
+
+func (r *recordingPTYInspector) Read(ctx context.Context, handleID string, req shellmodule.PTYReadRequest) (shellmodule.PTYReadResult, error) {
+	r.readRequests = append(r.readRequests, req)
+	return r.fakePTYInspector.Read(ctx, handleID, req)
+}
+
+func (contextAwarePTYInspector) Inspect(ctx context.Context, handleID string) (shellmodule.PTYInspectResult, error) {
+	select {
+	case <-ctx.Done():
+		return shellmodule.PTYInspectResult{}, ctx.Err()
+	default:
+		return shellmodule.PTYInspectResult{HandleID: handleID, Status: "active"}, nil
+	}
+}
+
+func (contextAwarePTYInspector) Read(ctx context.Context, handleID string, _ shellmodule.PTYReadRequest) (shellmodule.PTYReadResult, error) {
+	select {
+	case <-ctx.Done():
+		return shellmodule.PTYReadResult{}, ctx.Err()
+	default:
+		return shellmodule.PTYReadResult{HandleID: handleID, Status: "active"}, nil
+	}
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {

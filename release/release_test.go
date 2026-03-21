@@ -45,6 +45,7 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 
 	var _ harness.WorkerOptions
 	var _ harness.WorkerLoopOptions
+	var _ harness.WorkerLoopIteration
 	var _ harness.WorkerResult
 	var _ harness.ReplaySessionProjection
 	var _ harness.StepRunOutput

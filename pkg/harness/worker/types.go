@@ -22,6 +22,10 @@ type Runtime interface {
 
 // Options configures a rendered worker helper instance.
 type Options struct {
+	// Name is an optional identifier for this helper instance, intended for
+	// embedding-platform observability and logs. It does not alter kernel
+	// semantics.
+	Name          string
 	Runtime       Runtime
 	LeaseTTL      time.Duration
 	RenewInterval time.Duration
@@ -30,6 +34,7 @@ type Options struct {
 
 // Result captures what happened during a single claim/run/release iteration.
 type Result struct {
+	WorkerName      string
 	NoWork          bool
 	Mode            session.ClaimMode
 	Claimed         session.State
@@ -39,9 +44,27 @@ type Result struct {
 	ApprovalPending bool
 }
 
+// LoopIteration captures the outcome of one RunLoop iteration.
+// It exists so embedding platforms can observe polling behavior without forking
+// the worker helper.
+type LoopIteration struct {
+	WorkerName string
+	Result     Result
+	Err        error
+	Wait       time.Duration
+	Stop       bool
+}
+
 // LoopOptions configures the outer RunLoop polling behavior.
 type LoopOptions struct {
-	IdleWait   time.Duration
-	ErrorWait  time.Duration
+	IdleWait          time.Duration
+	MaxIdleWait       time.Duration
+	IdleBackoffFactor float64
+
+	ErrorWait          time.Duration
+	MaxErrorWait       time.Duration
+	ErrorBackoffFactor float64
+
+	Observe    func(LoopIteration)
 	ShouldStop func(Result, error) bool
 }

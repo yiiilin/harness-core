@@ -13,6 +13,10 @@ This document is about:
 
 This document is not about any specific transport implementation. WebSocket is the first adapter, not the protocol itself.
 
+See also:
+- `docs/EVENTS.md`
+- `docs/ADAPTERS.md`
+
 ---
 
 ## Design principles
@@ -320,6 +324,7 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 - `causation_id` should point to the record that directly caused the event, such as an action or attempt record.
 - `sequence` should preserve sink-local emit order so durable audit consumers do not need to infer ordering from `event_id`.
 - adapter envelopes may wrap these objects, but must not redefine the meaning of the core fields.
+- request/response adapters should not claim their response payloads are a replacement for the event envelope.
 
 ### Execution fact correlation
 
@@ -372,6 +377,8 @@ The kernel may optionally export vendor-neutral metric samples and trace spans i
 ---
 
 ## Notes for adapters
+
+For adapter-facing transport rules, use `docs/ADAPTERS.md` as the normative companion.
 
 ### WebSocket adapter
 - Maps request envelope to runtime calls

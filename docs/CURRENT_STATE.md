@@ -166,6 +166,10 @@ That cleanup is complete, but platforms may still want a slightly richer outer-l
 
 The helper now includes a minimal `RunLoop(...)`, but this area is still a good place for careful incremental improvement as long as it remains transport-neutral and fleet-neutral.
 
+Recent improvement:
+
+- the helper now supports additive worker naming, per-iteration observation hooks, and deterministic idle/error backoff without introducing fleet-level concepts
+
 ### 2. Remote PTY inspection is improved, but still young
 
 This is the biggest remaining shell-module gap.

@@ -10,6 +10,7 @@ This document focuses on:
 - remote PTY execution
 - restart recovery
 - accepted-first API wrappers
+- adapter-facing transport guidance and what stays out of core
 
 ## Integration Principles
 
@@ -17,6 +18,7 @@ This document focuses on:
 - keep product concerns in your platform layer
 - avoid importing `internal/*`
 - treat `modules/*` and `adapters/*` as extension/reference layers, not kernel contracts
+- if you expose the kernel over a transport, follow `docs/ADAPTERS.md` rather than inventing parallel runtime semantics
 
 ## Recommended Public Building Blocks
 
@@ -99,8 +101,10 @@ shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
 
 Key semantics:
 - this path avoids hard dependency on local `PTYManager`
-- PTY-specific verifiers (`pty_handle_active`, `pty_stream_contains`, `pty_exit_code`) are registered only when local `PTYManager` exists
-- if you need remote PTY verification, provide `PTYInspector` explicitly instead of assuming local manager access
+- PTY-specific verifiers (`pty_handle_active`, `pty_stream_contains`, `pty_exit_code`) are registered only when PTY inspection is available
+  - local `PTYManager` provides both execution and inspection by default
+  - remote executors should provide `PTYInspector` explicitly if they want verifier support
+- `pty_stream_contains` can resume from `shell_stream.next_offset` when the action result includes that field (unless an explicit verifier `offset` overrides it)
 - remote executor stream inspection should be implemented in your platform/module layer
 
 ## Pattern 4: Restart and Recovery
@@ -113,6 +117,9 @@ Worker helper semantics:
 - run or recover claimed session
 - release lease
 - optionally keep the outer polling loop in the helper through `RunLoop(...)`
+- optionally label the helper with `worker.Options{Name: ...}` for platform logs/metrics
+- optionally observe each loop iteration through `worker.LoopOptions{Observe: ...}`
+- optionally apply deterministic idle/error backoff in `RunLoop(...)` without adding fleet-specific logic into the kernel
 
 On service restart:
 - start workers again

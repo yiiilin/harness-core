@@ -58,6 +58,9 @@
 - 默认 context assembler
 - 默认 planner placeholder
 - 默认 event sink bridge
+- `pkg/harness/postgres` 公开 durable bootstrap
+- `pkg/harness/worker` 公开 worker loop helper
+- `pkg/harness/replay` 公开 replay/debug projection helper
 - WebSocket adapter
 - Go 示例客户端
 - integration tests 和 benchmark baseline
@@ -75,6 +78,10 @@
 - `docs/POLICY.md`
 - `docs/API.zh-CN.md`
 - `docs/MODULES.md`
+- `docs/EXTENSIBILITY.md`
+- `docs/ADAPTERS.md`
+- `docs/EMBEDDING.md`
+- `docs/RELEASING.md`
 
 ---
 
@@ -107,6 +114,7 @@ rt := harness.New(opts)
 - `pkg/harness/replay`
 
 `pkg/harness/builtins`、`modules/*`、`adapters/*`、`cmd/harness-core` 则属于公开但独立版本演进的 companion modules。
+传输适配建议看 `docs/ADAPTERS.md`，多模块发布流程看 `docs/RELEASING.md`。
 
 ---
 
@@ -144,11 +152,13 @@ go run .
 ```bash
 make test-workspace
 make release-check
+make release-preflight
 go test -bench . -benchmem ./pkg/harness/runtime
 ```
 
 - `make test-workspace` 会通过 `go.work` 跑完整个仓库的多模块测试
 - `make release-check` 只关注稳定内核承诺的 release gate
+- `make release-preflight` 会先做 workspace 测试，再做 release gate
 - `make build` 会把参考服务端二进制输出到 `bin/harness-core`
 
 ---

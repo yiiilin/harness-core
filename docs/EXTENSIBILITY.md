@@ -22,6 +22,7 @@ That means:
 - embedding applications compose the pieces they need
 
 Before adding a new core hook, read `docs/KERNEL_SCOPE.md`.
+If the hook is primarily about transport integration or embedder wiring, also read `docs/ADAPTERS.md` and `docs/EMBEDDING.md`.
 
 ---
 
@@ -160,6 +161,8 @@ Current PTY-specific verifier registration rule:
 - `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when PTY inspection is available
 - a local `PTYManager` is one way to provide that inspection surface
 - an external `PTYBackend` alone does not imply stream inspection capability
+- PTY verifiers may resolve handles from `shell_stream`, `runtime_handle`, or `runtime_handles`
+- `pty_stream_contains` may resume from `shell_stream.next_offset` when the tool result exposes it
 
 ---
 

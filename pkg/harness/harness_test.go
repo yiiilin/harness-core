@@ -54,6 +54,7 @@ func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
 	var _ harness.WorkerRuntime
 	var _ harness.WorkerOptions
 	var _ harness.WorkerLoopOptions
+	var _ harness.WorkerLoopIteration
 	var _ harness.WorkerResult
 	var _ harness.ReplaySessionProjection
 	var _ harness.ReplayExecutionCycleProjection

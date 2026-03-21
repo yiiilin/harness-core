@@ -26,6 +26,8 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 - `docs/KERNEL_SCOPE.md`
 - `docs/VERSIONING.md`
 - `docs/EMBEDDING.md`
+- `docs/ADAPTERS.md`
+- `docs/RELEASING.md`
 
 ## 推荐公开面
 
@@ -56,6 +58,10 @@ import "github.com/yiiilin/harness-core/pkg/harness"
   - `(*worker.Worker).RunOnce(ctx)`
   - `(*worker.Worker).RunLoop(ctx, worker.LoopOptions{...})`
   - `Runtime` 依赖的是 worker 专用窄接口，而不是强制要求具体 `*runtime.Service`
+  - 增量 helper 能力：
+    - 可选 `Options.Name`，方便嵌入方打日志 / 指标标签
+    - 可选 `LoopOptions.Observe`，用于观察每轮 loop 结果
+    - 确定性的 idle/error polling backoff：`LoopOptions{IdleWait, MaxIdleWait, IdleBackoffFactor, ErrorWait, MaxErrorWait, ErrorBackoffFactor}`
   - 结果标志：
     - `NoWork`
     - `ApprovalPending`
@@ -151,6 +157,8 @@ Runtime handle 控制：
   - `CompactionTrigger`
   - `CompactionPolicy`
   - `LoopBudgets`
+- worker helper 类型：
+  - `WorkerLoopIteration`
 
 ## Shell 模块嵌入说明
 
@@ -164,7 +172,10 @@ Runtime handle 控制：
   - `pty_handle_active`
   - `pty_stream_contains`
   - `pty_exit_code`
-  - 只有存在本地 `PTYManager` 时才注册
+  - 只有存在 PTY inspection 能力时才注册，可以来自 `PTYManager` 或显式 `PTYInspector`
+  - `pty_handle_active` 会沿用 verifier 调用时的 `context.Context`
+  - `pty_stream_contains` 能从 `shell_stream`、`runtime_handle`、`runtime_handles` 三种结果字段里解析 PTY handle
+  - 若结果里包含 `shell_stream.next_offset`，`pty_stream_contains` 默认会从该 offset 开始读取
 
 含义：
 - 仅接入远端 PTY backend，并不自动具备本地 PTY stream 检查能力
@@ -237,3 +248,4 @@ _, _ = helper.RunOnce(context.Background())
 ```
 
 关于“外部 run_id、外部审批 UI、远端 PTY、重启恢复、accepted-first API 包装”的完整接入建议，请看 `docs/EMBEDDING.md`。
+关于 transport 适配规则与事件/错误映射，请看 `docs/ADAPTERS.md`。

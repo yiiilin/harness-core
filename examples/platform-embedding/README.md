@@ -7,6 +7,7 @@ It demonstrates:
 - an accepted-first API wrapper that returns immediately with a platform-owned `external_run_id`
 - a platform-side mapping from `external_run_id -> session_id` instead of pushing external IDs into kernel types
 - background execution through `pkg/harness/worker`
+- a named worker helper instance that can be wrapped with platform-side observability
 - external approval UI behavior through `ListApprovals(...)` and `RespondApproval(...)`
 - remote PTY execution through `shellmodule.Options{PTYBackend: ...}`
 - replay/debug projection through `pkg/harness/replay`

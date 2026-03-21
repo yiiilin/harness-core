@@ -47,6 +47,38 @@ func TestWorkerNewAcceptsNarrowRuntimeInterface(t *testing.T) {
 	}
 }
 
+func TestWorkerRunOnceIncludesConfiguredWorkerName(t *testing.T) {
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-named",
+			LeaseID:   "lease-named",
+		},
+		runOutput: hruntime.SessionRunOutput{
+			Session: session.State{SessionID: "sess-named"},
+		},
+		releaseState: session.State{SessionID: "sess-named"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Name:          "worker-alpha",
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker with name: %v", err)
+	}
+
+	res, err := w.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("run once with name: %v", err)
+	}
+	if res.WorkerName != "worker-alpha" {
+		t.Fatalf("expected worker name to be reported, got %#v", res)
+	}
+}
+
 func TestWorkerRunOnceClaimsRunsAndReleases(t *testing.T) {
 	ctx := context.Background()
 	handler := &sleepHandler{delay: 100 * time.Millisecond}
@@ -258,6 +290,147 @@ func TestWorkerRunLoopBacksOffAfterNoWorkAndExitsOnContextCancel(t *testing.T) {
 	}
 	if rt.claimRunnableCalls < 2 {
 		t.Fatalf("expected loop to retry after no work, got runtime=%#v", rt)
+	}
+}
+
+func TestWorkerRunLoopObservesIdleBackoff(t *testing.T) {
+	rt := &fakeRuntime{}
+	w, err := workerpkg.New(workerpkg.Options{
+		Name:          "worker-idle",
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	var iterations []workerpkg.LoopIteration
+	count := 0
+	err = w.RunLoop(context.Background(), workerpkg.LoopOptions{
+		IdleWait:          time.Millisecond,
+		MaxIdleWait:       4 * time.Millisecond,
+		IdleBackoffFactor: 2,
+		Observe: func(iter workerpkg.LoopIteration) {
+			iterations = append(iterations, iter)
+		},
+		ShouldStop: func(result workerpkg.Result, err error) bool {
+			count++
+			return count == 3
+		},
+	})
+	if err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if len(iterations) != 3 {
+		t.Fatalf("expected three observed iterations, got %d", len(iterations))
+	}
+	if iterations[0].WorkerName != "worker-idle" || iterations[0].Result.WorkerName != "worker-idle" {
+		t.Fatalf("expected worker name to flow through iteration, got %#v", iterations[0])
+	}
+	if iterations[0].Wait != time.Millisecond || iterations[1].Wait != 2*time.Millisecond || iterations[2].Wait != 4*time.Millisecond {
+		t.Fatalf("expected idle backoff waits [1ms 2ms 4ms], got [%s %s %s]", iterations[0].Wait, iterations[1].Wait, iterations[2].Wait)
+	}
+	if !iterations[2].Stop {
+		t.Fatalf("expected final observed iteration to mark stop")
+	}
+}
+
+func TestWorkerRunLoopResetsIdleBackoffAfterWork(t *testing.T) {
+	rt := &fakeRuntime{
+		claimRunnableResults: []claimResult{
+			{ok: false},
+			{ok: false},
+			{
+				state: session.State{
+					SessionID: "sess-reset",
+					LeaseID:   "lease-reset",
+				},
+				ok: true,
+			},
+			{ok: false},
+		},
+		runOutput: hruntime.SessionRunOutput{
+			Session: session.State{SessionID: "sess-reset"},
+		},
+		releaseState: session.State{SessionID: "sess-reset"},
+	}
+	w, err := workerpkg.New(workerpkg.Options{
+		Name:          "worker-reset",
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	var iterations []workerpkg.LoopIteration
+	count := 0
+	err = w.RunLoop(context.Background(), workerpkg.LoopOptions{
+		IdleWait:          time.Millisecond,
+		MaxIdleWait:       4 * time.Millisecond,
+		IdleBackoffFactor: 2,
+		Observe: func(iter workerpkg.LoopIteration) {
+			iterations = append(iterations, iter)
+		},
+		ShouldStop: func(result workerpkg.Result, err error) bool {
+			count++
+			return count == 4
+		},
+	})
+	if err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if len(iterations) != 4 {
+		t.Fatalf("expected four observed iterations, got %d", len(iterations))
+	}
+	if iterations[0].Wait != time.Millisecond || iterations[1].Wait != 2*time.Millisecond || iterations[2].Wait != 0 || iterations[3].Wait != time.Millisecond {
+		t.Fatalf("expected waits [1ms 2ms 0 1ms], got [%s %s %s %s]", iterations[0].Wait, iterations[1].Wait, iterations[2].Wait, iterations[3].Wait)
+	}
+	if iterations[2].Result.NoWork {
+		t.Fatalf("expected third iteration to represent handled work, got %#v", iterations[2])
+	}
+}
+
+func TestWorkerRunLoopObservesErrorBackoff(t *testing.T) {
+	claimErr := errors.New("claim failed")
+	rt := &fakeRuntime{claimRunnableErr: claimErr}
+	w, err := workerpkg.New(workerpkg.Options{
+		Name:          "worker-error",
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	var iterations []workerpkg.LoopIteration
+	count := 0
+	err = w.RunLoop(context.Background(), workerpkg.LoopOptions{
+		ErrorWait:          2 * time.Millisecond,
+		MaxErrorWait:       5 * time.Millisecond,
+		ErrorBackoffFactor: 2,
+		Observe: func(iter workerpkg.LoopIteration) {
+			iterations = append(iterations, iter)
+		},
+		ShouldStop: func(result workerpkg.Result, err error) bool {
+			count++
+			return count == 3
+		},
+	})
+	if !errors.Is(err, claimErr) {
+		t.Fatalf("expected claim error from stopping iteration, got %v", err)
+	}
+	if len(iterations) != 3 {
+		t.Fatalf("expected three observed iterations, got %d", len(iterations))
+	}
+	if iterations[0].Wait != 2*time.Millisecond || iterations[1].Wait != 4*time.Millisecond || iterations[2].Wait != 5*time.Millisecond {
+		t.Fatalf("expected error backoff waits [2ms 4ms 5ms], got [%s %s %s]", iterations[0].Wait, iterations[1].Wait, iterations[2].Wait)
+	}
+	if !errors.Is(iterations[0].Err, claimErr) || !iterations[2].Stop {
+		t.Fatalf("expected observed errors and stop flag, got %#v", iterations)
 	}
 }
 

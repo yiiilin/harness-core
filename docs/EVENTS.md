@@ -10,6 +10,10 @@ The runtime emits structured events as part of step execution. These events are 
 
 This document is about the semantic meaning of those events, not about any single transport.
 
+See also:
+- `docs/PROTOCOL.md`
+- `docs/ADAPTERS.md`
+
 ---
 
 ## Current event types
@@ -78,6 +82,7 @@ The task reached terminal failure.
 - `sequence` should preserve local emit order even when multiple events share the same timestamp
 - `session_id`, `step_id`, `attempt_id`, `action_id`, `verification_id`, `approval_id`, `cycle_id`, `trace_id`, and `causation_id` allow replay/debug correlation without payload scraping
 - `payload` is intentionally free-form but should remain structured JSON
+- transport adapters may wrap the event object, but should preserve these core fields unchanged
 
 ---
 
@@ -113,6 +118,8 @@ state.changed
 
 The runtime should not guarantee perfect global ordering across future distributed adapters,
 but should preserve per-step ordering within a single local execution.
+
+Request/response transports that do not stream events should document that limitation explicitly instead of implying response payloads are a complete observability surface.
 
 ---
 

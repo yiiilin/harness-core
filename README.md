@@ -50,6 +50,8 @@ Implemented today:
 - Postgres-backed transaction runner and server bootstrap wiring
 - public durable Postgres bootstrap helpers under `pkg/harness/postgres`
 - public Postgres migration inspection helpers under `pkg/harness/postgres`
+- public worker-loop helper under `pkg/harness/worker`
+- public replay/debug projection helper under `pkg/harness/replay`
 - step runner (`policy -> action -> verify -> transition -> state update`)
 - in-memory audit/event sink
 - stable runtime-emitted `event_id` values plus task / attempt / action / trace identifiers
@@ -80,6 +82,7 @@ Implemented today:
 - `docs/POLICY.md`
 - `docs/MODULES.md`
 - `docs/EXTENSIBILITY.md`
+- `docs/ADAPTERS.md`
 - `docs/API.zh-CN.md` (中文快速理解与接入说明)
 - `README.zh-CN.md` (中文仓库说明)
 - `CONTRIBUTING.md`
@@ -87,6 +90,7 @@ Implemented today:
 - `docs/EVENTS.md`
 - `docs/STATUS.md`
 - `docs/PERSISTENCE.md`
+- `docs/RELEASING.md`
 - `docs/ROADMAP.md`
 - `internal/postgres/README.md` (durable storage internals)
 - `VERSIONING.md`
@@ -122,6 +126,7 @@ The most stable embedding path remains:
 - `pkg/harness/replay`
 
 Treat `pkg/harness/builtins`, `modules/*`, `adapters/*`, and `cmd/harness-core` as public companion modules with their own release cadence.
+Use `docs/ADAPTERS.md` for transport-binding rules and `docs/RELEASING.md` for multi-module tagging flow.
 
 ## Default durable Postgres construction style
 
@@ -203,11 +208,13 @@ Embedding platforms should use `pkg/harness/postgres` directly for bootstrap, st
 ```bash
 make test-workspace
 make release-check
+make release-preflight
 make build
 ```
 
 - `make test-workspace` runs tests across the root kernel module plus all companion modules in `go.work`
 - `make release-check` runs the release gate focused on the stable kernel promise
+- `make release-preflight` runs workspace tests plus the release gate before tagging
 - `make build` writes the reference server binary to `bin/harness-core`
 
 ## Run minimal happy-path example

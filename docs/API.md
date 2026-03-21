@@ -26,6 +26,8 @@ See:
 - `docs/KERNEL_SCOPE.md`
 - `docs/VERSIONING.md`
 - `docs/EMBEDDING.md`
+- `docs/ADAPTERS.md`
+- `docs/RELEASING.md`
 
 ## Recommended Public Surface
 
@@ -56,6 +58,10 @@ See:
   - `(*worker.Worker).RunOnce(ctx)`
   - `(*worker.Worker).RunLoop(ctx, worker.LoopOptions{...})`
   - runtime dependency is a narrow worker-facing interface, not a required concrete `*runtime.Service`
+  - additive helper ergonomics:
+    - optional `Options.Name` for embedder logs/metrics labels
+    - optional loop observation via `LoopOptions.Observe`
+    - deterministic idle/error polling backoff via `LoopOptions{IdleWait, MaxIdleWait, IdleBackoffFactor, ErrorWait, MaxErrorWait, ErrorBackoffFactor}`
   - result flags:
     - `NoWork`
     - `ApprovalPending`
@@ -151,6 +157,8 @@ Context maintenance:
   - `CompactionTrigger`
   - `CompactionPolicy`
   - `LoopBudgets`
+- worker helper types:
+  - `WorkerLoopIteration`
 - runtime interfaces:
   - planner
   - context assembler
@@ -170,7 +178,10 @@ Current extension semantics:
   - `pty_handle_active`
   - `pty_stream_contains`
   - `pty_exit_code`
-  - these are registered only when a local `PTYManager` is present
+  - these are registered only when PTY inspection is available, either through `PTYManager` or explicit `PTYInspector`
+  - `pty_handle_active` uses the verifier call context for inspection
+  - `pty_stream_contains` can resolve PTY handles from `shell_stream`, `runtime_handle`, or `runtime_handles`
+  - when `shell_stream.next_offset` is present, `pty_stream_contains` starts from that offset by default
 
 Implication:
 - remote PTY backend wiring does not automatically imply local PTY stream inspection/verifier support
@@ -243,3 +254,4 @@ _, _ = helper.RunOnce(context.Background())
 ```
 
 For platform integration patterns (external run id, external approval UI, remote PTY, restart recovery, accepted-first API wrapper), see `docs/EMBEDDING.md`.
+For transport-binding rules and event/error mapping guidance, see `docs/ADAPTERS.md`.

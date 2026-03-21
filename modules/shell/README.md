@@ -111,6 +111,12 @@ Important:
 - PTY-specific verifiers are registered only when PTY inspection is available
 - local `PTYManager` is one way to provide that inspection surface
 - supplying only `PTYBackend` does not imply stream inspection support
+- `pty_handle_active` uses the verifier call `context.Context` instead of forcing a detached background context
+- verifier handle resolution accepts:
+  - `shell_stream.handle_id`
+  - `runtime_handle.handle_id`
+  - the first entry in `runtime_handles`
+- `pty_stream_contains` starts from `shell_stream.next_offset` when that metadata is present, unless an explicit verifier `offset` overrides it
 
 ## Attach / Detach
 

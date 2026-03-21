@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ var (
 )
 
 type Worker struct {
+	name          string
 	runtime       Runtime
 	leaseTTL      time.Duration
 	renewInterval time.Duration
@@ -40,6 +42,7 @@ func New(opts Options) (*Worker, error) {
 		modes = []session.ClaimMode{session.ClaimModeRunnable, session.ClaimModeRecoverable}
 	}
 	return &Worker{
+		name:          opts.Name,
 		runtime:       opts.Runtime,
 		leaseTTL:      opts.LeaseTTL,
 		renewInterval: renew,
@@ -48,7 +51,7 @@ func New(opts Options) (*Worker, error) {
 }
 
 func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
-	var res Result
+	res := Result{WorkerName: w.name}
 	claimed, mode, err := w.claim(ctx)
 	if err != nil {
 		return res, err
@@ -65,7 +68,7 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 		runFn = w.runtime.RecoverClaimedSession
 	}
 
-	renewCtx, renewCancel := context.WithCancel(context.Background())
+	renewCtx, renewCancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	renewErrCh := make(chan error, 1)
 	wg.Add(1)
@@ -124,24 +127,69 @@ func (w *Worker) RunLoop(ctx context.Context, opts LoopOptions) error {
 	if idleWait <= 0 {
 		idleWait = 250 * time.Millisecond
 	}
+	maxIdleWait := opts.MaxIdleWait
+	if maxIdleWait < idleWait {
+		maxIdleWait = idleWait
+	}
+	idleBackoffFactor := opts.IdleBackoffFactor
+	if idleBackoffFactor < 1 {
+		idleBackoffFactor = 1
+	}
+
 	errorWait := opts.ErrorWait
 	if errorWait <= 0 {
 		errorWait = time.Second
 	}
+	maxErrorWait := opts.MaxErrorWait
+	if maxErrorWait < errorWait {
+		maxErrorWait = errorWait
+	}
+	errorBackoffFactor := opts.ErrorBackoffFactor
+	if errorBackoffFactor < 1 {
+		errorBackoffFactor = 1
+	}
+
+	nextIdleWait := idleWait
+	nextErrorWait := errorWait
 
 	for {
 		result, err := w.RunOnce(ctx)
-		if opts.ShouldStop != nil && opts.ShouldStop(result, err) {
+		waitFor := time.Duration(0)
+		switch {
+		case err != nil:
+			waitFor = nextErrorWait
+			nextErrorWait = backoffWait(nextErrorWait, maxErrorWait, errorBackoffFactor)
+			nextIdleWait = idleWait
+		case result.NoWork:
+			waitFor = nextIdleWait
+			nextIdleWait = backoffWait(nextIdleWait, maxIdleWait, idleBackoffFactor)
+			nextErrorWait = errorWait
+		default:
+			nextIdleWait = idleWait
+			nextErrorWait = errorWait
+		}
+
+		stop := opts.ShouldStop != nil && opts.ShouldStop(result, err)
+		if opts.Observe != nil {
+			opts.Observe(LoopIteration{
+				WorkerName: w.name,
+				Result:     result,
+				Err:        err,
+				Wait:       waitFor,
+				Stop:       stop,
+			})
+		}
+		if stop {
 			return err
 		}
 		if err != nil {
-			if waitErr := sleepContext(ctx, errorWait); waitErr != nil {
+			if waitErr := sleepContext(ctx, waitFor); waitErr != nil {
 				return waitErr
 			}
 			continue
 		}
 		if result.NoWork {
-			if waitErr := sleepContext(ctx, idleWait); waitErr != nil {
+			if waitErr := sleepContext(ctx, waitFor); waitErr != nil {
 				return waitErr
 			}
 			continue
@@ -198,4 +246,24 @@ func sleepContext(ctx context.Context, delay time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func backoffWait(current, max time.Duration, factor float64) time.Duration {
+	if current <= 0 {
+		return 0
+	}
+	if max > 0 && current >= max {
+		return max
+	}
+	if factor <= 1 {
+		return current
+	}
+	next := time.Duration(math.Ceil(float64(current) * factor))
+	if next < current {
+		next = current
+	}
+	if max > 0 && next > max {
+		return max
+	}
+	return next
 }

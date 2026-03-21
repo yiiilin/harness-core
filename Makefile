@@ -1,4 +1,4 @@
-.PHONY: run build client test test-kernel test-builtins test-modules test-adapters test-cli test-workspace test-evals test-release release-check
+.PHONY: run build client test test-kernel test-builtins test-modules test-adapters test-cli test-workspace test-evals test-release release-check release-preflight release-resolve release-tag
 
 run:
 	go run ./cmd/harness-core
@@ -37,3 +37,14 @@ test-release:
 
 release-check: test-release test-evals
 	@echo "release-check passed"
+
+release-preflight:
+	go work sync
+	$(MAKE) test-workspace
+	$(MAKE) release-check
+
+release-resolve:
+	bash ./scripts/release-module.sh resolve $(MODULE) $(VERSION)
+
+release-tag:
+	bash ./scripts/release-module.sh tag $(MODULE) $(VERSION)

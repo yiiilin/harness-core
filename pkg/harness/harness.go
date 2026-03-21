@@ -71,6 +71,7 @@ type ReplayExecutionCycleProjection = replay.ExecutionCycleProjection
 type WorkerRuntime = worker.Runtime
 type WorkerOptions = worker.Options
 type WorkerLoopOptions = worker.LoopOptions
+type WorkerLoopIteration = worker.LoopIteration
 type WorkerResult = worker.Result
 type WorkerHelper = worker.Worker
 

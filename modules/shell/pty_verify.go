@@ -24,15 +24,15 @@ type PTYExitCodeChecker struct {
 	Inspector PTYInspector
 }
 
-func (c PTYHandleActiveChecker) Verify(_ context.Context, _ map[string]any, result action.Result, _ session.State) (verify.Result, error) {
+func (c PTYHandleActiveChecker) Verify(ctx context.Context, _ map[string]any, result action.Result, _ session.State) (verify.Result, error) {
 	if c.Inspector == nil {
 		return verify.Result{Success: false, Reason: "pty inspector not configured"}, nil
 	}
-	handleID, err := ptyHandleIDFromResult(result)
+	handleID, _, err := ptyHandleRefFromResult(result)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
-	inspect, err := c.Inspector.Inspect(context.Background(), handleID)
+	inspect, err := c.Inspector.Inspect(ctx, handleID)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
@@ -60,15 +60,15 @@ func (c PTYStreamContainsChecker) Verify(ctx context.Context, args map[string]an
 	if needle == "" {
 		return verify.Result{Success: false, Reason: "missing text"}, nil
 	}
-	handleID, err := ptyHandleIDFromResult(result)
+	handleID, startOffset, err := ptyHandleRefFromResult(result)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
 
 	timeout := ptyTimeoutFromArgs(args, time.Second)
 	deadline := time.Now().Add(timeout)
-	offset := int64(0)
-	if v, ok := asInt64(args["offset"]); ok && v > 0 {
+	offset := startOffset
+	if v, ok := asInt64(args["offset"]); ok && v >= 0 {
 		offset = v
 	}
 	maxBytes := 4096
@@ -130,7 +130,7 @@ func (c PTYExitCodeChecker) Verify(ctx context.Context, args map[string]any, res
 	if !ok {
 		return verify.Result{Success: false, Reason: "allowed must be an array"}, nil
 	}
-	handleID, err := ptyHandleIDFromResult(result)
+	handleID, _, err := ptyHandleRefFromResult(result)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
@@ -182,40 +182,86 @@ func (c PTYExitCodeChecker) Verify(ctx context.Context, args map[string]any, res
 	}
 }
 
-func ptyHandleIDFromResult(result action.Result) (string, error) {
-	if raw, ok := result.Data["runtime_handle"]; ok {
-		switch handle := raw.(type) {
-		case execution.RuntimeHandle:
-			if handle.HandleID != "" {
-				return handle.HandleID, nil
-			}
-		case *execution.RuntimeHandle:
-			if handle != nil && handle.HandleID != "" {
-				return handle.HandleID, nil
-			}
-		case map[string]any:
-			if id, _ := handle["handle_id"].(string); id != "" {
-				return id, nil
-			}
-		}
-	}
+func ptyHandleRefFromResult(result action.Result) (string, int64, error) {
 	if raw, ok := result.Data["shell_stream"]; ok {
-		switch stream := raw.(type) {
-		case PTYStreamInfo:
-			if stream.HandleID != "" {
-				return stream.HandleID, nil
+		if id, offset := ptyHandleAndOffsetFromShellStream(raw); id != "" {
+			return id, offset, nil
+		}
+	}
+	if raw, ok := result.Data["runtime_handle"]; ok {
+		if id := ptyHandleIDFromValue(raw); id != "" {
+			return id, 0, nil
+		}
+	}
+	if raw, ok := result.Data["runtime_handles"]; ok {
+		if id := ptyHandleIDFromSlice(raw); id != "" {
+			return id, 0, nil
+		}
+	}
+	return "", 0, fmt.Errorf("result missing PTY handle id")
+}
+
+func ptyHandleAndOffsetFromShellStream(raw any) (string, int64) {
+	switch stream := raw.(type) {
+	case PTYStreamInfo:
+		return stream.HandleID, stream.NextOffset
+	case *PTYStreamInfo:
+		if stream != nil {
+			return stream.HandleID, stream.NextOffset
+		}
+	case map[string]any:
+		id, _ := stream["handle_id"].(string)
+		offset, _ := asInt64(stream["next_offset"])
+		return id, offset
+	}
+	return "", 0
+}
+
+func ptyHandleIDFromSlice(raw any) string {
+	switch items := raw.(type) {
+	case []execution.RuntimeHandle:
+		for _, item := range items {
+			if item.HandleID != "" {
+				return item.HandleID
 			}
-		case *PTYStreamInfo:
-			if stream != nil && stream.HandleID != "" {
-				return stream.HandleID, nil
+		}
+	case []*execution.RuntimeHandle:
+		for _, item := range items {
+			if item != nil && item.HandleID != "" {
+				return item.HandleID
 			}
-		case map[string]any:
-			if id, _ := stream["handle_id"].(string); id != "" {
-				return id, nil
+		}
+	case []map[string]any:
+		for _, item := range items {
+			if id, _ := item["handle_id"].(string); id != "" {
+				return id
+			}
+		}
+	case []any:
+		for _, item := range items {
+			if id := ptyHandleIDFromValue(item); id != "" {
+				return id
 			}
 		}
 	}
-	return "", fmt.Errorf("result missing PTY handle id")
+	return ""
+}
+
+func ptyHandleIDFromValue(raw any) string {
+	switch handle := raw.(type) {
+	case execution.RuntimeHandle:
+		return handle.HandleID
+	case *execution.RuntimeHandle:
+		if handle != nil {
+			return handle.HandleID
+		}
+	case map[string]any:
+		id, _ := handle["handle_id"].(string)
+		return id
+	case string:
+		return handle
+	}
+	return ""
 }
 
 func ptyTimeoutFromArgs(args map[string]any, fallback time.Duration) time.Duration {
