@@ -2,98 +2,128 @@
 
 ## Purpose
 
-This document describes the intended public API surface of `harness-core`.
+This document defines the embedder-facing public API for `harness-core`.
 
-The main entry point should be:
+Primary import path:
 
 ```go
 import "github.com/yiiilin/harness-core/pkg/harness"
 ```
 
 Scope rule:
-- `pkg/harness` exposes the execution kernel, not transport/auth/tenant/product APIs
+- kernel API only
+- no transport/auth/user/tenant/product API in kernel types
 
-See `docs/KERNEL_SCOPE.md`.
+See:
+- `docs/KERNEL_SCOPE.md`
+- `docs/VERSIONING.md`
+- `docs/EMBEDDING.md`
 
-## Recommended public surface
+## Recommended Public Surface
 
-### Top-level constructor path
-- bare-kernel constructors:
-  - `harness.New(opts)`
-  - `harness.NewDefault()`
-- convenience composition package:
+### Primary facade
+
+- `pkg/harness`
+  - constructors:
+    - `harness.New(opts)`
+    - `harness.NewDefault()`
+  - compatibility composition wrappers:
+    - `harness.NewWithBuiltins()`
+    - `harness.RegisterBuiltins(&opts)`
+
+### Composition helper packages
+
+- `pkg/harness/builtins`
   - `builtins.New()`
   - `builtins.Register(&opts)`
-- compatibility wrappers on `pkg/harness` remain available:
-  - `harness.NewWithBuiltins()`
-  - `harness.RegisterBuiltins(&opts)`
 
-The convenience helpers may wire default capability modules, but they do not make module, transport, auth, or tenant concerns part of the kernel contract.
-The separation exists so `pkg/harness/runtime` stays a bare kernel package rather than the owner of built-in capability packs.
-
-### Recommended durable Postgres bootstrap path
 - `pkg/harness/postgres`
-  - `postgres.OpenDB(...)`
-  - `postgres.EmbeddedMigrations()`
-  - `postgres.ApplyMigrations(...)`
-  - `postgres.ApplySchema(...)`
-  - `postgres.ListMigrationStatus(...)`
-  - `postgres.PendingMigrations(...)`
-  - `postgres.HasSchemaDrift(...)`
-  - `postgres.SchemaVersion(...)`
-  - `postgres.LatestSchemaVersion()`
-  - `postgres.BuildOptions(...)`
-  - `postgres.OpenService(...)`
+  - `OpenDB(...)`
+  - `EmbeddedMigrations()`
+  - `ApplyMigrations(...)`
+  - `ApplySchema(...)`
+  - `ListMigrationStatus(...)`
+  - `PendingMigrations(...)`
+  - `HasSchemaDrift(...)`
+  - `SchemaVersion(...)`
+  - `LatestSchemaVersion()`
+  - `BuildOptions(...)`
+  - `OpenService(...)`
 
-This package is a public composition/bootstrap layer around the kernel.
-It is the recommended durable embedding surface for Postgres-backed platforms, so downstream consumers do not need `internal/*` or the reference WebSocket adapter just to get persisted runtime semantics.
-Use `ApplyMigrations(...)` as the canonical bootstrap path; `ApplySchema(...)` remains as a compatibility wrapper over the same migration-driven behavior.
-The migration inspection helpers are also public so platforms can build their own ops/admin workflows without reaching into `internal/postgres`.
+- `pkg/harness/worker`
+  - `worker.New(worker.Options{Runtime: rt, ...})`
+  - `(*worker.Worker).RunOnce(ctx)`
+  - result flags:
+    - `NoWork`
+    - `ApprovalPending`
 
-### Recommended kernel entrypoints
-- session/task/plan lifecycle:
-  - `CreateSession`
-  - `CreateTask`
-  - `AttachTaskToSession`
-  - `CreatePlan`
-  - `CreatePlanFromPlanner`
-- governed execution:
-  - `RunStep`
-  - `RunClaimedStep`
-  - `RunSession`
-  - `RunClaimedSession`
-  - `RecoverSession`
-  - `RecoverClaimedSession`
-  - `AbortSession`
-- approval / coordination control plane:
-  - `RespondApproval`
-  - `ResumePendingApproval`
-  - `ResumeClaimedApproval`
-  - `ClaimRunnableSession`
-  - `ClaimRecoverableSession`
-  - `RenewSessionLease`
-  - `ReleaseSessionLease`
-  - `MarkClaimedSessionInFlight`
-  - `MarkClaimedSessionInterrupted`
-- durable runtime facts / maintenance:
-  - `CompactSessionContext`
-  - `UpdateRuntimeHandle`
-  - `CloseRuntimeHandle`
-  - `InvalidateRuntimeHandle`
-  - `ListAttempts`
-  - `ListActions`
-  - `ListVerifications`
-  - `ListArtifacts`
-  - `ListRuntimeHandles`
-  - `ListCapabilitySnapshots`
-  - `ListContextSummaries`
+- `pkg/harness/replay`
+  - `replay.NewReader(source)`
+  - `(*replay.Reader).SessionProjection(sessionID)`
+  - `(*replay.Reader).ExecutionCycleProjection(sessionID, cycleID)`
+  - convenience helpers:
+    - `LoadSessionProjection(...)`
+    - `LoadCycleProjection(...)`
 
-### Re-exported core types
-- task/session/plan/action/verify domain types
-- tool definition and risk types
+### Runtime control plane
+
+Lifecycle:
+- `CreateSession`
+- `CreateTask`
+- `AttachTaskToSession`
+- `CreatePlan`
+- `CreatePlanFromPlanner`
+
+Execution:
+- `RunStep`
+- `RunClaimedStep`
+- `RunSession`
+- `RunClaimedSession`
+- `RecoverSession`
+- `RecoverClaimedSession`
+- `AbortSession`
+
+Approval and coordination:
+- `RespondApproval`
+- `ResumePendingApproval`
+- `ResumeClaimedApproval`
+- `ClaimRunnableSession`
+- `ClaimRecoverableSession`
+- `RenewSessionLease`
+- `ReleaseSessionLease`
+- `MarkClaimedSessionInFlight`
+- `MarkClaimedSessionInterrupted`
+
+Durable execution facts and reads:
+- `ListAttempts`
+- `ListActions`
+- `ListVerifications`
+- `ListArtifacts`
+- `ListRuntimeHandles`
+- `ListCapabilitySnapshots`
+- `ListContextSummaries`
+- `ListAuditEvents`
+- `ListExecutionCycles`
+- `GetExecutionCycle`
+
+Runtime handle control:
+- `UpdateRuntimeHandle`
+- `CloseRuntimeHandle`
+- `InvalidateRuntimeHandle`
+
+Context maintenance:
+- `CompactSessionContext`
+
+### Re-exported facade types
+
+`pkg/harness` re-exports stable kernel domain and control types, including:
+- task/session/plan/action/verify types
 - permission decision/action types
+- tool definition/risk types
 - audit event type
-- runtime execution/control types:
+- execution fact types:
+  - attempt/action/verification/artifact/runtime handle/execution cycle
+- runtime control types:
   - `StepRunOutput`
   - `SessionRunOutput`
   - `AbortRequest`
@@ -103,31 +133,41 @@ The migration inspection helpers are also public so platforms can build their ow
   - `RuntimeHandleInvalidateRequest`
   - `CompactionTrigger`
   - `CompactionPolicy`
+  - `LoopBudgets`
 - runtime interfaces:
   - planner
   - context assembler
   - event sink
   - metrics exporter
   - trace exporter
-- runtime error helpers:
-  - `runtime.ClassifyError`
-  - `runtime.IsRetryable`
 
-### Lower-level packages
-Consumers may import lower-level packages directly when they need finer control, but the default path should begin with `pkg/harness`.
+## Shell Module Embedder Notes
 
-## Package-group stability notes
+`modules/shell` is a capability module, not kernel surface, but embedders frequently rely on it.
+Current extension semantics:
 
-### Most stable path
+- `RegisterWithOptions(..., shellmodule.Options{PTYBackend: ...})` supports external PTY executors
+- `PTYManager` remains the default local PTY execution and inspection path
+- PTY-specific verifiers are conditional:
+  - `pty_handle_active`
+  - `pty_stream_contains`
+  - `pty_exit_code`
+  - these are registered only when a local `PTYManager` is present
+
+Implication:
+- remote PTY backend wiring does not automatically imply local PTY stream inspection/verifier support
+
+## Stability Classification
+
+For detailed policy, see `docs/VERSIONING.md`.
+
+Most stable embedding path:
 - `pkg/harness`
+- `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
 
-Intent:
-- keep the top-level facade small
-- prefer additive changes over reshaping constructor ergonomics
-- use this as the default embedding entry point
-- avoid turning the facade into a product platform SDK
-
-### Public but still evolving
+Public and supported but evolving faster pre-1.0:
 - `pkg/harness/runtime`
 - `pkg/harness/task`
 - `pkg/harness/session`
@@ -138,60 +178,30 @@ Intent:
 - `pkg/harness/permission`
 - `pkg/harness/audit`
 - `pkg/harness/persistence`
-- `pkg/harness/executor/shell`
+- `pkg/harness/observability`
+- `pkg/harness/executor/*`
 - `pkg/harness/builtins`
-- `pkg/harness/postgres`
 
-Intent:
-- these packages are importable and supported
-- contracts should remain coherent and documented
-- pre-1.0 evolution is still expected, especially when closing correctness gaps
+Reference and fast-moving:
+- `modules/*`
+- `adapters/*`
 
-Adapter guidance:
-- transport adapters should prefer the transport-neutral runtime error helpers over hard-coding kernel sentinel errors into protocol mappings
-
-### Internal-only / no stability promise
+No compatibility promise:
 - `internal/*`
 - `cmd/*`
 - `examples/*`
 
-Intent:
-- these are allowed to move, split, or disappear
-- they exist to support shipped wiring, tests, examples, and documentation
-
-## Planner / Context usage
-
-The planner/context API is intentionally narrow:
-- planner decides the next step
-- context assembler produces the structured input for that decision
-- runtime execution remains explicit
-- the top-level facade does not wrap transport or identity concerns
-- multi-user / multi-session ownership stays in the embedding platform, not the facade
-
-Typical construction path:
-
-```go
-import (
-	"github.com/yiiilin/harness-core/pkg/harness"
-	"github.com/yiiilin/harness-core/pkg/harness/builtins"
-)
-
-opts := harness.Options{}
-builtins.Register(&opts)
-rt := harness.New(opts).
-	WithPlanner(myPlanner).
-	WithContextAssembler(myAssembler)
-```
-
-For a durable Postgres-backed runtime:
+## Minimal Embedding Path
 
 ```go
 import (
 	"context"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/worker"
 )
 
 var opts hruntime.Options
@@ -202,43 +212,15 @@ if err != nil {
 	panic(err)
 }
 defer db.Close()
+
+helper, err := worker.New(worker.Options{
+	Runtime:  rt,
+	LeaseTTL: time.Minute,
+})
+if err != nil {
+	panic(err)
+}
+_, _ = helper.RunOnce(context.Background())
 ```
 
-For a planner-driven plan creation flow:
-
-```go
-sess := rt.CreateSession("demo", "run planned work")
-tsk := rt.CreateTask(harness.TaskSpec{TaskType: "demo", Goal: "echo alpha then beta"})
-sess, _ = rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
-
-pl, assembled, err := rt.CreatePlanFromPlanner(ctx, sess.SessionID, "planner-derived revision", 2)
-_ = assembled
-_ = pl
-_ = err
-```
-
-Reference examples:
-- `examples/planner-context`
-- `examples/planner-replan`
-- `examples/platform-reference`
-- `examples/postgres-embedded`
-- `examples/postgres-workers`
-
-Module-specific interactive control surfaces remain outside the kernel facade.
-For example, PTY read/write/attach/detach behavior and PTY-specific verifiers live in `modules/shell` and are shown through `examples/platform-reference`; the kernel only owns the generic runtime-handle lifecycle.
-
-The reference WebSocket adapter and the minimal HTTP adapter are optional transport bindings.
-Embedding platforms do not need `adapters/websocket` or `adapters/http` to get durable Postgres runtime semantics.
-The HTTP adapter currently covers health/info, minimal lifecycle/run, and a worker control-plane for claim/lease/run/recover/resume flows, but it remains a reference binding rather than a kernel API contract.
-
-## Stability intent
-
-The project is still early, but this is the intended direction:
-- keep the top-level facade small and stable
-- let subpackages evolve more freely
-- avoid forcing consumers to understand every internal package before getting started
-
-That stability intent applies only to kernel concepts.
-Identity, transport, and platform concerns should stay out of the public kernel surface entirely.
-
-Versioning and deprecation expectations are documented in `VERSIONING.md`.
+For platform integration patterns (external run id, external approval UI, remote PTY, restart recovery, accepted-first API wrapper), see `docs/EMBEDDING.md`.

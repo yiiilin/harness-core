@@ -105,11 +105,16 @@ They are composed into the default built-in policy evaluator path unless the emb
 Demonstrates:
 - `shell.exec`
 - `pipe` and `pty` shell modes
+- explicit external PTY backend wiring through `shellmodule.Options{PTYBackend: ...}`
 - verifier registration including PTY-specific verifier kinds
 - default shell policy hints
 - a shared `PTYManager` hook for interactive shell control and attach/detach stream bridging
 - runtime-handle production for PTY-backed sessions
 - tests
+
+Verifier wiring rule:
+- `exit_code` and `output_contains` are always registered
+- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when a local `PTYManager` is available
 
 ### `modules/filesystem`
 Demonstrates:

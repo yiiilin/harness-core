@@ -10,11 +10,13 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/planning"
+	"github.com/yiiilin/harness-core/pkg/harness/replay"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
+	"github.com/yiiilin/harness-core/pkg/harness/worker"
 )
 
 // Core constructor and options.
@@ -59,6 +61,17 @@ type ExecutionVerificationStatus = execution.VerificationStatus
 type ExecutionArtifact = execution.Artifact
 type ExecutionRuntimeHandle = execution.RuntimeHandle
 type ExecutionCycle = execution.ExecutionCycle
+
+type ReplaySessionReader = replay.SessionReader
+type ReplayCycleReader = replay.CycleReader
+type ReplayReader = replay.ExecutionFactReader
+type ReplayProjectionReader = replay.Reader
+type ReplaySessionProjection = replay.SessionProjection
+type ReplayExecutionCycleProjection = replay.ExecutionCycleProjection
+
+type WorkerOptions = worker.Options
+type WorkerResult = worker.Result
+type WorkerHelper = worker.Worker
 
 type VerifySpec = verify.Spec
 type VerifyResult = verify.Result
@@ -125,4 +138,14 @@ func NewWithBuiltins() *Service {
 // This is a convenience composition helper layered on top of the bare kernel path.
 func RegisterBuiltins(opts *Options) {
 	hbuiltins.Register(opts)
+}
+
+// NewWorkerHelper constructs the public claim/renew/run/recover/release helper.
+func NewWorkerHelper(opts WorkerOptions) (*WorkerHelper, error) {
+	return worker.New(opts)
+}
+
+// NewReplayReader constructs the public replay/debug projection helper.
+func NewReplayReader(source ReplaySessionReader) *ReplayProjectionReader {
+	return replay.NewReader(source)
 }

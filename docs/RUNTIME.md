@@ -263,6 +263,14 @@ The runtime event envelope also carries stable identifiers for:
 
 These identifiers exist to support replay, recovery, debugging, and observability consumers.
 
+Recommended embedder read path:
+- `ListExecutionCycles(session_id)`
+- `GetExecutionCycle(session_id, cycle_id)`
+- `ListAuditEvents(session_id)`
+- optional projection helper: `pkg/harness/replay`
+
+This keeps replay/debug consumers on public runtime contracts instead of storage internals.
+
 ---
 
 ## Loop budgets

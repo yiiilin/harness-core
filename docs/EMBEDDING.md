@@ -1,0 +1,122 @@
+# EMBEDDING.md
+
+## Goal
+
+Provide a practical integration guide for embedding `harness-core` into an existing platform without expanding kernel scope.
+
+This document focuses on:
+- external run id mapping
+- external approval UI
+- remote PTY execution
+- restart recovery
+- accepted-first API wrappers
+
+## Integration Principles
+
+- keep kernel contracts in `pkg/harness/*`
+- keep product concerns in your platform layer
+- avoid importing `internal/*`
+- treat `modules/*` and `adapters/*` as extension/reference layers, not kernel contracts
+
+## Recommended Public Building Blocks
+
+- `pkg/harness`
+- `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
+
+## Pattern 1: External Run ID
+
+Kernel sessions use `session_id`.
+If your platform already has `run_id`, keep a mapping table in your platform store:
+
+- `platform_run_id -> session_id`
+- optional reverse index `session_id -> platform_run_id`
+
+Do not add `run_id` into kernel domain types.
+Use wrapper APIs in your service boundary:
+- accept `run_id`
+- resolve `session_id`
+- call kernel APIs
+
+## Pattern 2: External Approval UI
+
+Recommended flow:
+
+1. execute through `RunSession`, `RunStep`, or worker helper
+2. when `PendingApprovalID` is present, persist/emit approval task to your UI pipeline
+3. UI/operator decides and calls your platform API
+4. platform API maps to:
+   - `RespondApproval(...)`
+   - `ResumePendingApproval(...)` or claimed/session driver flow
+
+Kernel owns approval state machine correctness.
+Your platform owns human workflow, notification, and UI experience.
+
+## Pattern 3: Remote PTY Executor
+
+Use shell module options with explicit PTY backend:
+
+```go
+shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+	PTYBackend: remotePTYBackend,
+})
+```
+
+Key semantics:
+- this path avoids hard dependency on local `PTYManager`
+- PTY-specific verifiers (`pty_handle_active`, `pty_stream_contains`, `pty_exit_code`) are registered only when local `PTYManager` exists
+- remote executor stream inspection should be implemented in your platform/module layer
+
+## Pattern 4: Restart and Recovery
+
+For durable deployments, use `pkg/harness/postgres` bootstrap and run workers via `pkg/harness/worker`.
+
+Worker helper semantics:
+- claim runnable/recoverable
+- renew lease heartbeat
+- run or recover claimed session
+- release lease
+
+On service restart:
+- start workers again
+- helper will claim available runnable/recoverable sessions
+- recovery remains lease-governed and transport-neutral
+
+## Pattern 5: Accepted-First API Wrapper
+
+Use an async platform API style:
+
+1. API accepts request and returns `accepted` with platform `run_id`
+2. background worker drives kernel execution
+3. client reads progress/status through your projection endpoints
+
+Projection path:
+- read kernel facts and cycles from runtime APIs
+- optionally use `pkg/harness/replay` to build ordered cycle/event views
+- present product-specific JSON/UI models outside kernel packages
+
+## Replay and Debug Projection
+
+Prefer this read chain:
+- `ListExecutionCycles(session_id)`
+- `GetExecutionCycle(session_id, cycle_id)` when needed
+- `ListAuditEvents(session_id)`
+- `pkg/harness/replay` projection helpers for stable ordering and grouping
+
+Do not query internal tables directly from embedding code.
+
+## Boundary Checklist
+
+Belongs in kernel usage:
+- state machine, approvals, lease coordination, recovery, runtime facts
+
+Belongs in platform layer:
+- user/tenant/org ownership
+- auth and access control
+- approval UI and notification routing
+- queue/fleet topology
+- billing/quota/reporting
+- transport protocol envelopes
+
+If you need these platform concepts, add them around the kernel, not into it.

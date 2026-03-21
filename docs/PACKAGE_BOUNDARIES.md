@@ -55,6 +55,8 @@ These packages are the intended primary surfaces for consumers:
 - `pkg/harness/observability`
 - `pkg/harness/builtins`
 - `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
 
 These packages define the kernel's reusable contracts and composition points.
 `pkg/harness/postgres` is a public durable bootstrap helper around the kernel, not a kernel domain package.
@@ -121,6 +123,11 @@ Then `adapters/*`, `modules/*`, and `examples/*` are appropriate reference point
 ## Stability direction
 
 The long-term intent is:
-- keep `pkg/harness` and the core domain packages relatively stable
+- keep `pkg/harness`, `pkg/harness/postgres`, `pkg/harness/worker`, and `pkg/harness/replay` as the most stable embedder-facing path
+- keep core domain packages public and coherent while allowing pre-1.0 correctness-driven changes
 - let modules and adapters evolve faster
 - avoid leaking transport-specific assumptions into the core packages
+
+See:
+- `docs/API.md`
+- `docs/VERSIONING.md`

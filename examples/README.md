@@ -21,6 +21,9 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - `platform-reference`
   - A small platform-side orchestration example around the kernel.
   - Shows claims, lease renewals, claimed execution, PTY attach/detach, verifiers, and runtime-handle reconciliation.
+- `platform-embedding`
+  - A small existing-platform embedding example built only on public packages.
+  - Shows accepted-first run intake, external run ID mapping, worker-helper orchestration, external approval response, remote PTY wiring, and replay projection without local PTY verifiers.
 - `postgres-embedded`
   - The smallest durable embedding example through the public Postgres bootstrap.
   - Shows how to open a durable runtime and run work without adapters.

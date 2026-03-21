@@ -48,6 +48,10 @@ func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
 	var _ harness.RuntimeHandleInvalidateRequest
 	var _ harness.CompactionPolicy
 	var _ harness.CompactionTrigger = harness.CompactionTriggerPlan
+	var _ harness.WorkerOptions
+	var _ harness.WorkerResult
+	var _ harness.ReplaySessionProjection
+	var _ harness.ReplayExecutionCycleProjection
 }
 
 func TestFacadeExposesClaimAwareKernelEntryPoints(t *testing.T) {
@@ -92,5 +96,23 @@ func TestFacadeSupportsKernelSessionControlEntryPoints(t *testing.T) {
 	}
 	if _, err := rt.AbortSession(context.Background(), sess.SessionID, harness.AbortRequest{Code: "facade.abort", Reason: "stop from facade"}); err != nil {
 		t.Fatalf("abort session: %v", err)
+	}
+}
+
+func TestFacadeConstructsWorkerAndReplayHelpers(t *testing.T) {
+	rt := harness.NewDefault()
+	workerHelper, err := harness.NewWorkerHelper(harness.WorkerOptions{
+		Runtime:  rt,
+		LeaseTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("new worker helper: %v", err)
+	}
+	if workerHelper == nil {
+		t.Fatalf("expected worker helper")
+	}
+	replayReader := harness.NewReplayReader(rt)
+	if replayReader == nil {
+		t.Fatalf("expected replay reader")
 	}
 }

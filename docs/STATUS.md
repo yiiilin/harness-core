@@ -18,6 +18,8 @@ It already has:
 - vendor-neutral metrics and trace exporter hooks
 - Postgres-backed repositories and transaction runner wiring
 - a public `pkg/harness/postgres` durable bootstrap path
+- a public `pkg/harness/worker` helper for claim/renew/run-or-recover/release loops
+- a public `pkg/harness/replay` helper for execution-cycle/audit replay projections
 - public migration status / pending / drift helpers on `pkg/harness/postgres`
 - a public `pkg/harness` embedding facade
 - reference capability modules including PTY-backed shell execution
@@ -69,9 +71,19 @@ Use it for:
 - experimenting with governed tool execution and recovery semantics
 - building capability modules against stable-enough runtime contracts
 - studying a minimal claim/lease worker loop in `examples/platform-reference`
-- refining replay, audit, and observability patterns
+- refining replay, audit, and observability patterns through `pkg/harness/replay`
 
 Do not assume it is a complete multi-user product platform by itself.
+
+## Embedder-facing status
+
+For existing-platform integration, the recommended path is now documented as:
+- kernel facade and control-plane APIs in `docs/API.md`
+- durable bootstrap in `pkg/harness/postgres`
+- reusable worker loop in `pkg/harness/worker`
+- replay/debug projection in `pkg/harness/replay`
+- integration patterns in `docs/EMBEDDING.md`
+- stability tiers in `docs/VERSIONING.md`
 
 ## Current execution plan
 

@@ -140,6 +140,7 @@ This is why `modules/shell` can expose:
 - `Register(...)`
 - `RegisterWithOptions(...)`
 - `Backend`
+- `PTYBackend`
 - `PTYManager`
 - `SandboxHook`
 - `DefaultPolicyRules()`
@@ -151,6 +152,11 @@ The same pattern is used by `examples/platform-reference`:
 - the kernel owns session claim / lease and runtime-handle lifecycle
 - the shell module owns PTY start/read/write/close/attach/detach behavior plus PTY-specific verifiers
 - the platform layer reconciles PTY shutdown back into `CloseRuntimeHandle(...)`
+
+Current PTY-specific verifier registration rule:
+- base shell verifiers are always registered
+- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when a local `PTYManager` is present
+- an external `PTYBackend` alone does not imply local PTY inspection capability
 
 ---
 

@@ -2,80 +2,40 @@
 
 ## 文档目标
 
-这份文档用于说明 `harness-core` 当前阶段的：
+这份文档定义 `harness-core` 的嵌入方公开 API 面。
 
-- 对外定位
-- 推荐引用方式
-- 核心对象模型
-- 包边界建议
-- 默认组合方式
-- 最小运行链路
-
-它不是完整 API 参考手册，而是一份**中文的快速理解与接入说明**。
-
----
-
-## 一句话定位
-
-`harness-core` 不是一个完整的 Agent 产品，而是一个：
-
-> **可复用的 Harness Runtime Kernel（运行时内核库）**
-
-它希望解决的是：
-- 状态机
-- action / result / verify 契约
-- tool registry
-- verifier registry
-- policy / approval hooks
-- audit / event hooks
-- 最小默认 runtime 组件
-
-而不是：
-- UI
-- SaaS 平台
-- 大而全的内置工具产品
-
----
-
-## 当前推荐的引用入口
-
-最推荐先从：
+推荐入口：
 
 ```go
 import "github.com/yiiilin/harness-core/pkg/harness"
 ```
 
-开始，而不是一开始就直接深入很多子包。
+范围约束：
+- 只暴露执行内核能力
+- 不把传输、认证、用户、租户、产品概念塞进内核类型
 
-### 顶层 facade 当前提供
-- `harness.Options`
-- `harness.New(...)`
-- `harness.RegisterBuiltins(...)`（兼容包装）
-- `pkg/harness/builtins.Register(...)`（推荐的 builtins 组合层）
+配套文档：
+- `docs/KERNEL_SCOPE.md`
+- `docs/VERSIONING.md`
+- `docs/EMBEDDING.md`
 
-这让嵌入方可以先走最短路径：
+## 推荐公开面
 
-```go
-import (
-	"github.com/yiiilin/harness-core/pkg/harness"
-	"github.com/yiiilin/harness-core/pkg/harness/builtins"
-)
+### 顶层 facade
 
-opts := harness.Options{}
-builtins.Register(&opts)
-rt := harness.New(opts)
-```
+- `pkg/harness`
+  - 构造器：
+    - `harness.New(opts)`
+    - `harness.NewDefault()`
+  - 兼容组合包装：
+    - `harness.NewWithBuiltins()`
+    - `harness.RegisterBuiltins(&opts)`
 
-后续再逐步替换：
-- `PolicyEvaluator`
-- `ContextAssembler`
-- `Planner`
-- `EventSink`
-- tool / verifier registrations
+### 组合辅助包
 
-### 持久化 Postgres 接入的推荐入口
-
-如果嵌入方希望直接获得一个带持久化能力的 runtime，不要去 import `internal/*`，优先使用：
+- `pkg/harness/builtins`
+  - `builtins.New()`
+  - `builtins.Register(&opts)`
 
 - `pkg/harness/postgres`
   - `OpenDB(...)`
@@ -90,174 +50,152 @@ rt := harness.New(opts)
   - `BuildOptions(...)`
   - `OpenService(...)`
 
-这个包是一个公开的 durable bootstrap / composition 层。
-它不是把 Postgres 变成内核概念，而是把已有的 Postgres wiring 公开成稳定接入面，方便平台直接嵌入。
-其中 `ApplyMigrations(...)` 是推荐主路径，`ApplySchema(...)` 只是兼容包装。
-迁移状态、pending 列表、drift 检查也应该走这个公开包，而不是让平台自己 import `internal/postgres`。
+- `pkg/harness/worker`
+  - `worker.New(worker.Options{Runtime: rt, ...})`
+  - `(*worker.Worker).RunOnce(ctx)`
+  - 结果标志：
+    - `NoWork`
+    - `ApprovalPending`
 
-### 当前推荐关注的内核控制面入口
+- `pkg/harness/replay`
+  - `replay.NewReader(source)`
+  - `(*replay.Reader).SessionProjection(sessionID)`
+  - `(*replay.Reader).ExecutionCycleProjection(sessionID, cycleID)`
+  - 便捷函数：
+    - `LoadSessionProjection(...)`
+    - `LoadCycleProjection(...)`
 
-- 生命周期：
-  - `CreateSession`
-  - `CreateTask`
-  - `AttachTaskToSession`
-  - `CreatePlan`
-  - `CreatePlanFromPlanner`
-- 执行：
-  - `RunStep`
-  - `RunClaimedStep`
-  - `RunSession`
-  - `RunClaimedSession`
-  - `RecoverSession`
-  - `RecoverClaimedSession`
-- 审批 / 协调：
-  - `RespondApproval`
-  - `ResumePendingApproval`
-  - `ResumeClaimedApproval`
-  - `ClaimRunnableSession`
-  - `ClaimRecoverableSession`
-  - `RenewSessionLease`
-  - `ReleaseSessionLease`
-  - `MarkClaimedSessionInFlight`
-  - `MarkClaimedSessionInterrupted`
+### Runtime 控制面
 
----
+生命周期：
+- `CreateSession`
+- `CreateTask`
+- `AttachTaskToSession`
+- `CreatePlan`
+- `CreatePlanFromPlanner`
 
-## 当前核心包说明
+执行：
+- `RunStep`
+- `RunClaimedStep`
+- `RunSession`
+- `RunClaimedSession`
+- `RecoverSession`
+- `RecoverClaimedSession`
+- `AbortSession`
 
-### `pkg/harness`
-顶层 facade。适合作为默认入口。
+审批与协调：
+- `RespondApproval`
+- `ResumePendingApproval`
+- `ResumeClaimedApproval`
+- `ClaimRunnableSession`
+- `ClaimRecoverableSession`
+- `RenewSessionLease`
+- `ReleaseSessionLease`
+- `MarkClaimedSessionInFlight`
+- `MarkClaimedSessionInterrupted`
 
-### `pkg/harness/task`
-定义任务对象：
-- `task.Spec`
-- `task.Record`
-- `task.Status`
-- `task.Store`
+执行事实读接口：
+- `ListAttempts`
+- `ListActions`
+- `ListVerifications`
+- `ListArtifacts`
+- `ListRuntimeHandles`
+- `ListCapabilitySnapshots`
+- `ListContextSummaries`
+- `ListAuditEvents`
+- `ListExecutionCycles`
+- `GetExecutionCycle`
 
-### `pkg/harness/session`
-定义会话状态：
-- `session.State`
-- `session.Phase`
-- `session.Store`
+Runtime handle 控制：
+- `UpdateRuntimeHandle`
+- `CloseRuntimeHandle`
+- `InvalidateRuntimeHandle`
 
-### `pkg/harness/plan`
-定义计划与步骤：
-- `plan.Spec`
-- `plan.StepSpec`
-- `plan.Status`
-- `plan.StepStatus`
-- `plan.Store`
+上下文维护：
+- `CompactSessionContext`
 
-### `pkg/harness/action`
-定义动作与结果：
-- `action.Spec`
-- `action.Result`
-- `action.Error`
+### facade 导出类型
 
-### `pkg/harness/verify`
-定义验证器：
-- `verify.Spec`
-- `verify.Check`
-- `verify.Result`
-- `verify.Registry`
-- 内置 verifier（如 `exit_code`、`output_contains`）
+`pkg/harness` 会导出核心领域和控制类型，包括：
+- task/session/plan/action/verify 类型
+- permission decision/action 类型
+- tool definition/risk 类型
+- audit event 类型
+- execution facts：
+  - attempt/action/verification/artifact/runtime handle/execution cycle
+- runtime 控制类型：
+  - `StepRunOutput`
+  - `SessionRunOutput`
+  - `AbortRequest`
+  - `AbortOutput`
+  - `RuntimeHandleUpdate`
+  - `RuntimeHandleCloseRequest`
+  - `RuntimeHandleInvalidateRequest`
+  - `CompactionTrigger`
+  - `CompactionPolicy`
+  - `LoopBudgets`
 
-### `pkg/harness/tool`
-定义工具注册系统：
-- `tool.Definition`
-- `tool.Registry`
-- `tool.Handler`
+## Shell 模块嵌入说明
 
-### `pkg/harness/permission`
-定义权限与审批抽象：
-- `permission.Decision`
-- `permission.Action`
-- `permission.Evaluator`
-- 默认 evaluator
+`modules/shell` 属于 capability module，不是内核包，但嵌入方常用。
+当前扩展语义：
 
-### `pkg/harness/audit`
-定义事件与审计：
-- `audit.Event`
-- `audit.Store`
+- `RegisterWithOptions(..., shellmodule.Options{PTYBackend: ...})` 支持外部 PTY 执行后端
+- `PTYManager` 仍是本地 PTY 执行与检查的默认路径
+- PTY 专用 verifier 条件注册：
+  - `pty_handle_active`
+  - `pty_stream_contains`
+  - `pty_exit_code`
+  - 只有存在本地 `PTYManager` 时才注册
 
-### `pkg/harness/runtime`
-核心运行时：
-- `runtime.Service`
-- `runtime.Options`
-- `runtime.RunStep(...)`
-- transition / loop / defaults / planner / context / eventsink
+含义：
+- 仅接入远端 PTY backend，并不自动具备本地 PTY stream 检查能力
 
-### `pkg/harness/postgres`
-公开的 Postgres durable bootstrap：
-- 打开 DB
-- 应用 versioned migrations
-- 组装 Postgres-backed repositories / runner / event sink
-- 直接构造持久化 runtime service
+## 稳定性分层
 
----
+详细规则见 `docs/VERSIONING.md`。
 
-## 默认组件
+最稳定嵌入面：
+- `pkg/harness`
+- `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
 
-当前 `harness-core` 已经有一套最小默认组合：
+公开但 pre-1.0 仍快速演进：
+- `pkg/harness/runtime`
+- `pkg/harness/task`
+- `pkg/harness/session`
+- `pkg/harness/plan`
+- `pkg/harness/action`
+- `pkg/harness/verify`
+- `pkg/harness/tool`
+- `pkg/harness/permission`
+- `pkg/harness/audit`
+- `pkg/harness/persistence`
+- `pkg/harness/observability`
+- `pkg/harness/executor/*`
+- `pkg/harness/builtins`
 
-### 默认注册的内置工具
-- `shell.exec`
-- `windows.native`（占位 / 默认高风险）
+参考实现，变化更快：
+- `modules/*`
+- `adapters/*`
 
-### 默认注册的 verifier
-- `exit_code`
-- `output_contains`
-- `pty_handle_active`
-- `pty_stream_contains`
-- `pty_exit_code`
+无兼容承诺：
+- `internal/*`
+- `cmd/*`
+- `examples/*`
 
-### 默认组件
-- `DefaultContextAssembler`
-- `NoopPlanner`
-- `DemoPlanner`（最小可运行 planner 样例）
-- `AuditStoreSink`
-- `DefaultEvaluator`
-
-这意味着：
-- 你可以很快跑起来
-- 但也可以很快替换组件
-
----
-
-## 当前最小运行链路
-
-`RunStep()` 目前已经能跑通这条闭环：
-
-```text
-policy -> action -> verify -> transition -> state update -> audit
-```
-
-这条链路当前已经被 integration test 覆盖。
-
-### Happy path 已验证
-- `shell.exec`（pipe）
-- `echo hello`
-- `exit_code + output_contains`
-- session / task / plan 最终完成
-- audit 事件记录成功
-
-### 当前 shell 参考能力
-- `shell.exec` 支持 `pipe` 和 `pty`
-- `pipe` 适合一次性命令执行
-- `pty` 适合交互式会话启动，并通过 runtime handle 暴露句柄
-- PTY 的 read/write/attach/detach/close 是模块/平台层控制面，不是内核 lease 语义的一部分
-- PTY 专用 verifier 也在 `modules/shell`，不是内核新增语义
-
-### 持久化嵌入的最短路径
+## 最短接入路径
 
 ```go
 import (
 	"context"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+	"github.com/yiiilin/harness-core/pkg/harness/worker"
 )
 
 var opts hruntime.Options
@@ -268,122 +206,15 @@ if err != nil {
 	panic(err)
 }
 defer db.Close()
+
+helper, err := worker.New(worker.Options{
+	Runtime:  rt,
+	LeaseTTL: time.Minute,
+})
+if err != nil {
+	panic(err)
+}
+_, _ = helper.RunOnce(context.Background())
 ```
 
-如果只是想看一个最小可运行的 durable embedding 示例，可以直接看 `examples/postgres-embedded`。
-如果想看多实例 worker 如何共享一个 Postgres-backed runtime，可以看 `examples/postgres-workers`。
-默认的 WebSocket adapter 和 `adapters/http` 都只是参考传输层，不是持久化接入的唯一入口。
-其中 `adapters/http` 现在额外暴露了 worker control-plane：claim / lease renew/release / claimed run / recover / approval resume，但这些仍然只是 transport 绑定，不是内核新概念。
-
-### Deny path 已验证
-- policy 返回 deny
-- action 不执行
-- task/session fail-safe
-- `policy.denied` 事件被记录
-
----
-
-## 当前适合谁用
-
-当前版本最适合：
-- 想做自己的 Agent Runtime
-- 想要一套通用状态机 + tool/verify/policy 内核
-- 想嵌入 shell / browser / desktop / knowledge executor
-- 不想直接绑死到某个产品或模型提供商
-
-不太适合：
-- 直接拿来当完整产品
-- 期待内置大量现成功能
-- 期待零配置自动化平台能力
-
----
-
-## 一个最小接入示例
-
-```go
-import (
-	"github.com/yiiilin/harness-core/pkg/harness"
-	"github.com/yiiilin/harness-core/pkg/harness/builtins"
-)
-
-opts := harness.Options{}
-builtins.Register(&opts)
-rt := harness.New(opts)
-
-sess := rt.CreateSession("demo", "run one step")
-// create task
-// attach task to session
-// create plan
-// run step
-```
-
-如果你要走 WebSocket adapter，则：
-- 启动 `cmd/harness-core`
-- 通过 `/ws` 连接
-- 先 auth
-- 再发 `session.create` / `task.create` / `plan.create` / `step.run`
-
-如果你要看“平台层如何消费 claim/lease + PTY shell”，则参考：
-- `examples/platform-reference`
-
----
-
-## 当前包边界建议
-
-### 可以直接依赖的
-建议优先：
-- `pkg/harness`
-- `pkg/harness/runtime`
-- `pkg/harness/task`
-- `pkg/harness/session`
-- `pkg/harness/plan`
-- `pkg/harness/action`
-- `pkg/harness/verify`
-- `pkg/harness/tool`
-- `pkg/harness/permission`
-- `pkg/harness/audit`
-
-### 暂时更像适配层/示例的
-- `adapters/websocket`
-- `examples/*`
-- `cmd/harness-core`
-
-这些更适合参考实现，不建议一开始就把它们当稳定内核 API。
-
----
-
-## 当前还缺什么
-
-虽然现在已经能跑一个最小闭环，但还没到 API 完全稳定的程度。
-
-接下来仍然值得补的有：
-- 更清晰的 public API 边界说明
-- 更多 typed errors
-- 更多 executor/verifier 实现
-- 更标准的 event/metrics hook
-- 更完整的 planner / context assembler 默认实现
-- 更丰富的系统测试与 benchmark
-
----
-
-## 当前最推荐的使用姿势
-
-如果你现在就要基于它做自己的系统，我建议：
-
-1. 先走 `pkg/harness` 顶层入口
-2. 先用默认 builtins
-3. 先替换 `PolicyEvaluator`
-4. 再替换 `ContextAssembler` / `Planner`
-5. 最后才扩展更多 executor
-
-这样你能最大限度保持：
-- 简洁
-- 可控
-- 易测试
-
----
-
-## 一句话总结
-
-> **`harness-core` 当前已经像一个“可运行、可扩展、可测试的 Harness 内核雏形”。**
-> **它最适合被当成运行时基础库来嵌入，而不是被当成完整产品直接使用。**
+关于“外部 run_id、外部审批 UI、远端 PTY、重启恢复、accepted-first API 包装”的完整接入建议，请看 `docs/EMBEDDING.md`。
