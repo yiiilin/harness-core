@@ -18,6 +18,7 @@ Use this together with:
 - `docs/EMBEDDING.md`
 - `docs/VERSIONING.md`
 - `docs/KERNEL_SCOPE.md`
+- `docs/V1_RELEASE_CHECKLIST.md`
 
 ## Executive Summary
 
