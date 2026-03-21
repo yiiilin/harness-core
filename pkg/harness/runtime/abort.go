@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
@@ -58,7 +57,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	if len(request.Metadata) > 0 {
 		payload["metadata"] = cloneAnyMap(request.Metadata)
 	}
-	now := time.Now().UnixMilli()
+	now := s.nowMilli()
 	events := []audit.Event{
 		{
 			EventID:   "evt_" + uuid.NewString(),
@@ -98,7 +97,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 					"task_id": updatedTask.TaskID,
 					"status":  updatedTask.Status,
 				},
-				CreatedAt: time.Now().UnixMilli(),
+				CreatedAt: now,
 			})
 		}
 		if err := reconcileActiveRuntimeHandlesInStore(handleStore, current.SessionID, "session aborted", now); err != nil {
@@ -120,7 +119,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		}); err != nil {
 			return AbortOutput{}, err
 		}
-		s.exportAbortObservability(ctx, aborted, request, now, time.Now().UnixMilli())
+		s.exportAbortObservability(ctx, aborted, request, now, s.nowMilli())
 		return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 	}
 
@@ -128,6 +127,6 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		return AbortOutput{}, err
 	}
 	_ = s.emitEventsWithSink(ctx, s.EventSink, events)
-	s.exportAbortObservability(ctx, aborted, request, now, time.Now().UnixMilli())
+	s.exportAbortObservability(ctx, aborted, request, now, s.nowMilli())
 	return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 }

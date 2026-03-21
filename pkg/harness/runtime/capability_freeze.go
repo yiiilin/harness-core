@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"reflect"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
@@ -123,13 +122,13 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 			planningRecord.PlanID = created.PlanID
 			planningRecord.PlanRevision = created.Revision
 			if planningRecord.FinishedAt == 0 {
-				planningRecord.FinishedAt = time.Now().UnixMilli()
+				planningRecord.FinishedAt = s.nowMilli()
 			}
 			if _, err := planningStore.Create(planningRecord); err != nil {
 				return err
 			}
 		}
-		event := newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		event := newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 			"plan_id":       created.PlanID,
 			"planning_id":   planningRecord.PlanningID,
 			"revision":      created.Revision,
@@ -166,13 +165,13 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 		planningRecord.PlanID = created.PlanID
 		planningRecord.PlanRevision = created.Revision
 		if planningRecord.FinishedAt == 0 {
-			planningRecord.FinishedAt = time.Now().UnixMilli()
+			planningRecord.FinishedAt = s.nowMilli()
 		}
 		if _, err := s.PlanningRecords.Create(planningRecord); err != nil {
 			return plan.Spec{}, err
 		}
 	}
-	event := newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+	event := newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 		"plan_id":       created.PlanID,
 		"planning_id":   planningRecord.PlanningID,
 		"revision":      created.Revision,

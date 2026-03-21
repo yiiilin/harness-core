@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
@@ -26,7 +25,7 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 			if err != nil {
 				return err
 			}
-			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
+			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventSessionCreated, created.SessionID, "", map[string]any{
 				"title": created.Title,
 				"goal":  created.Goal,
 			})}); err != nil {
@@ -44,7 +43,7 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 	if err != nil {
 		return session.State{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventSessionCreated, created.SessionID, "", map[string]any{
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventSessionCreated, created.SessionID, "", map[string]any{
 		"title": created.Title,
 		"goal":  created.Goal,
 	})})
@@ -65,7 +64,7 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 			if err != nil {
 				return err
 			}
-			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
+			if err := s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
 				"task_type": created.TaskType,
 				"goal":      created.Goal,
 				"status":    created.Status,
@@ -84,7 +83,7 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 	if err != nil {
 		return task.Record{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventTaskCreated, created.SessionID, created.TaskID, map[string]any{
 		"task_type": created.TaskType,
 		"goal":      created.Goal,
 		"status":    created.Status,
@@ -158,7 +157,7 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 		if err != nil {
 			return err
 		}
-		if err := s.emitEventsWithSink(ctx, sink, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		if err := s.emitEventsWithSink(ctx, sink, []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 			"plan_id":       created.PlanID,
 			"revision":      created.Revision,
 			"change_reason": created.ChangeReason,
@@ -187,7 +186,7 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 	if err != nil {
 		return plan.Spec{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEvent(audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+	_ = s.emitEvents(ctx, []audit.Event{newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
 		"plan_id":       created.PlanID,
 		"revision":      created.Revision,
 		"change_reason": created.ChangeReason,
@@ -217,13 +216,13 @@ func (s *Service) listRelatedAuditEvents(sessionID string) ([]audit.Event, error
 	return out, nil
 }
 
-func newLifecycleEvent(eventType, sessionID, taskID string, payload map[string]any) audit.Event {
+func newLifecycleEventAt(now int64, eventType, sessionID, taskID string, payload map[string]any) audit.Event {
 	return audit.Event{
 		EventID:   "evt_" + uuid.NewString(),
 		Type:      eventType,
 		SessionID: sessionID,
 		TaskID:    taskID,
 		Payload:   payload,
-		CreatedAt: time.Now().UnixMilli(),
+		CreatedAt: now,
 	}
 }

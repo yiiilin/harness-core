@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
@@ -32,7 +31,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		return approval.Record{}, session.State{}, approval.ErrInvalidReply
 	}
 
-	now := time.Now().UnixMilli()
+	now := s.nowMilli()
 	rec.Reply = response.Reply
 	rec.Metadata = mergeApprovalResponseMetadata(rec.Metadata, response)
 	rec.RespondedAt = now
@@ -40,17 +39,17 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	events := []audit.Event{}
 	appendEvent := func(eventType string, payload map[string]any) {
 		events = append(events, audit.Event{
-			EventID:    "evt_" + uuid.NewString(),
-			Type:       eventType,
-			SessionID:  rec.SessionID,
-			TaskID:     st.TaskID,
-			ApprovalID: rec.ApprovalID,
-			StepID:     rec.StepID,
-			CycleID:    executionCycleIDFromStep(rec.Step),
-			TraceID:    rec.ApprovalID,
+			EventID:     "evt_" + uuid.NewString(),
+			Type:        eventType,
+			SessionID:   rec.SessionID,
+			TaskID:      st.TaskID,
+			ApprovalID:  rec.ApprovalID,
+			StepID:      rec.StepID,
+			CycleID:     executionCycleIDFromStep(rec.Step),
+			TraceID:     rec.ApprovalID,
 			CausationID: rec.ApprovalID,
-			Payload:    payload,
-			CreatedAt:  time.Now().UnixMilli(),
+			Payload:     payload,
+			CreatedAt:   now,
 		})
 	}
 
@@ -97,7 +96,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 				return err
 			}
 			if response.Reply == approval.ReplyReject {
-				if err := finalizeBlockedAttemptInStore(repoSet.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
+				if err := finalizeBlockedAttemptInStore(repoSet.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
 					return err
 				}
 			}
@@ -128,7 +127,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 			return approval.Record{}, session.State{}, err
 		}
 		if response.Reply == approval.ReplyReject {
-			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply)); err != nil {
+			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
 				return approval.Record{}, session.State{}, err
 			}
 		}
@@ -337,7 +336,7 @@ func marshalApprovalScopeValue(value any) string {
 	return string(b)
 }
 
-func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string, status execution.AttemptStatus, step plan.StepSpec, reply string) error {
+func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string, status execution.AttemptStatus, step plan.StepSpec, reply string, now int64) error {
 	attempt, ok, err := findLatestBlockedAttemptInStore(store, sessionID, approvalID)
 	if err != nil || !ok {
 		return err
@@ -349,7 +348,7 @@ func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, appr
 	}
 	attempt.Metadata["approval_reply"] = reply
 	if attempt.FinishedAt == 0 {
-		attempt.FinishedAt = time.Now().UnixMilli()
+		attempt.FinishedAt = now
 	}
 	return store.Update(attempt)
 }

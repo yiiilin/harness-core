@@ -115,3 +115,19 @@ type RuntimeHandle struct {
 	ClosedAt      int64               `json:"closed_at,omitempty"`
 	InvalidatedAt int64               `json:"invalidated_at,omitempty"`
 }
+
+type ExecutionCycle struct {
+	CycleID        string               `json:"cycle_id"`
+	SessionID      string               `json:"session_id"`
+	TaskID         string               `json:"task_id,omitempty"`
+	StepID         string               `json:"step_id,omitempty"`
+	ApprovalID     string               `json:"approval_id,omitempty"`
+	TraceID        string               `json:"trace_id,omitempty"`
+	StartedAt      int64                `json:"started_at,omitempty"`
+	FinishedAt     int64                `json:"finished_at,omitempty"`
+	Attempts       []Attempt            `json:"attempts,omitempty"`
+	Actions        []ActionRecord       `json:"actions,omitempty"`
+	Verifications  []VerificationRecord `json:"verifications,omitempty"`
+	Artifacts      []Artifact           `json:"artifacts,omitempty"`
+	RuntimeHandles []RuntimeHandle      `json:"runtime_handles,omitempty"`
+}

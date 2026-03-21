@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
@@ -19,7 +18,7 @@ func (s *Service) MarkClaimedSessionInFlight(ctx context.Context, sessionID, lea
 }
 
 func (s *Service) markSessionInFlight(ctx context.Context, sessionID, leaseID, stepID string) (session.State, error) {
-	now := time.Now().UnixMilli()
+	now := s.nowMilli()
 	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInFlight
 		st.InFlightStepID = stepID
@@ -37,7 +36,7 @@ func (s *Service) MarkClaimedSessionInterrupted(ctx context.Context, sessionID, 
 }
 
 func (s *Service) markSessionInterrupted(ctx context.Context, sessionID, leaseID string) (session.State, error) {
-	now := time.Now().UnixMilli()
+	now := s.nowMilli()
 	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInterrupted
 		st.InterruptedAt = now
@@ -120,7 +119,7 @@ func (s *Service) ensureSessionLease(sessionID, leaseID string) (session.State, 
 	if err != nil {
 		return session.State{}, err
 	}
-	if err := requireSessionLease(st, leaseID, time.Now().UnixMilli()); err != nil {
+	if err := requireSessionLease(st, leaseID, s.nowMilli()); err != nil {
 		return session.State{}, err
 	}
 	return st, nil
@@ -205,11 +204,11 @@ func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID st
 		if err != nil {
 			return err
 		}
-		if err := requireSessionLease(st, leaseID, time.Now().UnixMilli()); err != nil {
+		if err := requireSessionLease(st, leaseID, s.nowMilli()); err != nil {
 			return err
 		}
 		updated = mutate(st)
-		updatedState, err := persistSessionUpdate(store, updated, leaseID)
+		updatedState, err := persistSessionUpdateAt(store, updated, leaseID, s.nowMilli())
 		if err != nil {
 			return err
 		}

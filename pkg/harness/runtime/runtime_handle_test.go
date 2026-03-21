@@ -376,6 +376,93 @@ func TestRuntimeHandleControlSurfaceRequiresUnclaimedSessionAndExposesVersion(t 
 	}
 }
 
+func TestClaimedRuntimeHandleControlSurfaceMutatesHandlesUnderLease(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{})
+
+	sess := mustCreateSession(t, rt, "claimed handle control", "claimed runtime handle mutations should require the active lease")
+	first, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_claimed_mutate",
+		SessionID: sess.SessionID,
+		Kind:      "pty",
+		Value:     "pty-claimed-mutate",
+		Status:    execution.RuntimeHandleActive,
+	})
+	if err != nil {
+		t.Fatalf("seed first runtime handle: %v", err)
+	}
+	second, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_claimed_invalidate",
+		SessionID: sess.SessionID,
+		Kind:      "pty",
+		Value:     "pty-claimed-invalidate",
+		Status:    execution.RuntimeHandleActive,
+	})
+	if err != nil {
+		t.Fatalf("seed second runtime handle: %v", err)
+	}
+
+	claimed, found, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !found || claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected session %q to be claimed, got found=%v state=%#v", sess.SessionID, found, claimed)
+	}
+
+	nextValue := "pty-claimed-mutate-updated"
+	if _, err := rt.UpdateRuntimeHandle(context.Background(), first.HandleID, hruntime.RuntimeHandleUpdate{
+		Value: &nextValue,
+	}); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected unclaimed runtime handle update to fail under active lease, got %v", err)
+	}
+
+	updated, err := rt.UpdateClaimedRuntimeHandle(context.Background(), first.HandleID, claimed.LeaseID, hruntime.RuntimeHandleUpdate{
+		Value:    &nextValue,
+		Metadata: map[string]any{"claimed_by": "worker-1"},
+	})
+	if err != nil {
+		t.Fatalf("update claimed runtime handle: %v", err)
+	}
+	if updated.Value != nextValue {
+		t.Fatalf("expected claimed runtime handle update to persist value, got %#v", updated)
+	}
+	if got, _ := updated.Metadata["claimed_by"].(string); got != "worker-1" {
+		t.Fatalf("expected claimed runtime handle update metadata, got %#v", updated.Metadata)
+	}
+
+	if _, err := rt.CloseRuntimeHandle(context.Background(), first.HandleID, hruntime.RuntimeHandleCloseRequest{
+		Reason: "unclaimed close while leased",
+	}); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected unclaimed runtime handle close to fail under active lease, got %v", err)
+	}
+
+	closed, err := rt.CloseClaimedRuntimeHandle(context.Background(), first.HandleID, claimed.LeaseID, hruntime.RuntimeHandleCloseRequest{
+		Reason: "claimed close",
+	})
+	if err != nil {
+		t.Fatalf("close claimed runtime handle: %v", err)
+	}
+	if closed.Status != execution.RuntimeHandleClosed || closed.StatusReason != "claimed close" {
+		t.Fatalf("expected claimed runtime handle close to succeed, got %#v", closed)
+	}
+
+	if _, err := rt.InvalidateRuntimeHandle(context.Background(), second.HandleID, hruntime.RuntimeHandleInvalidateRequest{
+		Reason: "unclaimed invalidate while leased",
+	}); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected unclaimed runtime handle invalidate to fail under active lease, got %v", err)
+	}
+
+	invalidated, err := rt.InvalidateClaimedRuntimeHandle(context.Background(), second.HandleID, claimed.LeaseID, hruntime.RuntimeHandleInvalidateRequest{
+		Reason: "claimed invalidate",
+	})
+	if err != nil {
+		t.Fatalf("invalidate claimed runtime handle: %v", err)
+	}
+	if invalidated.Status != execution.RuntimeHandleInvalidated || invalidated.StatusReason != "claimed invalidate" {
+		t.Fatalf("expected claimed runtime handle invalidate to succeed, got %#v", invalidated)
+	}
+}
+
 func TestAbortSessionInvalidatesActiveRuntimeHandles(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{})
 

@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"reflect"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -109,7 +108,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			TraceID:     attemptRecord.TraceID,
 			CausationID: causationID,
 			Payload:     payload,
-			CreatedAt:   time.Now().UnixMilli(),
+			CreatedAt:   s.nowMilli(),
 		})
 	}
 
@@ -178,13 +177,13 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				if err != nil {
 					return err
 				}
-					pendingApproval = &rec
-					attemptRecord.ApprovalID = rec.ApprovalID
-					state.PendingApprovalID = rec.ApprovalID
-					events[len(events)-1].ApprovalID = rec.ApprovalID
-					events[len(events)-1].CycleID = attemptRecord.CycleID
-					events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-					pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
+				pendingApproval = &rec
+				attemptRecord.ApprovalID = rec.ApprovalID
+				state.PendingApprovalID = rec.ApprovalID
+				events[len(events)-1].ApprovalID = rec.ApprovalID
+				events[len(events)-1].CycleID = attemptRecord.CycleID
+				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
+				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
 				if err != nil {
 					return err
 				}
@@ -217,12 +216,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			if err != nil {
 				return StepRunOutput{}, err
 			}
-				pendingApproval = &rec
-				attemptRecord.ApprovalID = rec.ApprovalID
-				state.PendingApprovalID = rec.ApprovalID
-				events[len(events)-1].ApprovalID = rec.ApprovalID
-				events[len(events)-1].CycleID = attemptRecord.CycleID
-				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
+			pendingApproval = &rec
+			attemptRecord.ApprovalID = rec.ApprovalID
+			state.PendingApprovalID = rec.ApprovalID
+			events[len(events)-1].ApprovalID = rec.ApprovalID
+			events[len(events)-1].CycleID = attemptRecord.CycleID
+			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
 			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
@@ -344,7 +343,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		ToolName:    step.Action.ToolName,
 		TraceID:     attemptRecord.TraceID,
 		CausationID: attemptRecord.AttemptID,
-		StartedAt:   time.Now().UnixMilli(),
+		StartedAt:   s.nowMilli(),
 	}
 	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, state, step)
 	if resolution != nil {
@@ -378,7 +377,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	actResult = trimActionResultToBudget(actResult, s.LoopBudgets.MaxToolOutputChars)
 	execResult.Action = actResult
 	actionRecord.Result = actResult
-	actionRecord.FinishedAt = time.Now().UnixMilli()
+	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
 		actionRecord.Status = execution.ActionFailed
 		appendEvent(audit.EventToolFailed, step.StepID, map[string]any{"tool_name": actionRecord.ToolName, "error": actErr.Error()}, actionRecord.ActionID, actionRecord.ActionID)
@@ -409,7 +408,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			CreatedAt: s.nowMilli(),
 		})
 	}
-	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord)
+	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord, s.nowMilli())
 
 	state.Phase = session.PhaseVerify
 	verificationRecord = &execution.VerificationRecord{
@@ -563,9 +562,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		"policy_denied": false,
 		"verify_failed": !verified,
 		"action_failed": !actResult.OK,
-		"duration_ms":   time.Now().UnixMilli() - now,
+		"duration_ms":   s.nowMilli() - now,
 	})
-	s.exportStepMetricSample(ctx, state, step, attemptRecord, actionRecord, verificationRecord, verified, false, !verified, !actResult.OK, time.Now().UnixMilli()-now)
+	s.exportStepMetricSample(ctx, state, step, attemptRecord, actionRecord, verificationRecord, verified, false, !verified, !actResult.OK, s.nowMilli()-now)
 	s.exportTraceSpans(ctx, state, step, attemptRecord, actionRecord, verificationRecord)
 
 	return StepRunOutput{
@@ -907,11 +906,11 @@ func trimActionResultToBudget(result action.Result, limit int) action.Result {
 	return result
 }
 
-func extractRuntimeHandles(result action.Result, attempt execution.Attempt, actionRecord *execution.ActionRecord) []execution.RuntimeHandle {
+func extractRuntimeHandles(result action.Result, attempt execution.Attempt, actionRecord *execution.ActionRecord, now int64) []execution.RuntimeHandle {
 	out := []execution.RuntimeHandle{}
 	seen := map[string]struct{}{}
 	appendHandle := func(raw any) {
-		handle, ok := runtimeHandleFromValue(raw, attempt, actionRecord)
+		handle, ok := runtimeHandleFromValue(raw, attempt, actionRecord, now)
 		if !ok {
 			return
 		}
@@ -958,7 +957,7 @@ func appendRuntimeHandleSlice(raw any, appendHandle func(any)) {
 	}
 }
 
-func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *execution.ActionRecord) (execution.RuntimeHandle, bool) {
+func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *execution.ActionRecord, now int64) (execution.RuntimeHandle, bool) {
 	var handle execution.RuntimeHandle
 	switch item := raw.(type) {
 	case execution.RuntimeHandle:
@@ -974,7 +973,6 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 			return execution.RuntimeHandle{}, false
 		}
 
-		now := time.Now().UnixMilli()
 		handle = execution.RuntimeHandle{
 			SessionID: attempt.SessionID,
 			TaskID:    attempt.TaskID,
@@ -1046,7 +1044,6 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 		return handle, true
 	}
 
-	now := time.Now().UnixMilli()
 	if handle.HandleID == "" {
 		handle.HandleID = "hdl_" + uuid.NewString()
 	}

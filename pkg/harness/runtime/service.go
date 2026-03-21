@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
@@ -346,7 +345,7 @@ func (s *Service) RunClaimedSession(ctx context.Context, sessionID, leaseID stri
 }
 
 func (s *Service) RecoverSession(ctx context.Context, sessionID string) (SessionRunOutput, error) {
-	startedAt := time.Now().UnixMilli()
+	startedAt := s.nowMilli()
 	current, _ := s.GetSession(sessionID)
 	out, err := s.recoverSession(ctx, sessionID, "")
 	state := out.Session
@@ -354,13 +353,13 @@ func (s *Service) RecoverSession(ctx context.Context, sessionID string) (Session
 		state = current
 	}
 	if state.SessionID != "" {
-		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, time.Now().UnixMilli())
+		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, s.nowMilli())
 	}
 	return out, err
 }
 
 func (s *Service) RecoverClaimedSession(ctx context.Context, sessionID, leaseID string) (SessionRunOutput, error) {
-	startedAt := time.Now().UnixMilli()
+	startedAt := s.nowMilli()
 	current, _ := s.GetSession(sessionID)
 	out, err := s.recoverSession(ctx, sessionID, leaseID)
 	state := out.Session
@@ -368,7 +367,7 @@ func (s *Service) RecoverClaimedSession(ctx context.Context, sessionID, leaseID 
 		state = current
 	}
 	if state.SessionID != "" {
-		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, time.Now().UnixMilli())
+		s.exportRecoveryObservability(ctx, state, err == nil, len(out.Executions) > 0, startedAt, s.nowMilli())
 	}
 	return out, err
 }

@@ -40,6 +40,17 @@ func mustListAuditEvents(tb testing.TB, rt *hruntime.Service, sessionID string) 
 	return items
 }
 
+func mustFindAuditEventType(tb testing.TB, events []audit.Event, eventType string) audit.Event {
+	tb.Helper()
+	for _, event := range events {
+		if event.Type == eventType {
+			return event
+		}
+	}
+	tb.Fatalf("expected audit event %q, got %#v", eventType, events)
+	return audit.Event{}
+}
+
 func mustListPlans(tb testing.TB, rt *hruntime.Service, sessionID string) []plan.Spec {
 	tb.Helper()
 	items, err := rt.ListPlans(sessionID)

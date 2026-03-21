@@ -43,19 +43,41 @@ func TestRunStepExportsVendorNeutralObservabilitySamples(t *testing.T) {
 	if sample.Name != "step.run" {
 		t.Fatalf("expected step.run metric sample, got %#v", sample)
 	}
-	if sample.Labels["session_id"] != sess.SessionID || sample.Labels["attempt_id"] == "" || sample.Labels["trace_id"] == "" {
+	if sample.Labels["session_id"] != sess.SessionID || sample.Labels["attempt_id"] == "" || sample.Labels["trace_id"] == "" || sample.Labels["cycle_id"] == "" {
 		t.Fatalf("expected correlation labels on metric sample, got %#v", sample)
 	}
+	cycleID := sample.Labels["cycle_id"]
 
+	foundStepSpan := false
+	foundActionSpan := false
 	foundVerifySpan := false
 	for _, span := range traceExporter.spans {
-		if span.Name != "verify.evaluate" {
-			continue
+		switch span.Name {
+		case "step.run":
+			foundStepSpan = true
+			if span.CycleID != cycleID {
+				t.Fatalf("expected step trace span cycle correlation %q, got %#v", cycleID, span)
+			}
+		case "tool.invoke":
+			foundActionSpan = true
+			if span.CycleID != cycleID {
+				t.Fatalf("expected action trace span cycle correlation %q, got %#v", cycleID, span)
+			}
+		case "verify.evaluate":
+			foundVerifySpan = true
+			if span.TraceID == "" || span.AttemptID == "" || span.VerificationID == "" || span.CausationID == "" {
+				t.Fatalf("expected correlation ids on verify trace span, got %#v", span)
+			}
+			if span.CycleID != cycleID {
+				t.Fatalf("expected verify trace span cycle correlation %q, got %#v", cycleID, span)
+			}
 		}
-		foundVerifySpan = true
-		if span.TraceID == "" || span.AttemptID == "" || span.VerificationID == "" || span.CausationID == "" {
-			t.Fatalf("expected correlation ids on verify trace span, got %#v", span)
-		}
+	}
+	if !foundStepSpan {
+		t.Fatalf("expected step trace span, got %#v", traceExporter.spans)
+	}
+	if !foundActionSpan {
+		t.Fatalf("expected action trace span, got %#v", traceExporter.spans)
 	}
 	if !foundVerifySpan {
 		t.Fatalf("expected verify trace span, got %#v", traceExporter.spans)

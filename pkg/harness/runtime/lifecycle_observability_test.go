@@ -99,21 +99,22 @@ func TestApprovalLifecycleExportsObservability(t *testing.T) {
 	}
 
 	requestSample := mustFindMetricSample(t, metricsExporter.samples, "approval.request")
-	if requestSample.Labels["session_id"] != sess.SessionID || requestSample.Labels["approval_id"] == "" || requestSample.Labels["attempt_id"] == "" {
+	if requestSample.Labels["session_id"] != sess.SessionID || requestSample.Labels["approval_id"] == "" || requestSample.Labels["attempt_id"] == "" || requestSample.Labels["cycle_id"] == "" {
 		t.Fatalf("expected correlated approval request metric sample, got %#v", requestSample)
 	}
+	cycleID := requestSample.Labels["cycle_id"]
 
 	responseSample := mustFindMetricSample(t, metricsExporter.samples, "approval.response")
-	if responseSample.Labels["approval_id"] != initial.Execution.PendingApproval.ApprovalID || responseSample.Fields["reply"] != string(approval.ReplyOnce) {
+	if responseSample.Labels["approval_id"] != initial.Execution.PendingApproval.ApprovalID || responseSample.Fields["reply"] != string(approval.ReplyOnce) || responseSample.Labels["cycle_id"] != cycleID {
 		t.Fatalf("expected approval response metric sample, got %#v", responseSample)
 	}
 
 	requestSpan := mustFindTraceSpan(t, traceExporter.spans, "approval.request")
-	if requestSpan.ApprovalID == "" || requestSpan.AttemptID == "" || requestSpan.StepID != pl.Steps[0].StepID {
+	if requestSpan.ApprovalID == "" || requestSpan.AttemptID == "" || requestSpan.StepID != pl.Steps[0].StepID || requestSpan.CycleID != cycleID {
 		t.Fatalf("expected correlated approval request trace span, got %#v", requestSpan)
 	}
 	responseSpan := mustFindTraceSpan(t, traceExporter.spans, "approval.response")
-	if responseSpan.ApprovalID != initial.Execution.PendingApproval.ApprovalID || responseSpan.Attributes["reply"] != string(approval.ReplyOnce) {
+	if responseSpan.ApprovalID != initial.Execution.PendingApproval.ApprovalID || responseSpan.Attributes["reply"] != string(approval.ReplyOnce) || responseSpan.CycleID != cycleID {
 		t.Fatalf("expected correlated approval response trace span, got %#v", responseSpan)
 	}
 

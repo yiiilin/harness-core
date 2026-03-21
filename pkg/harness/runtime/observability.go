@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"strconv"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
@@ -21,7 +20,7 @@ func (s *Service) exportMetricSample(ctx context.Context, name string, labels ma
 		Name:       name,
 		Labels:     labels,
 		Fields:     fields,
-		RecordedAt: time.Now().UnixMilli(),
+		RecordedAt: s.nowMilli(),
 	})
 }
 
@@ -38,6 +37,7 @@ func (s *Service) exportStepMetricSample(ctx context.Context, state session.Stat
 		"task_id":    state.TaskID,
 		"step_id":    step.StepID,
 		"attempt_id": attempt.AttemptID,
+		"cycle_id":   attempt.CycleID,
 		"trace_id":   attempt.TraceID,
 	}
 	if actionRecord != nil && actionRecord.ActionID != "" {
@@ -58,6 +58,7 @@ func (s *Service) exportTraceSpans(ctx context.Context, state session.State, ste
 		TaskID:     state.TaskID,
 		StepID:     step.StepID,
 		AttemptID:  attempt.AttemptID,
+		CycleID:    attempt.CycleID,
 		StartedAt:  attempt.StartedAt,
 		FinishedAt: attempt.FinishedAt,
 		Attributes: map[string]any{"step_status": attempt.Status},
@@ -73,6 +74,7 @@ func (s *Service) exportTraceSpans(ctx context.Context, state session.State, ste
 			StepID:      step.StepID,
 			AttemptID:   attempt.AttemptID,
 			ActionID:    actionRecord.ActionID,
+			CycleID:     attempt.CycleID,
 			CausationID: actionRecord.CausationID,
 			StartedAt:   actionRecord.StartedAt,
 			FinishedAt:  actionRecord.FinishedAt,
@@ -95,6 +97,7 @@ func (s *Service) exportTraceSpans(ctx context.Context, state session.State, ste
 			AttemptID:      attempt.AttemptID,
 			ActionID:       verificationRecord.ActionID,
 			VerificationID: verificationRecord.VerificationID,
+			CycleID:        attempt.CycleID,
 			CausationID:    verificationRecord.CausationID,
 			StartedAt:      verificationRecord.StartedAt,
 			FinishedAt:     verificationRecord.FinishedAt,
@@ -167,6 +170,7 @@ func (s *Service) exportApprovalRequestObservability(ctx context.Context, state 
 		"session_id":  rec.SessionID,
 		"approval_id": rec.ApprovalID,
 		"step_id":     rec.StepID,
+		"cycle_id":    executionCycleIDFromStep(rec.Step),
 	}
 	if state.TaskID != "" {
 		labels["task_id"] = state.TaskID
@@ -186,6 +190,7 @@ func (s *Service) exportApprovalRequestObservability(ctx context.Context, state 
 		StepID:     rec.StepID,
 		AttemptID:  attempt.AttemptID,
 		ApprovalID: rec.ApprovalID,
+		CycleID:    executionCycleIDFromStep(rec.Step),
 		StartedAt:  rec.RequestedAt,
 		FinishedAt: rec.RequestedAt,
 		Attributes: map[string]any{
@@ -205,6 +210,7 @@ func (s *Service) exportApprovalResponseObservability(ctx context.Context, state
 		"session_id":  rec.SessionID,
 		"approval_id": rec.ApprovalID,
 		"step_id":     rec.StepID,
+		"cycle_id":    executionCycleIDFromStep(rec.Step),
 	}
 	if state.TaskID != "" {
 		labels["task_id"] = state.TaskID
@@ -219,6 +225,7 @@ func (s *Service) exportApprovalResponseObservability(ctx context.Context, state
 		TaskID:     state.TaskID,
 		StepID:     rec.StepID,
 		ApprovalID: rec.ApprovalID,
+		CycleID:    executionCycleIDFromStep(rec.Step),
 		StartedAt:  rec.RespondedAt,
 		FinishedAt: rec.RespondedAt,
 		Attributes: map[string]any{

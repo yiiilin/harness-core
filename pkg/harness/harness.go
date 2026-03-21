@@ -58,6 +58,7 @@ type ExecutionVerificationRecord = execution.VerificationRecord
 type ExecutionVerificationStatus = execution.VerificationStatus
 type ExecutionArtifact = execution.Artifact
 type ExecutionRuntimeHandle = execution.RuntimeHandle
+type ExecutionCycle = execution.ExecutionCycle
 
 type VerifySpec = verify.Spec
 type VerifyResult = verify.Result

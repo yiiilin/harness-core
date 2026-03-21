@@ -46,6 +46,7 @@ type TraceSpan struct {
 	AttemptID      string         `json:"attempt_id,omitempty"`
 	ActionID       string         `json:"action_id,omitempty"`
 	VerificationID string         `json:"verification_id,omitempty"`
+	CycleID        string         `json:"cycle_id,omitempty"`
 	CausationID    string         `json:"causation_id,omitempty"`
 	StartedAt      int64          `json:"started_at"`
 	FinishedAt     int64          `json:"finished_at"`

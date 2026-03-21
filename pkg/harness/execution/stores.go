@@ -10,6 +10,7 @@ import (
 )
 
 var ErrRecordNotFound = errors.New("execution record not found")
+var ErrExecutionCycleNotFound = errors.New("execution cycle not found")
 var ErrRuntimeHandleVersionConflict = errors.New("runtime handle version conflict")
 
 type AttemptStore interface {

@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -56,7 +55,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 	}
 
 	planningID := "pln_" + uuid.NewString()
-	startedAt := time.Now().UnixMilli()
+	startedAt := s.nowMilli()
 	metadata := map[string]any{
 		"requested_max_steps": requestedMaxSteps,
 		"effective_max_steps": maxSteps,
@@ -72,7 +71,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			Error:      err.Error(),
 			Metadata:   metadata,
 			StartedAt:  startedAt,
-			FinishedAt: time.Now().UnixMilli(),
+			FinishedAt: s.nowMilli(),
 		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
@@ -92,7 +91,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			ContextSummaryID: contextSummaryID,
 			Metadata:         metadata,
 			StartedAt:        startedAt,
-			FinishedAt:       time.Now().UnixMilli(),
+			FinishedAt:       s.nowMilli(),
 		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
@@ -116,7 +115,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 					ContextSummaryID: contextSummaryID,
 					Metadata:         metadata,
 					StartedAt:        startedAt,
-					FinishedAt:       time.Now().UnixMilli(),
+					FinishedAt:       s.nowMilli(),
 				})
 				return plan.Spec{}, ContextPackage{}, err
 			}
@@ -143,7 +142,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 				ContextSummaryID: contextSummaryID,
 				Metadata:         metadata,
 				StartedAt:        startedAt,
-				FinishedAt:       time.Now().UnixMilli(),
+				FinishedAt:       s.nowMilli(),
 			})
 			return plan.Spec{}, ContextPackage{}, err
 		}
@@ -167,7 +166,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			ContextSummaryID: contextSummaryID,
 			Metadata:         metadata,
 			StartedAt:        startedAt,
-			FinishedAt:       time.Now().UnixMilli(),
+			FinishedAt:       s.nowMilli(),
 		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
@@ -183,7 +182,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		ContextSummaryID: contextSummaryID,
 		Metadata:         metadata,
 		StartedAt:        startedAt,
-		FinishedAt:       time.Now().UnixMilli(),
+		FinishedAt:       s.nowMilli(),
 	})
 	if err != nil {
 		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
@@ -197,7 +196,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			ContextSummaryID: contextSummaryID,
 			Metadata:         metadata,
 			StartedAt:        startedAt,
-			FinishedAt:       time.Now().UnixMilli(),
+			FinishedAt:       s.nowMilli(),
 		})
 		return plan.Spec{}, ContextPackage{}, err
 	}
@@ -213,7 +212,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		ContextSummaryID: contextSummaryID,
 		Metadata:         metadata,
 		StartedAt:        startedAt,
-		FinishedAt:       time.Now().UnixMilli(),
+		FinishedAt:       s.nowMilli(),
 	})
 	return pl, assembled, nil
 }

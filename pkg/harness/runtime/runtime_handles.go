@@ -42,6 +42,27 @@ func (s *Service) UpdateRuntimeHandle(ctx context.Context, handleID string, upda
 	})
 }
 
+func (s *Service) UpdateClaimedRuntimeHandle(ctx context.Context, handleID, leaseID string, update RuntimeHandleUpdate) (execution.RuntimeHandle, error) {
+	if leaseID == "" {
+		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
+	}
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+		if update.Kind != nil {
+			handle.Kind = *update.Kind
+		}
+		if update.Value != nil {
+			handle.Value = *update.Value
+		}
+		if len(update.Metadata) > 0 {
+			handle.Metadata = mergeMaps(handle.Metadata, cloneAnyMap(update.Metadata))
+		}
+		if handle.Status == "" {
+			handle.Status = execution.RuntimeHandleActive
+		}
+		return handle
+	})
+}
+
 func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleCloseRequest) (execution.RuntimeHandle, error) {
 	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleClosed
@@ -54,8 +75,38 @@ func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, reque
 	})
 }
 
+func (s *Service) CloseClaimedRuntimeHandle(ctx context.Context, handleID, leaseID string, request RuntimeHandleCloseRequest) (execution.RuntimeHandle, error) {
+	if leaseID == "" {
+		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
+	}
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+		handle.Status = execution.RuntimeHandleClosed
+		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle closed")
+		handle.ClosedAt = s.nowMilli()
+		if len(request.Metadata) > 0 {
+			handle.Metadata = mergeMaps(handle.Metadata, cloneAnyMap(request.Metadata))
+		}
+		return handle
+	})
+}
+
 func (s *Service) InvalidateRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleInvalidateRequest) (execution.RuntimeHandle, error) {
 	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+		handle.Status = execution.RuntimeHandleInvalidated
+		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
+		handle.InvalidatedAt = s.nowMilli()
+		if len(request.Metadata) > 0 {
+			handle.Metadata = mergeMaps(handle.Metadata, cloneAnyMap(request.Metadata))
+		}
+		return handle
+	})
+}
+
+func (s *Service) InvalidateClaimedRuntimeHandle(ctx context.Context, handleID, leaseID string, request RuntimeHandleInvalidateRequest) (execution.RuntimeHandle, error) {
+	if leaseID == "" {
+		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
+	}
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleInvalidated
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
 		handle.InvalidatedAt = s.nowMilli()

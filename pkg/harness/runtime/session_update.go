@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"errors"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
@@ -10,6 +9,10 @@ import (
 const maxSessionUpdateAttempts = 4
 
 func persistSessionUpdate(store session.Store, desired session.State, leaseID string) (session.State, error) {
+	return persistSessionUpdateAt(store, desired, leaseID, 0)
+}
+
+func persistSessionUpdateAt(store session.Store, desired session.State, leaseID string, now int64) (session.State, error) {
 	if leaseID == "" {
 		desired.Version++
 		if err := store.Update(desired); err != nil {
@@ -17,12 +20,15 @@ func persistSessionUpdate(store session.Store, desired session.State, leaseID st
 		}
 		return desired, nil
 	}
-	return updateSessionWithRetry(store, desired, leaseID)
+	return updateSessionWithRetry(store, desired, leaseID, now)
 }
 
-func updateSessionWithRetry(store session.Store, desired session.State, leaseID string) (session.State, error) {
+func updateSessionWithRetry(store session.Store, desired session.State, leaseID string, now int64) (session.State, error) {
 	if store == nil {
 		return session.State{}, session.ErrSessionNotFound
+	}
+	if now == 0 {
+		now = systemClock{}.NowMilli()
 	}
 
 	for attempt := 0; attempt < maxSessionUpdateAttempts; attempt++ {
@@ -30,7 +36,7 @@ func updateSessionWithRetry(store session.Store, desired session.State, leaseID 
 		if err != nil {
 			return session.State{}, err
 		}
-		if err := requireSessionLease(current, leaseID, time.Now().UnixMilli()); err != nil {
+		if err := requireSessionLease(current, leaseID, now); err != nil {
 			return session.State{}, err
 		}
 
