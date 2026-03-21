@@ -149,22 +149,11 @@ The project no longer has a large kernel-boundary problem.
 
 The remaining gaps are now narrower and mostly about making the embedder surface cleaner and more replaceable.
 
-### 1. Worker helper should depend on a narrow interface
+### 1. Worker helper outer-loop ergonomics are still minimal
 
-`pkg/harness/worker` currently depends directly on `*runtime.Service`.
+`pkg/harness/worker` now depends on a narrow worker-facing runtime interface rather than a concrete `*runtime.Service`.
 
-That works, but it is a little too concrete for a public helper package.
-
-The next improvement should be:
-
-- define a narrow worker runtime interface
-- let the helper depend on that interface instead of the concrete service
-
-This keeps the helper more reusable and more testable without expanding kernel scope.
-
-### 2. Worker helper still stops at `RunOnce()`
-
-The current helper is useful, but platforms still need to write their own outer loop:
+That cleanup is complete, but platforms may still want a slightly richer outer-loop surface around:
 
 - polling
 - backoff
@@ -172,25 +161,20 @@ The current helper is useful, but platforms still need to write their own outer 
 - shutdown behavior
 - worker naming / observability wrapping
 
-The next useful public addition is a small `RunLoop(...)` helper that remains transport-neutral and fleet-neutral.
+The helper now includes a minimal `RunLoop(...)`, but this area is still a good place for careful incremental improvement as long as it remains transport-neutral and fleet-neutral.
 
-### 3. Remote PTY execution is replaceable, but PTY inspection is still local-manager-centric
+### 2. Remote PTY inspection is improved, but still young
 
 This is the biggest remaining shell-module gap.
 
 Today:
 
 - PTY execution can be delegated through `PTYBackend`
-- PTY verification still assumes local `PTYManager` access
+- PTY verification can be delegated through `PTYInspector`
 
-That is correct for now, but incomplete for remote PTY platforms.
+That closes the hard local-manager dependency, but the abstraction is still young and should be exercised further by remote PTY embedders before it can be considered fully proven.
 
-The next improvement should stay in `modules/shell`, not in the kernel:
-
-- introduce a public PTY inspection / observer abstraction
-- allow PTY verifiers to bind to that abstraction
-
-### 4. Adapter-facing protocol guidance can still be stronger
+### 3. Adapter-facing protocol guidance can still be stronger
 
 The code now has better kernel/public boundaries than before, but protocol-facing surfaces still deserve tighter documentation around:
 
@@ -216,22 +200,23 @@ These are platform responsibilities.
 
 ## Recommended Next Priorities
 
-### Priority 1: strengthen `pkg/harness/worker`
+### Priority 1: keep strengthening `pkg/harness/worker`
 
 Do this next:
 
-- narrow the dependency from `*runtime.Service` to a worker-specific interface
-- add a small `RunLoop(...)` helper
+- refine `RunLoop(...)` carefully if embedders need more control
 - keep it transport-neutral and free of fleet/product concepts
+- do not let it grow into fleet orchestration
 
 This produces the highest embedder value for the lowest scope risk.
 
-### Priority 2: add a PTY inspection abstraction in `modules/shell`
+### Priority 2: harden the PTY inspection abstraction in `modules/shell`
 
 Do this after worker helper cleanup:
 
-- separate PTY execution backend from PTY inspection backend
-- allow remote PTY implementations to participate in `pty_*` verification through a public module-level interface
+- validate the new `PTYInspector` path with more remote-style integrations
+- add only the minimum extra surface needed for real remote PTY implementations
+- keep PTY inspection in the module layer, not the kernel
 
 This solves the most important remaining shell embedder gap without polluting the kernel.
 

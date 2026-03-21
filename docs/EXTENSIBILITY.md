@@ -106,6 +106,7 @@ rt := harness.New(opts)
 ### Prefer: module-local hooks
 Good:
 - shell module exposes `Backend`
+- shell module exposes `PTYInspector`
 - shell module exposes `SandboxHook`
 - modules expose `DefaultPolicyRules()` while core keeps the evaluator/composition logic
 - a separate builtins composition helper may assemble several modules without making the runtime package own them
@@ -141,6 +142,7 @@ This is why `modules/shell` can expose:
 - `RegisterWithOptions(...)`
 - `Backend`
 - `PTYBackend`
+- `PTYInspector`
 - `PTYManager`
 - `SandboxHook`
 - `DefaultPolicyRules()`
@@ -155,8 +157,9 @@ The same pattern is used by `examples/platform-reference`:
 
 Current PTY-specific verifier registration rule:
 - base shell verifiers are always registered
-- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when a local `PTYManager` is present
-- an external `PTYBackend` alone does not imply local PTY inspection capability
+- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when PTY inspection is available
+- a local `PTYManager` is one way to provide that inspection surface
+- an external `PTYBackend` alone does not imply stream inspection capability
 
 ---
 

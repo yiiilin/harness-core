@@ -2,6 +2,7 @@ package worker_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,37 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 	workerpkg "github.com/yiiilin/harness-core/pkg/harness/worker"
 )
+
+func TestWorkerNewAcceptsNarrowRuntimeInterface(t *testing.T) {
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-interface",
+			LeaseID:   "lease-interface",
+		},
+		runOutput: hruntime.SessionRunOutput{
+			Session: session.State{SessionID: "sess-interface"},
+		},
+		releaseState: session.State{SessionID: "sess-interface"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker with narrow runtime: %v", err)
+	}
+
+	res, err := w.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("run once with narrow runtime: %v", err)
+	}
+	if res.NoWork || rt.runClaimedCalls != 1 || rt.releaseCalls != 1 {
+		t.Fatalf("expected narrow runtime path to execute once, got result=%#v runtime=%#v", res, rt)
+	}
+}
 
 func TestWorkerRunOnceClaimsRunsAndReleases(t *testing.T) {
 	ctx := context.Background()
@@ -139,6 +171,96 @@ func TestWorkerRunOnceReportsNoWork(t *testing.T) {
 	}
 }
 
+func TestWorkerRunLoopStopsAfterHandledIteration(t *testing.T) {
+	rt := &fakeRuntime{
+		claimRunnableResults: []claimResult{
+			{
+				state: session.State{
+					SessionID: "sess-loop",
+					LeaseID:   "lease-loop",
+				},
+				ok: true,
+			},
+		},
+		runOutput: hruntime.SessionRunOutput{
+			Session: session.State{SessionID: "sess-loop"},
+		},
+		releaseState: session.State{SessionID: "sess-loop"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	iterations := 0
+	results := 0
+	err = w.RunLoop(context.Background(), workerpkg.LoopOptions{
+		IdleWait:  10 * time.Millisecond,
+		ErrorWait: 10 * time.Millisecond,
+		ShouldStop: func(result workerpkg.Result, err error) bool {
+			iterations++
+			if err == nil && !result.NoWork {
+				results++
+				return true
+			}
+			return false
+		},
+	})
+	if err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if iterations != 1 || results != 1 || rt.runClaimedCalls != 1 {
+		t.Fatalf("expected one handled loop iteration, got iterations=%d results=%d runtime=%#v", iterations, results, rt)
+	}
+}
+
+func TestWorkerRunLoopBacksOffAfterNoWorkAndExitsOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	rt := &fakeRuntime{}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	iterations := 0
+	done := make(chan error, 1)
+	go func() {
+		done <- w.RunLoop(ctx, workerpkg.LoopOptions{
+			IdleWait:  5 * time.Millisecond,
+			ErrorWait: 5 * time.Millisecond,
+			ShouldStop: func(result workerpkg.Result, err error) bool {
+				iterations++
+				if iterations >= 2 {
+					cancel()
+				}
+				return false
+			},
+		})
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context canceled from loop, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker loop did not exit after context cancellation")
+	}
+	if rt.claimRunnableCalls < 2 {
+		t.Fatalf("expected loop to retry after no work, got runtime=%#v", rt)
+	}
+}
+
 func newTestRuntime(t *testing.T, handler tool.Handler) *hruntime.Service {
 	t.Helper()
 	tools := tool.NewRegistry()
@@ -198,4 +320,79 @@ type askPolicy struct{}
 func (askPolicy) Evaluate(ctx context.Context, _ session.State, _ plan.StepSpec) (permission.Decision, error) {
 	_ = ctx
 	return permission.Decision{Action: permission.Ask, Reason: "approval required", MatchedRule: "test/ask"}, nil
+}
+
+type claimResult struct {
+	state session.State
+	ok    bool
+	err   error
+}
+
+type fakeRuntime struct {
+	claimRunnableState   session.State
+	claimRunnableOk      bool
+	claimRunnableErr     error
+	claimRunnableResults []claimResult
+	claimRunnableCalls   int
+	claimRecoverableErr  error
+	renewErr             error
+	releaseErr           error
+	releaseState         session.State
+	runOutput            hruntime.SessionRunOutput
+	runErr               error
+	recoverOutput        hruntime.SessionRunOutput
+	recoverErr           error
+	runClaimedCalls      int
+	recoverClaimedCalls  int
+	releaseCalls         int
+}
+
+func (f *fakeRuntime) ClaimRunnableSession(ctx context.Context, leaseTTL time.Duration) (session.State, bool, error) {
+	_ = ctx
+	_ = leaseTTL
+	f.claimRunnableCalls++
+	if len(f.claimRunnableResults) > 0 {
+		next := f.claimRunnableResults[0]
+		f.claimRunnableResults = f.claimRunnableResults[1:]
+		return next.state, next.ok, next.err
+	}
+	return f.claimRunnableState, f.claimRunnableOk, f.claimRunnableErr
+}
+
+func (f *fakeRuntime) ClaimRecoverableSession(ctx context.Context, leaseTTL time.Duration) (session.State, bool, error) {
+	_ = ctx
+	_ = leaseTTL
+	return session.State{}, false, f.claimRecoverableErr
+}
+
+func (f *fakeRuntime) RenewSessionLease(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
+	_ = ctx
+	_ = sessionID
+	_ = leaseID
+	_ = leaseTTL
+	return session.State{}, f.renewErr
+}
+
+func (f *fakeRuntime) ReleaseSessionLease(ctx context.Context, sessionID, leaseID string) (session.State, error) {
+	_ = ctx
+	_ = sessionID
+	_ = leaseID
+	f.releaseCalls++
+	return f.releaseState, f.releaseErr
+}
+
+func (f *fakeRuntime) RunClaimedSession(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+	_ = ctx
+	_ = sessionID
+	_ = leaseID
+	f.runClaimedCalls++
+	return f.runOutput, f.runErr
+}
+
+func (f *fakeRuntime) RecoverClaimedSession(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+	_ = ctx
+	_ = sessionID
+	_ = leaseID
+	f.recoverClaimedCalls++
+	return f.recoverOutput, f.recoverErr
 }

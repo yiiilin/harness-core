@@ -53,6 +53,8 @@ See:
 - `pkg/harness/worker`
   - `worker.New(worker.Options{Runtime: rt, ...})`
   - `(*worker.Worker).RunOnce(ctx)`
+  - `(*worker.Worker).RunLoop(ctx, worker.LoopOptions{...})`
+  - runtime dependency is a narrow worker-facing interface, not a required concrete `*runtime.Service`
   - result flags:
     - `NoWork`
     - `ApprovalPending`
@@ -147,6 +149,7 @@ Context maintenance:
 Current extension semantics:
 
 - `RegisterWithOptions(..., shellmodule.Options{PTYBackend: ...})` supports external PTY executors
+- `RegisterWithOptions(..., shellmodule.Options{PTYInspector: ...})` supports external PTY inspection/verifier wiring
 - `PTYManager` remains the default local PTY execution and inspection path
 - PTY-specific verifiers are conditional:
   - `pty_handle_active`

@@ -268,6 +268,77 @@ func TestPTYManagerDetachDoesNotCloseUnderlyingSession(t *testing.T) {
 	}
 }
 
+func TestShellPTYVerifiersSupportExplicitInspector(t *testing.T) {
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+		PTYBackend: &stubPTYBackend{},
+		PTYInspector: fakePTYInspector{
+			inspect: map[string]shellmodule.PTYInspectResult{
+				"hdl-active": {Status: "active", Closed: false},
+				"hdl-exit":   {Status: "closed", Closed: true, ExitCode: 7},
+			},
+			read: map[string]shellmodule.PTYReadResult{
+				"hdl-active": {Status: "active", Data: "remote verifier output", NextOffset: 22},
+			},
+		},
+	})
+
+	activeVerify, err := verifiers.Evaluate(context.Background(), verify.Spec{
+		Mode: verify.ModeAll,
+		Checks: []verify.Check{
+			{Kind: "pty_handle_active"},
+		},
+	}, action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handle": map[string]any{"handle_id": "hdl-active"},
+		},
+	}, session.State{})
+	if err != nil {
+		t.Fatalf("evaluate pty_handle_active via explicit inspector: %v", err)
+	}
+	if !activeVerify.Success {
+		t.Fatalf("expected active verifier to succeed via explicit inspector, got %#v", activeVerify)
+	}
+
+	streamVerify, err := verifiers.Evaluate(context.Background(), verify.Spec{
+		Mode: verify.ModeAll,
+		Checks: []verify.Check{
+			{Kind: "pty_stream_contains", Args: map[string]any{"text": "verifier output", "timeout_ms": 50}},
+		},
+	}, action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handle": map[string]any{"handle_id": "hdl-active"},
+		},
+	}, session.State{})
+	if err != nil {
+		t.Fatalf("evaluate pty_stream_contains via explicit inspector: %v", err)
+	}
+	if !streamVerify.Success {
+		t.Fatalf("expected stream verifier to succeed via explicit inspector, got %#v", streamVerify)
+	}
+
+	exitVerify, err := verifiers.Evaluate(context.Background(), verify.Spec{
+		Mode: verify.ModeAll,
+		Checks: []verify.Check{
+			{Kind: "pty_exit_code", Args: map[string]any{"allowed": []any{7}, "timeout_ms": 50}},
+		},
+	}, action.Result{
+		OK: true,
+		Data: map[string]any{
+			"runtime_handle": map[string]any{"handle_id": "hdl-exit"},
+		},
+	}, session.State{})
+	if err != nil {
+		t.Fatalf("evaluate pty_exit_code via explicit inspector: %v", err)
+	}
+	if !exitVerify.Success {
+		t.Fatalf("expected exit verifier to succeed via explicit inspector, got %#v", exitVerify)
+	}
+}
+
 func readPTYOutputEventually(t *testing.T, manager *shellmodule.PTYManager, handleID string, offset int64, needle string) shellmodule.PTYReadResult {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -319,6 +390,29 @@ func waitForBufferContains(t *testing.T, buf *lockedBuffer, needle string) {
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
+}
+
+type fakePTYInspector struct {
+	inspect map[string]shellmodule.PTYInspectResult
+	read    map[string]shellmodule.PTYReadResult
+}
+
+func (f fakePTYInspector) Inspect(_ context.Context, handleID string) (shellmodule.PTYInspectResult, error) {
+	result, ok := f.inspect[handleID]
+	if !ok {
+		return shellmodule.PTYInspectResult{}, shellmodule.ErrPTYSessionNotFound
+	}
+	result.HandleID = handleID
+	return result, nil
+}
+
+func (f fakePTYInspector) Read(_ context.Context, handleID string, _ shellmodule.PTYReadRequest) (shellmodule.PTYReadResult, error) {
+	result, ok := f.read[handleID]
+	if !ok {
+		return shellmodule.PTYReadResult{}, shellmodule.ErrPTYSessionNotFound
+	}
+	result.HandleID = handleID
+	return result, nil
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {

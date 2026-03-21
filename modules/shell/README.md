@@ -18,6 +18,7 @@ Current contents:
 - extensibility hooks:
   - `Backend`
   - `PTYBackend`
+  - `PTYInspector`
   - `PTYManager`
   - `SandboxHook`
 
@@ -62,6 +63,15 @@ shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
 
 That path keeps PTY execution pluggable without forcing a local `PTYManager`.
 
+If the embedder also needs `pty_*` verifier support without a local manager, it can provide `PTYInspector` directly:
+
+```go
+shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+	PTYBackend:   remotePTYBackend,
+	PTYInspector: remotePTYInspector,
+})
+```
+
 Then the same `manager` can be used outside the kernel for:
 
 - `Start(...)` indirectly via `shell.exec`
@@ -98,8 +108,9 @@ They use the shell module's shared `PTYManager`, not new kernel verifier contrac
 Important:
 
 - base shell verifiers such as `exit_code` and `output_contains` are always registered
-- PTY-specific verifiers are registered only when local PTY inspection is available through `PTYManager`
-- supplying only `PTYBackend` does not imply local stream inspection support
+- PTY-specific verifiers are registered only when PTY inspection is available
+- local `PTYManager` is one way to provide that inspection surface
+- supplying only `PTYBackend` does not imply stream inspection support
 
 ## Attach / Detach
 

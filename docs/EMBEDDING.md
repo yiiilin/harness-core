@@ -66,6 +66,7 @@ shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
 Key semantics:
 - this path avoids hard dependency on local `PTYManager`
 - PTY-specific verifiers (`pty_handle_active`, `pty_stream_contains`, `pty_exit_code`) are registered only when local `PTYManager` exists
+- if you need remote PTY verification, provide `PTYInspector` explicitly instead of assuming local manager access
 - remote executor stream inspection should be implemented in your platform/module layer
 
 ## Pattern 4: Restart and Recovery
@@ -77,6 +78,7 @@ Worker helper semantics:
 - renew lease heartbeat
 - run or recover claimed session
 - release lease
+- optionally keep the outer polling loop in the helper through `RunLoop(...)`
 
 On service restart:
 - start workers again

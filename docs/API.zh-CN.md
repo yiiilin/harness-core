@@ -53,6 +53,8 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 - `pkg/harness/worker`
   - `worker.New(worker.Options{Runtime: rt, ...})`
   - `(*worker.Worker).RunOnce(ctx)`
+  - `(*worker.Worker).RunLoop(ctx, worker.LoopOptions{...})`
+  - `Runtime` 依赖的是 worker 专用窄接口，而不是强制要求具体 `*runtime.Service`
   - 结果标志：
     - `NoWork`
     - `ApprovalPending`
@@ -141,6 +143,7 @@ Runtime handle 控制：
 当前扩展语义：
 
 - `RegisterWithOptions(..., shellmodule.Options{PTYBackend: ...})` 支持外部 PTY 执行后端
+- `RegisterWithOptions(..., shellmodule.Options{PTYInspector: ...})` 支持外部 PTY 检查 / verifier 接线
 - `PTYManager` 仍是本地 PTY 执行与检查的默认路径
 - PTY 专用 verifier 条件注册：
   - `pty_handle_active`

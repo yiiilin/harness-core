@@ -217,6 +217,28 @@ func (m *PTYManager) Read(_ context.Context, handleID string, req PTYReadRequest
 	}, nil
 }
 
+func (m *PTYManager) Inspect(_ context.Context, handleID string) (PTYInspectResult, error) {
+	session, err := m.session(handleID)
+	if err != nil {
+		return PTYInspectResult{}, err
+	}
+
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+
+	status := "active"
+	if session.closed {
+		status = "closed"
+	}
+	return PTYInspectResult{
+		HandleID:     handleID,
+		Closed:       session.closed,
+		ExitCode:     session.exitCode,
+		Status:       status,
+		StatusReason: session.statusReason,
+	}, nil
+}
+
 func (m *PTYManager) Write(ctx context.Context, handleID, input string) (int, error) {
 	session, err := m.session(handleID)
 	if err != nil {

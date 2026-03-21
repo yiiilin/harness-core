@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
@@ -16,7 +15,7 @@ var (
 )
 
 type Worker struct {
-	runtime       *hruntime.Service
+	runtime       Runtime
 	leaseTTL      time.Duration
 	renewInterval time.Duration
 	claimModes    []session.ClaimMode
@@ -118,6 +117,38 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 	}
 }
 
+// RunLoop repeatedly calls RunOnce until the context ends or the stop callback
+// indicates the caller has seen enough work for now.
+func (w *Worker) RunLoop(ctx context.Context, opts LoopOptions) error {
+	idleWait := opts.IdleWait
+	if idleWait <= 0 {
+		idleWait = 250 * time.Millisecond
+	}
+	errorWait := opts.ErrorWait
+	if errorWait <= 0 {
+		errorWait = time.Second
+	}
+
+	for {
+		result, err := w.RunOnce(ctx)
+		if opts.ShouldStop != nil && opts.ShouldStop(result, err) {
+			return err
+		}
+		if err != nil {
+			if waitErr := sleepContext(ctx, errorWait); waitErr != nil {
+				return waitErr
+			}
+			continue
+		}
+		if result.NoWork {
+			if waitErr := sleepContext(ctx, idleWait); waitErr != nil {
+				return waitErr
+			}
+			continue
+		}
+	}
+}
+
 func (w *Worker) claim(ctx context.Context) (session.State, session.ClaimMode, error) {
 	for _, mode := range w.claimModes {
 		var st session.State
@@ -146,6 +177,25 @@ func drainError(ch <-chan error) error {
 	case err := <-ch:
 		return err
 	default:
+		return nil
+	}
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
 		return nil
 	}
 }

@@ -48,7 +48,9 @@ func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
 	var _ harness.RuntimeHandleInvalidateRequest
 	var _ harness.CompactionPolicy
 	var _ harness.CompactionTrigger = harness.CompactionTriggerPlan
+	var _ harness.WorkerRuntime
 	var _ harness.WorkerOptions
+	var _ harness.WorkerLoopOptions
 	var _ harness.WorkerResult
 	var _ harness.ReplaySessionProjection
 	var _ harness.ReplayExecutionCycleProjection
@@ -110,6 +112,13 @@ func TestFacadeConstructsWorkerAndReplayHelpers(t *testing.T) {
 	}
 	if workerHelper == nil {
 		t.Fatalf("expected worker helper")
+	}
+	if err := workerHelper.RunLoop(context.Background(), harness.WorkerLoopOptions{
+		ShouldStop: func(result harness.WorkerResult, err error) bool {
+			return err == nil && result.NoWork
+		},
+	}); err != nil {
+		t.Fatalf("run worker loop through facade: %v", err)
 	}
 	replayReader := harness.NewReplayReader(rt)
 	if replayReader == nil {

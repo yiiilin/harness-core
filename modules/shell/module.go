@@ -11,10 +11,11 @@ import (
 )
 
 type Options struct {
-	Backend     shellexec.Backend
-	PTYBackend  shellexec.Backend
-	PTYManager  *PTYManager
-	SandboxHook shellexec.SandboxHook
+	Backend      shellexec.Backend
+	PTYBackend   shellexec.Backend
+	PTYInspector PTYInspector
+	PTYManager   *PTYManager
+	SandboxHook  shellexec.SandboxHook
 }
 
 type handler struct {
@@ -81,6 +82,7 @@ func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts 
 		backend = shellexec.PipeExecutor{}
 	}
 	ptyManager := opts.PTYManager
+	ptyInspector := opts.PTYInspector
 	ptyBackend := opts.PTYBackend
 	if ptyBackend == nil {
 		if ptyManager == nil {
@@ -90,6 +92,9 @@ func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts 
 	}
 	if ptyManager == nil && opts.PTYBackend == nil {
 		ptyManager = NewPTYManager(PTYManagerOptions{})
+	}
+	if ptyInspector == nil && ptyManager != nil {
+		ptyInspector = ptyManager
 	}
 	hook := opts.SandboxHook
 	if hook == nil {
@@ -106,22 +111,23 @@ func RegisterWithOptions(tools *tool.Registry, verifiers *verify.Registry, opts 
 				"module": "shell",
 				"modes":  []string{"pipe", "pty"},
 				"extensible": map[string]any{
-					"backend":      true,
-					"pty_backend":  true,
-					"pty_manager":  true,
-					"sandbox_hook": true,
+					"backend":       true,
+					"pty_backend":   true,
+					"pty_inspector": true,
+					"pty_manager":   true,
+					"sandbox_hook":  true,
 				},
-				"pty_verifiers": ptyManager != nil,
+				"pty_verifiers": ptyInspector != nil,
 			},
 		}, handler{backend: backend, ptyBackend: ptyBackend, hook: hook})
 	}
 	if verifiers != nil {
 		verifiers.Register(verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."}, verify.ExitCodeChecker{})
 		verifiers.Register(verify.Definition{Kind: "output_contains", Description: "Verify that stdout or stderr contains a target substring."}, verify.OutputContainsChecker{})
-		if ptyManager != nil {
-			verifiers.Register(verify.Definition{Kind: "pty_handle_active", Description: "Verify that a PTY-backed shell result still has an active handle."}, PTYHandleActiveChecker{Manager: ptyManager})
-			verifiers.Register(verify.Definition{Kind: "pty_stream_contains", Description: "Verify that a PTY-backed shell stream contains a target substring within a timeout."}, PTYStreamContainsChecker{Manager: ptyManager})
-			verifiers.Register(verify.Definition{Kind: "pty_exit_code", Description: "Verify that a PTY-backed shell process exits with an allowed code within a timeout."}, PTYExitCodeChecker{Manager: ptyManager})
+		if ptyInspector != nil {
+			verifiers.Register(verify.Definition{Kind: "pty_handle_active", Description: "Verify that a PTY-backed shell result still has an active handle."}, PTYHandleActiveChecker{Inspector: ptyInspector})
+			verifiers.Register(verify.Definition{Kind: "pty_stream_contains", Description: "Verify that a PTY-backed shell stream contains a target substring within a timeout."}, PTYStreamContainsChecker{Inspector: ptyInspector})
+			verifiers.Register(verify.Definition{Kind: "pty_exit_code", Description: "Verify that a PTY-backed shell process exits with an allowed code within a timeout."}, PTYExitCodeChecker{Inspector: ptyInspector})
 		}
 	}
 }

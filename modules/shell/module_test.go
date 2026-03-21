@@ -28,11 +28,27 @@ type recordingBackend struct {
 	calls  int
 	last   shellexec.Request
 }
+type stubPTYInspector struct {
+	inspect shellmodule.PTYInspectResult
+	read    shellmodule.PTYReadResult
+}
 
 func (b *recordingBackend) Execute(_ context.Context, req shellexec.Request) (action.Result, error) {
 	b.calls++
 	b.last = req
 	return b.result, nil
+}
+
+func (s stubPTYInspector) Inspect(_ context.Context, handleID string) (shellmodule.PTYInspectResult, error) {
+	out := s.inspect
+	out.HandleID = handleID
+	return out, nil
+}
+
+func (s stubPTYInspector) Read(_ context.Context, handleID string, _ shellmodule.PTYReadRequest) (shellmodule.PTYReadResult, error) {
+	out := s.read
+	out.HandleID = handleID
+	return out, nil
 }
 
 func (denyHook) BeforeExecute(_ context.Context, _ shellexec.Request) (shellexec.SandboxDecision, error) {
@@ -162,6 +178,40 @@ func TestRegisterShellModuleWithExplicitPTYBackendAndManagerRegistersPTYVerifier
 	for _, kind := range []string{"pty_handle_active", "pty_stream_contains", "pty_exit_code"} {
 		if _, ok := verifiers.Get(kind); !ok {
 			t.Fatalf("expected PTY verifier %q with explicit local PTY manager", kind)
+		}
+	}
+}
+
+func TestRegisterShellModuleWithExplicitPTYInspectorRegistersPTYVerifiers(t *testing.T) {
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	remotePTY := &recordingBackend{
+		result: action.Result{
+			OK: true,
+			Data: map[string]any{
+				"mode":   "pty",
+				"status": "remote",
+			},
+		},
+	}
+
+	shellmodule.RegisterWithOptions(tools, verifiers, shellmodule.Options{
+		PTYBackend: remotePTY,
+		PTYInspector: stubPTYInspector{
+			inspect: shellmodule.PTYInspectResult{Status: "active"},
+			read:    shellmodule.PTYReadResult{Status: "active"},
+		},
+	})
+	def, ok := tools.Get("shell.exec")
+	if !ok {
+		t.Fatalf("expected shell.exec definition")
+	}
+	if ptyVerifiers, _ := def.Definition.Metadata["pty_verifiers"].(bool); !ptyVerifiers {
+		t.Fatalf("expected pty_verifiers metadata to be true with explicit PTY inspector, got %#v", def.Definition.Metadata)
+	}
+	for _, kind := range []string{"pty_handle_active", "pty_stream_contains", "pty_exit_code"} {
+		if _, ok := verifiers.Get(kind); !ok {
+			t.Fatalf("expected PTY verifier %q with explicit PTY inspector", kind)
 		}
 	}
 }

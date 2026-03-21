@@ -13,33 +13,30 @@ import (
 )
 
 type PTYHandleActiveChecker struct {
-	Manager *PTYManager
+	Inspector PTYInspector
 }
 
 type PTYStreamContainsChecker struct {
-	Manager *PTYManager
+	Inspector PTYInspector
 }
 
 type PTYExitCodeChecker struct {
-	Manager *PTYManager
+	Inspector PTYInspector
 }
 
 func (c PTYHandleActiveChecker) Verify(_ context.Context, _ map[string]any, result action.Result, _ session.State) (verify.Result, error) {
-	if c.Manager == nil {
-		return verify.Result{Success: false, Reason: "pty manager not configured"}, nil
+	if c.Inspector == nil {
+		return verify.Result{Success: false, Reason: "pty inspector not configured"}, nil
 	}
 	handleID, err := ptyHandleIDFromResult(result)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
-	ptySession, err := c.Manager.session(handleID)
+	inspect, err := c.Inspector.Inspect(context.Background(), handleID)
 	if err != nil {
 		return verify.Result{Success: false, Reason: err.Error()}, nil
 	}
-
-	ptySession.mu.RLock()
-	defer ptySession.mu.RUnlock()
-	success := !ptySession.closed
+	success := !inspect.Closed
 	reason := "pty handle is active"
 	if !success {
 		reason = "pty handle is not active"
@@ -49,15 +46,15 @@ func (c PTYHandleActiveChecker) Verify(_ context.Context, _ map[string]any, resu
 		Reason:  reason,
 		Details: map[string]any{
 			"handle_id": handleID,
-			"closed":    ptySession.closed,
-			"status":    ptySession.handle.Status,
+			"closed":    inspect.Closed,
+			"status":    inspect.Status,
 		},
 	}, nil
 }
 
 func (c PTYStreamContainsChecker) Verify(ctx context.Context, args map[string]any, result action.Result, _ session.State) (verify.Result, error) {
-	if c.Manager == nil {
-		return verify.Result{Success: false, Reason: "pty manager not configured"}, nil
+	if c.Inspector == nil {
+		return verify.Result{Success: false, Reason: "pty inspector not configured"}, nil
 	}
 	needle, _ := args["text"].(string)
 	if needle == "" {
@@ -80,7 +77,7 @@ func (c PTYStreamContainsChecker) Verify(ctx context.Context, args map[string]an
 	}
 	seen := ""
 	for {
-		read, err := c.Manager.Read(ctx, handleID, PTYReadRequest{
+		read, err := c.Inspector.Read(ctx, handleID, PTYReadRequest{
 			Offset:   offset,
 			MaxBytes: maxBytes,
 		})
@@ -122,8 +119,8 @@ func (c PTYStreamContainsChecker) Verify(ctx context.Context, args map[string]an
 }
 
 func (c PTYExitCodeChecker) Verify(ctx context.Context, args map[string]any, result action.Result, _ session.State) (verify.Result, error) {
-	if c.Manager == nil {
-		return verify.Result{Success: false, Reason: "pty manager not configured"}, nil
+	if c.Inspector == nil {
+		return verify.Result{Success: false, Reason: "pty inspector not configured"}, nil
 	}
 	allowedRaw, ok := args["allowed"]
 	if !ok {
@@ -141,34 +138,30 @@ func (c PTYExitCodeChecker) Verify(ctx context.Context, args map[string]any, res
 	timeout := ptyTimeoutFromArgs(args, time.Second)
 	deadline := time.Now().Add(timeout)
 	for {
-		ptySession, err := c.Manager.session(handleID)
+		inspect, err := c.Inspector.Inspect(ctx, handleID)
 		if err != nil {
 			return verify.Result{Success: false, Reason: err.Error()}, nil
 		}
-		ptySession.mu.RLock()
-		closed := ptySession.closed
-		exitCode := ptySession.exitCode
-		ptySession.mu.RUnlock()
-		if closed {
+		if inspect.Closed {
 			for _, item := range allowedList {
 				candidate, ok := verifyAsInt(item)
-				if ok && candidate == exitCode {
+				if ok && candidate == inspect.ExitCode {
 					return verify.Result{
 						Success: true,
 						Reason:  "PTY exit code allowed",
 						Details: map[string]any{
 							"handle_id": handleID,
-							"exit_code": exitCode,
+							"exit_code": inspect.ExitCode,
 						},
 					}, nil
 				}
 			}
 			return verify.Result{
 				Success: false,
-				Reason:  fmt.Sprintf("exit_code %d not allowed", exitCode),
+				Reason:  fmt.Sprintf("exit_code %d not allowed", inspect.ExitCode),
 				Details: map[string]any{
 					"handle_id": handleID,
-					"exit_code": exitCode,
+					"exit_code": inspect.ExitCode,
 				},
 			}, nil
 		}

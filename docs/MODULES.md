@@ -106,6 +106,7 @@ Demonstrates:
 - `shell.exec`
 - `pipe` and `pty` shell modes
 - explicit external PTY backend wiring through `shellmodule.Options{PTYBackend: ...}`
+- explicit PTY inspection wiring through `shellmodule.Options{PTYInspector: ...}`
 - verifier registration including PTY-specific verifier kinds
 - default shell policy hints
 - a shared `PTYManager` hook for interactive shell control and attach/detach stream bridging
@@ -114,7 +115,7 @@ Demonstrates:
 
 Verifier wiring rule:
 - `exit_code` and `output_contains` are always registered
-- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when a local `PTYManager` is available
+- `pty_handle_active`, `pty_stream_contains`, and `pty_exit_code` are registered only when PTY inspection is available
 
 ### `modules/filesystem`
 Demonstrates:
