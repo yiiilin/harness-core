@@ -1,3 +1,4 @@
+// Command postgres-embedded shows the public durable Postgres bootstrap without any adapter layer.
 package main
 
 import (
@@ -40,6 +41,8 @@ func main() {
 	fmt.Printf("output: %s\n", strings.TrimSpace(result.Output))
 }
 
+// RunEmbeddedDemo opens a durable runtime, seeds one verified shell step, executes it,
+// and reads back persisted attempts through the public Postgres bootstrap path.
 func RunEmbeddedDemo(ctx context.Context, dsn string) (DemoResult, error) {
 	var opts hruntime.Options
 	builtins.Register(&opts)

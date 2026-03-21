@@ -1,3 +1,4 @@
+// Command planner-context shows how to build a layered planner-facing context package.
 package main
 
 import (
@@ -15,6 +16,7 @@ type LayeredContextAssembler struct {
 	MaxPreviewBytes int
 }
 
+// Assemble returns a planner-friendly context package and adds compact previews in Extras.
 func (a LayeredContextAssembler) Assemble(_ context.Context, state session.State, spec task.Spec) (hruntime.ContextPackage, error) {
 	limit := a.MaxPreviewBytes
 	if limit <= 0 {
@@ -96,5 +98,6 @@ func main() {
 		panic(err)
 	}
 	body, _ := json.MarshalIndent(assembled.ToMap(), "", "  ")
+	fmt.Println("assembled context package:")
 	fmt.Println(string(body))
 }

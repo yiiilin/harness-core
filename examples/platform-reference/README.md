@@ -27,15 +27,47 @@ This example is intentionally outside the kernel and demonstrates platform-side 
   - The platform explicitly closes PTY process state via PTY manager.
   - Then it calls `CloseRuntimeHandle` in harness runtime to keep persisted handle state aligned with real process lifecycle.
 
-## Why `CloseRuntimeHandle` Instead of `InvalidateRuntimeHandle`
-
-This flow is a normal, graceful shutdown requested by the platform after successful PTY interaction. `CloseRuntimeHandle` is the appropriate lifecycle signal for clean completion.
-
-`InvalidateRuntimeHandle` is better reserved for stale/unsafe/unknown handle state (for example crash, orphaning, or invalid recovery path), not intentional close.
-
 ## Run
 
 ```bash
 go test ./examples/platform-reference -run TestRunReferenceDemo -count=1
 go run ./examples/platform-reference
 ```
+
+## Expected Output
+
+You should see a short summary similar to:
+
+```text
+session: ...
+phase: complete
+runtime handle: ... (closed)
+active verify: true
+stream verify: true
+attach output: hello from platform reference
+attach detached: true
+lease released: true
+```
+
+The important behaviors are:
+
+- the worker claims and later releases the session lease
+- the PTY-backed step creates a persisted runtime handle
+- verifier checks succeed against the live PTY session
+- detach stops the bridged output while the PTY remains alive
+- the runtime handle is explicitly closed after the PTY shuts down
+
+## Why `CloseRuntimeHandle` Instead of `InvalidateRuntimeHandle`
+
+This flow is a normal, graceful shutdown requested by the platform after successful PTY interaction. `CloseRuntimeHandle` is the appropriate lifecycle signal for clean completion.
+
+`InvalidateRuntimeHandle` is better reserved for stale/unsafe/unknown handle state (for example crash, orphaning, or invalid recovery path), not intentional close.
+
+## When To Use This Example
+
+Use this as a reference when:
+
+- building a platform worker around claimed execution
+- integrating PTY-backed shell execution
+- bridging external input/output streams into a runtime-managed PTY
+- keeping platform-side process lifecycle aligned with persisted runtime handles

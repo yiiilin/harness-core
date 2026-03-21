@@ -1,3 +1,4 @@
+// Command postgres-workers shows claim/lease coordination across multiple durable runtime instances.
 package main
 
 import (
@@ -65,10 +66,12 @@ func main() {
 	fmt.Printf("attempts: %d\n", result.AttemptCount)
 	fmt.Printf("renewals: %d\n", result.TotalRenewals)
 	for _, worker := range result.Workers {
-		fmt.Printf("%s handled %s session %s\n", worker.Name, worker.Mode, worker.Session.SessionID)
+		fmt.Printf("%s handled %s session %s output=%q renewals=%d\n", worker.Name, worker.Mode, worker.Session.SessionID, worker.Output, worker.Renewals)
 	}
 }
 
+// RunWorkersDemo seeds one runnable and one recoverable session, then lets two durable runtime
+// instances compete for them through the public claim/lease API surface.
 func RunWorkersDemo(ctx context.Context, dsn string) (DemoResult, error) {
 	seedRT, seedDB, err := openRuntime(ctx, dsn)
 	if err != nil {
@@ -151,6 +154,7 @@ func RunWorkersDemo(ctx context.Context, dsn string) (DemoResult, error) {
 	}, nil
 }
 
+// RunOnce is the minimal durable worker loop for either runnable or recoverable work.
 func (w Worker) RunOnce(ctx context.Context) (WorkerResult, error) {
 	if w.Runtime == nil {
 		return WorkerResult{}, fmt.Errorf("%s runtime is required", w.Name)
@@ -246,6 +250,7 @@ func openRuntime(ctx context.Context, dsn string) (*hruntime.Service, *sql.DB, e
 	return hpostgres.OpenService(ctx, dsn, opts)
 }
 
+// seedDemoSession stores a one-step durable session that a worker can later claim and execute.
 func seedDemoSession(rt *hruntime.Service, title, command string) (session.State, plan.StepSpec, error) {
 	sess, err := rt.CreateSession(title, "durable multi-worker reference example")
 	if err != nil {
@@ -284,6 +289,7 @@ func seedDemoSession(rt *hruntime.Service, title, command string) (session.State
 	return sess, step, nil
 }
 
+// makeRecoverable moves a claimed session into interrupted state so another worker can recover it.
 func makeRecoverable(ctx context.Context, rt *hruntime.Service, sessionID, stepID string) error {
 	claimed, ok, err := rt.ClaimRunnableSession(ctx, workerLeaseTTL)
 	if err != nil {

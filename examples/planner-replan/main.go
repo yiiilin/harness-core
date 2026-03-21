@@ -1,3 +1,4 @@
+// Command planner-replan shows planner-generated revisions across multiple execution cycles.
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 
 type SequencePlanner struct{}
 
+// PlanNext emits alpha first, then beta after state advances past the first step.
 func (SequencePlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ hruntime.ContextPackage) (plan.StepSpec, error) {
 	switch state.CurrentStepID {
 	case "":
@@ -84,5 +86,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	records, err := rt.ListPlanningRecords(sess.SessionID)
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("phase after replanned step=%s\n", secondRun.Session.Phase)
+	fmt.Printf("planning records=%d\n", len(records))
 }

@@ -1,3 +1,4 @@
+// Command platform-reference shows a small platform-side worker around claimed PTY execution.
 package main
 
 import (
@@ -60,10 +61,15 @@ func main() {
 	fmt.Printf("session: %s\n", result.Worker.Run.Session.SessionID)
 	fmt.Printf("phase: %s\n", result.Worker.Run.Session.Phase)
 	fmt.Printf("runtime handle: %s (%s)\n", result.PersistedRuntimeHandle.HandleID, result.ClosedRuntimeHandle.Status)
+	fmt.Printf("active verify: %v\n", result.ActiveVerify.Success)
+	fmt.Printf("stream verify: %v\n", result.StreamVerify.Success)
 	fmt.Printf("attach output: %s\n", strings.TrimSpace(result.AttachOutput))
+	fmt.Printf("attach detached: %v\n", result.AttachDetached)
 	fmt.Printf("lease released: %v\n", result.InteractiveHandleReleased)
 }
 
+// RunReferenceDemo seeds one PTY-backed session, runs it under a claimed worker, bridges I/O,
+// verifies the PTY state, and reconciles the runtime handle lifecycle.
 func RunReferenceDemo(ctx context.Context) (DemoResult, error) {
 	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})
 	defer func() {
@@ -202,6 +208,7 @@ func newPlatformRuntime(manager *shellmodule.PTYManager) *harness.Service {
 	return harness.New(opts)
 }
 
+// seedInteractiveSession creates one session whose only step launches a PTY-backed cat process.
 func seedInteractiveSession(rt *harness.Service) (harness.SessionState, plan.StepSpec, error) {
 	sess, err := rt.CreateSession("platform-reference", "run a claimed PTY-backed shell step")
 	if err != nil {
@@ -236,6 +243,7 @@ func seedInteractiveSession(rt *harness.Service) (harness.SessionState, plan.Ste
 	return sess, step, nil
 }
 
+// RunOnce is the minimal claimed worker loop: claim, renew lease, run, then release.
 func (w PlatformWorker) RunOnce(ctx context.Context) (WorkerRunResult, bool, error) {
 	if w.Runtime == nil {
 		return WorkerRunResult{}, false, errors.New("runtime is required")
@@ -295,6 +303,7 @@ func (w PlatformWorker) RunOnce(ctx context.Context) (WorkerRunResult, bool, err
 	}, true, nil
 }
 
+// readUntilContains polls the PTY stream directly to prove the process stays alive after detach.
 func readUntilContains(ctx context.Context, manager *shellmodule.PTYManager, handleID string, offset int64, needle string) (shellmodule.PTYReadResult, error) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -310,6 +319,7 @@ func readUntilContains(ctx context.Context, manager *shellmodule.PTYManager, han
 	return shellmodule.PTYReadResult{}, fmt.Errorf("timed out waiting for PTY output containing %q", needle)
 }
 
+// waitForClosedPTY waits until the PTY manager reports the session as closed.
 func waitForClosedPTY(ctx context.Context, manager *shellmodule.PTYManager, handleID string) (shellmodule.PTYReadResult, error) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -343,6 +353,7 @@ func mergeReadResults(active, closed shellmodule.PTYReadResult) shellmodule.PTYR
 	return out
 }
 
+// waitForBufferContains confirms that Attach bridged PTY output into an external writer.
 func waitForBufferContains(ctx context.Context, buf *lockedBuffer, needle string) error {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
