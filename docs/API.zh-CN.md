@@ -14,6 +14,14 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 - 只暴露执行内核能力
 - 不把传输、认证、用户、租户、产品概念塞进内核类型
 
+仓库模块布局：
+- 根内核模块：`github.com/yiiilin/harness-core`
+- companion 组合模块：`github.com/yiiilin/harness-core/pkg/harness/builtins`
+- companion capability-pack 模块：`github.com/yiiilin/harness-core/modules`
+- companion adapter 模块：`github.com/yiiilin/harness-core/adapters`
+- companion CLI 模块：`github.com/yiiilin/harness-core/cmd/harness-core`
+- 仓库内本地开发通过已提交的 `go.work` 组织
+
 配套文档：
 - `docs/KERNEL_SCOPE.md`
 - `docs/VERSIONING.md`
@@ -27,15 +35,8 @@ import "github.com/yiiilin/harness-core/pkg/harness"
   - 构造器：
     - `harness.New(opts)`
     - `harness.NewDefault()`
-  - 兼容组合包装：
-    - `harness.NewWithBuiltins()`
-    - `harness.RegisterBuiltins(&opts)`
 
-### 组合辅助包
-
-- `pkg/harness/builtins`
-  - `builtins.New()`
-  - `builtins.Register(&opts)`
+### 稳定的根模块辅助包
 
 - `pkg/harness/postgres`
   - `OpenDB(...)`
@@ -66,6 +67,20 @@ import "github.com/yiiilin/harness-core/pkg/harness"
   - 便捷函数：
     - `LoadSessionProjection(...)`
     - `LoadCycleProjection(...)`
+
+### 公开的 companion 组合模块
+
+- `pkg/harness/builtins`
+  - `builtins.New()`
+  - `builtins.Register(&opts)`
+  - 导入路径不变，但现在由单独的 `go.mod` 发布
+  - 它负责默认能力包组合，不属于裸内核稳定承诺的一部分
+
+### 公开的 companion 模块
+
+- `modules/*`
+- `adapters/*`
+- `cmd/harness-core`
 
 ### Runtime 控制面
 
@@ -177,16 +192,17 @@ Runtime handle 控制：
 - `pkg/harness/persistence`
 - `pkg/harness/observability`
 - `pkg/harness/executor/*`
-- `pkg/harness/builtins`
 
-参考实现，变化更快：
+公开但独立版本演进、变化更快的 companion 模块：
+- `pkg/harness/builtins`
 - `modules/*`
 - `adapters/*`
+- `cmd/harness-core`
 
 无兼容承诺：
 - `internal/*`
-- `cmd/*`
 - `examples/*`
+- `docs/plans/*`
 
 ## 最短接入路径
 

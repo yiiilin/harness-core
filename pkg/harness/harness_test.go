@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 )
 
 func TestNewDefaultProvidesCoreComponents(t *testing.T) {
@@ -28,8 +29,10 @@ func TestNewDefaultProvidesCoreComponents(t *testing.T) {
 	}
 }
 
-func TestNewWithBuiltinsRegistersBuiltins(t *testing.T) {
-	rt := harness.NewWithBuiltins()
+func TestBuiltinsPackageRegistersBuiltins(t *testing.T) {
+	opts := harness.Options{}
+	builtins.Register(&opts)
+	rt := harness.New(opts)
 	if len(rt.ListTools()) < 2 {
 		t.Fatalf("expected built-in tools to be registered")
 	}

@@ -5,3 +5,5 @@
 *.log
 .env
 .DS_Store
+/harness-core
+/harness-core.exe

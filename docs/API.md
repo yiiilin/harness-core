@@ -14,6 +14,14 @@ Scope rule:
 - kernel API only
 - no transport/auth/user/tenant/product API in kernel types
 
+Repository module layout:
+- root kernel module: `github.com/yiiilin/harness-core`
+- companion composition module: `github.com/yiiilin/harness-core/pkg/harness/builtins`
+- companion capability-pack module: `github.com/yiiilin/harness-core/modules`
+- companion adapter module: `github.com/yiiilin/harness-core/adapters`
+- companion CLI module: `github.com/yiiilin/harness-core/cmd/harness-core`
+- local in-repo development uses the committed `go.work`
+
 See:
 - `docs/KERNEL_SCOPE.md`
 - `docs/VERSIONING.md`
@@ -27,15 +35,8 @@ See:
   - constructors:
     - `harness.New(opts)`
     - `harness.NewDefault()`
-  - compatibility composition wrappers:
-    - `harness.NewWithBuiltins()`
-    - `harness.RegisterBuiltins(&opts)`
 
-### Composition helper packages
-
-- `pkg/harness/builtins`
-  - `builtins.New()`
-  - `builtins.Register(&opts)`
+### Stable root helper packages
 
 - `pkg/harness/postgres`
   - `OpenDB(...)`
@@ -66,6 +67,20 @@ See:
   - convenience helpers:
     - `LoadSessionProjection(...)`
     - `LoadCycleProjection(...)`
+
+### Public companion composition module
+
+- `pkg/harness/builtins`
+  - `builtins.New()`
+  - `builtins.Register(&opts)`
+  - same import path as before, but now shipped from a separate `go.mod`
+  - convenience composition for local/default capability packs, not part of the bare-kernel stability promise
+
+### Public companion modules
+
+- `modules/*`
+- `adapters/*`
+- `cmd/harness-core`
 
 ### Runtime control plane
 
@@ -183,16 +198,17 @@ Public and supported but evolving faster pre-1.0:
 - `pkg/harness/persistence`
 - `pkg/harness/observability`
 - `pkg/harness/executor/*`
-- `pkg/harness/builtins`
 
-Reference and fast-moving:
+Public companion modules, independently versioned and intentionally faster-moving:
+- `pkg/harness/builtins`
 - `modules/*`
 - `adapters/*`
+- `cmd/harness-core`
 
 No compatibility promise:
 - `internal/*`
-- `cmd/*`
 - `examples/*`
+- `docs/plans/*`
 
 ## Minimal Embedding Path
 

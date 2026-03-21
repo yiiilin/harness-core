@@ -11,6 +11,7 @@ import (
 	internalpostgres "github.com/yiiilin/harness-core/internal/postgres"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	"github.com/yiiilin/harness-core/pkg/harness/replay"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -22,7 +23,6 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = harness.NewDefault
 	var _ = harness.NewWorkerHelper
 	var _ = harness.NewReplayReader
-	var _ = harness.RegisterBuiltins
 	var _ = (*harness.Service).CreatePlanFromPlanner
 	var _ = (*harness.Service).RunSession
 	var _ = (*harness.Service).RunClaimedSession
@@ -41,6 +41,7 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = hpostgres.OpenDB
 	var _ = hpostgres.ApplyMigrations
 	var _ = hpostgres.OpenService
+	var _ = builtins.Register
 
 	var _ harness.WorkerOptions
 	var _ harness.WorkerLoopOptions
@@ -56,7 +57,7 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 func TestTier1InMemoryWorkerApprovalReplayFlow(t *testing.T) {
 	ctx := context.Background()
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := harness.New(opts).WithPolicyEvaluator(releaseAskAllPolicy{})
 
 	sessionID := seedShellSession(t, rt, "tier1-memory", "echo tier1 memory release")
@@ -132,7 +133,7 @@ func TestTier1PostgresRestartApprovalResumeFlow(t *testing.T) {
 	pg := postgrestest.Start(t)
 
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	opts.Policy = releaseAskAllPolicy{}
 
 	rt1, db1, err := hpostgres.OpenService(ctx, pg.DSN, opts)
@@ -252,7 +253,7 @@ func TestPostgresUpgradeFromPreviousSchemaVersionRemainsBootable(t *testing.T) {
 	}
 
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt, db2, err := hpostgres.OpenService(ctx, pg.DSN, opts)
 	if err != nil {
 		t.Fatalf("open service after upgrade: %v", err)

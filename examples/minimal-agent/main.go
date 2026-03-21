@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
@@ -14,7 +15,7 @@ import (
 func main() {
 	// Compose the bare kernel with built-in tools/verifiers and a trivial planner.
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := harness.New(opts).WithPlanner(hruntime.DemoPlanner{})
 
 	// Create the minimum lifecycle objects the runtime expects.

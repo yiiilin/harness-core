@@ -4,7 +4,6 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
-	hbuiltins "github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
@@ -128,18 +127,6 @@ func New(opts Options) *Service {
 // NewDefault constructs a runtime using default in-memory components.
 func NewDefault() *Service {
 	return hruntime.New(Options{})
-}
-
-// NewWithBuiltins constructs a runtime with default in-memory components and built-in tools/verifiers.
-// This is a convenience composition helper layered on top of the bare kernel path.
-func NewWithBuiltins() *Service {
-	return hbuiltins.New()
-}
-
-// RegisterBuiltins wires the default built-in tools and verifiers into options.
-// This is a convenience composition helper layered on top of the bare kernel path.
-func RegisterBuiltins(opts *Options) {
-	hbuiltins.Register(opts)
 }
 
 // NewWorkerHelper constructs the public claim/renew/run/recover/release helper.

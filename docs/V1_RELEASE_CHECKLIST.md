@@ -60,8 +60,8 @@ The current docs already identify the intended stable path:
 Before `v1`, the project must explicitly resolve the current single-module
 semver problem:
 
-- today the repository has one `go.mod`
-- in practice, external users may read a `v1` tag as a compatibility promise for
+- historically the repository had one `go.mod`
+- in practice, external users could read a root `v1` tag as a compatibility promise for
   all public import paths in that module
 - current docs still describe `modules/*` and `adapters/*` as faster-moving
 
@@ -71,6 +71,12 @@ One concrete strategy must be chosen and documented:
 2. split faster-moving surfaces into separate Go modules
 3. otherwise restructure public paths so unstable surfaces are not accidentally
    implied to be `v1`-stable
+
+Selected direction:
+
+- strategy 2
+- see `docs/plans/2026-03-21-v1-multi-module-split-plan.md`
+- implemented with nested modules for `pkg/harness/builtins`, `modules`, `adapters`, and `cmd/harness-core`, plus a committed `go.work`
 
 Exit criteria:
 

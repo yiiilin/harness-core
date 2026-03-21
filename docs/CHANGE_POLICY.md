@@ -30,11 +30,12 @@ must be updated explicitly.
 
 This policy does **not** automatically grant the same stability promise to:
 
+- `pkg/harness/builtins`
 - `modules/*`
 - `adapters/*`
 - `internal/*`
 - `examples/*`
-- `cmd/*`
+- `cmd/harness-core`
 
 Those surfaces follow the compatibility classification documented in
 `docs/VERSIONING.md`.
@@ -74,7 +75,7 @@ These are generally safe for minor releases:
 - additive fields in output structs, when zero-value compatible
 - additive event payload fields, if old readers keep working
 - additive migration inspection helpers
-- new modules, adapters, examples, and optional helper packages outside the
+- new companion modules, examples, and optional helper packages outside the
   stable kernel path
 
 Minor releases must keep:

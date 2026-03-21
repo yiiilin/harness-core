@@ -8,6 +8,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -226,7 +227,7 @@ func runRecoveryScenario(ctx context.Context) (RecoveryResult, error) {
 
 func newRuntimeWithBuiltins(policy permission.Evaluator) *harness.Service {
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	if policy != nil {
 		opts.Policy = policy
 	}

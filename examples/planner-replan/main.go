@@ -7,6 +7,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -48,7 +49,7 @@ func (SequencePlanner) PlanNext(_ context.Context, state session.State, _ task.S
 
 func main() {
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := harness.New(opts).WithPlanner(SequencePlanner{})
 
 	sess, err := rt.CreateSession("planner replan", "derive and replan shell work")

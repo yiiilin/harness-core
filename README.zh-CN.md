@@ -29,6 +29,20 @@
 
 ---
 
+## 仓库模块布局
+
+- 根内核模块：`github.com/yiiilin/harness-core`
+- companion 组合模块：`github.com/yiiilin/harness-core/pkg/harness/builtins`
+- companion capability-pack 模块：`github.com/yiiilin/harness-core/modules`
+- companion adapter 模块：`github.com/yiiilin/harness-core/adapters`
+- companion CLI 模块：`github.com/yiiilin/harness-core/cmd/harness-core`
+- 仓库内开发通过已提交的 `go.work` 组织
+
+根 `pkg/harness` facade 现在刻意只保留裸内核入口。
+内置能力包组合通过 `pkg/harness/builtins` 完成，不再通过 root facade 的便捷包装器完成。
+
+---
+
 ## 当前已经具备的能力
 
 目前仓库里已经有：
@@ -66,6 +80,8 @@
 
 ## 最推荐的初始化方式
 
+显式使用裸内核加 companion builtins 模块：
+
 ```go
 import (
   "github.com/yiiilin/harness-core/pkg/harness"
@@ -83,6 +99,14 @@ rt := harness.New(opts)
 - `Planner`
 - `EventSink`
 - tool / verifier registrations
+
+最稳定的接入路径仍然是：
+- `pkg/harness`
+- `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
+
+`pkg/harness/builtins`、`modules/*`、`adapters/*`、`cmd/harness-core` 则属于公开但独立版本演进的 companion modules。
 
 ---
 
@@ -118,9 +142,14 @@ go run .
 ## 测试与性能基线
 
 ```bash
-go test ./...
+make test-workspace
+make release-check
 go test -bench . -benchmem ./pkg/harness/runtime
 ```
+
+- `make test-workspace` 会通过 `go.work` 跑完整个仓库的多模块测试
+- `make release-check` 只关注稳定内核承诺的 release gate
+- `make build` 会把参考服务端二进制输出到 `bin/harness-core`
 
 ---
 

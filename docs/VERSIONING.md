@@ -13,13 +13,35 @@ The purpose of this document is to reduce unnecessary vendoring, patching, and g
 
 `harness-core` follows a **kernel-first pre-1.0 stability model**:
 
-- the top-level embedding path should stay relatively stable
+- the root module carries the kernel-first stability promise
 - lower-level kernel/domain packages are public, but may still evolve while correctness gaps close
-- modules and adapters are intentionally faster-moving
-- `internal/*`, `cmd/*`, and `examples/*` are not compatibility surfaces
+- companion modules are public, but versioned independently and allowed to move faster
+- `internal/*`, `examples/*`, and planning docs are not compatibility surfaces
 
 This is not a promise of zero churn before `v1.0.0`.
 It is a statement of intent about which surfaces embedders should bet on first.
+
+---
+
+## Repository Module Layout
+
+The repository now uses multiple `go.mod` roots plus a committed `go.work` for local development:
+
+- root kernel module: `github.com/yiiilin/harness-core`
+- companion composition module: `github.com/yiiilin/harness-core/pkg/harness/builtins`
+- companion capability-pack module: `github.com/yiiilin/harness-core/modules`
+- companion adapter module: `github.com/yiiilin/harness-core/adapters`
+- companion CLI module: `github.com/yiiilin/harness-core/cmd/harness-core`
+
+Important implication:
+
+- `pkg/harness/builtins` looks like a `pkg/harness/*` package path, but it is **not** part of the root module's kernel-stability promise
+- module root, not directory prefix alone, defines the release boundary
+
+For local repository verification:
+
+- `make test-workspace` runs tests across all workspace modules
+- `make release-check` stays focused on the Tier 1 kernel promise
 
 ---
 
@@ -27,10 +49,13 @@ It is a statement of intent about which surfaces embedders should bet on first.
 
 ### Tier 1: Most stable embedding surfaces
 
-These are the first packages embedders should depend on:
+These are the first packages embedders should depend on.
+They all live in the root kernel module:
 
 - `pkg/harness`
 - `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
 - public helper packages under `pkg/harness/*` whose purpose is explicitly embedding-facing rather than product-facing
 
 Stability intent:
@@ -43,14 +68,13 @@ Examples:
 
 - `harness.New(...)`
 - `harness.NewDefault()`
-- `builtins.Register(&opts)`
 - `postgres.OpenService(...)`
 - `worker.New(...)` and `(*worker.Worker).RunOnce(...)`
 - `replay.NewReader(...)` and projection helpers
 
 ### Tier 2: Public but still evolving
 
-These packages are supported and importable, but may change faster than the facade:
+These root-module packages are supported and importable, but may change faster than the Tier 1 facade:
 
 - `pkg/harness/runtime`
 - `pkg/harness/task`
@@ -64,7 +88,6 @@ These packages are supported and importable, but may change faster than the faca
 - `pkg/harness/persistence`
 - `pkg/harness/observability`
 - `pkg/harness/executor/*`
-- `pkg/harness/builtins`
 
 Stability intent:
 
@@ -73,25 +96,27 @@ Stability intent:
 - avoid casual breaking churn
 - allow targeted changes when needed for runtime correctness, recovery correctness, replay/debug stability, or clearer kernel boundaries
 
-### Tier 3: Reference / fast-moving public packages
+### Tier 3: Public companion modules with independent cadence
 
-These are useful reference surfaces, but embedders should expect faster change:
+These are useful public surfaces, but they are intentionally versioned independently from the root kernel module and may change faster:
 
+- `pkg/harness/builtins`
 - `modules/*`
 - `adapters/*`
+- `cmd/harness-core`
 
 Stability intent:
 
 - keep them usable and documented
 - allow capability/transport iteration without forcing kernel redesign
-- do not treat them as the same compatibility contract as `pkg/harness`
+- do not treat them as the same compatibility contract as the Tier 1 root kernel path
+- allow a future root `v1.x` while these companion modules remain on their own `v0.x` cadence
 
 ### Tier 4: No public stability promise
 
 These are not supported as stable integration surfaces:
 
 - `internal/*`
-- `cmd/*`
 - `examples/*`
 - `docs/plans/*`
 
@@ -126,7 +151,7 @@ If you are building on `harness-core`:
 
 - start from `pkg/harness`
 - use `pkg/harness/postgres` for durable Postgres bootstrap
-- treat `modules/*` and `adapters/*` as reference/extensibility layers, not the kernel itself
+- treat `pkg/harness/builtins`, `modules/*`, `adapters/*`, and `cmd/harness-core` as companion modules, not the kernel itself
 - avoid importing `internal/*`
 - prefer local wrappers around public APIs instead of patching the runtime unless a true public-gap exists
 

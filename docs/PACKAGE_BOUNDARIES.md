@@ -22,25 +22,31 @@ Preferred bare-kernel constructors:
 - `harness.New(opts)`
 - `harness.NewDefault()`
 
-Preferred builtins composition helper package:
+Companion builtins composition helper:
 - `pkg/harness/builtins`
 - `builtins.New()`
 - `builtins.Register(&opts)`
+  - separate `go.mod`
+  - same import path, separate release cadence from the root kernel module
 
 Preferred durable Postgres bootstrap helper package:
 - `pkg/harness/postgres`
 - `postgres.OpenService(...)`
 - `postgres.BuildOptions(...)`
 
-Compatibility wrappers on `pkg/harness` may remain for convenience, but the composition helper package is the clearer boundary.
+Repository companion modules:
+- `modules/*`
+- `adapters/*`
+- `cmd/harness-core`
 
-These convenience helpers may wire default module packs for local embedding, but they do not expand what the kernel owns.
+The root `pkg/harness` facade intentionally stays on the bare-kernel path.
+Built-in capability packs are composed through the companion `pkg/harness/builtins` module, not root convenience wrappers.
 
 ---
 
 ## Public-facing packages (preferred)
 
-These packages are the intended primary surfaces for consumers:
+These root-module packages are the intended primary surfaces for consumers:
 
 - `pkg/harness`
 - `pkg/harness/runtime`
@@ -53,7 +59,6 @@ These packages are the intended primary surfaces for consumers:
 - `pkg/harness/permission`
 - `pkg/harness/audit`
 - `pkg/harness/observability`
-- `pkg/harness/builtins`
 - `pkg/harness/postgres`
 - `pkg/harness/worker`
 - `pkg/harness/replay`
@@ -63,16 +68,20 @@ These packages define the kernel's reusable contracts and composition points.
 
 ---
 
-## Semi-stable / advanced-use packages
+## Public companion modules
 
-These are useful, but consumers should expect them to evolve faster:
+These are useful and supported, but consumers should expect them to evolve faster and to follow their own module versioning:
 
+- `pkg/harness/builtins`
 - `modules/*`
 - `adapters/*`
+- `cmd/harness-core`
 
 Rationale:
+- `pkg/harness/builtins` is composition glue for default capability packs, not bare-kernel API
 - modules are capability packs and may expand rapidly
 - adapters reflect transport/runtime choices and are not the kernel itself
+- the CLI is an operational reference surface, not a library contract
 
 ---
 
@@ -81,12 +90,13 @@ Rationale:
 The public package boundary should reinforce kernel scope, not weaken it.
 
 Rules:
-- `pkg/harness/*` must not import `adapters/*`
+- root-module `pkg/harness/*` must not import `adapters/*`
 - exported kernel types must not encode transport, auth, user, tenant, or UI concepts
 - concrete bootstrap helpers such as `pkg/harness/postgres` may exist, but they should stay as composition layers rather than polluting core runtime/domain types
 - module packs may register tools or verifiers, but module lifecycle and UX semantics should stay out of kernel domain objects
 - convenience bundle helpers should stay mechanically separate from the bare-kernel path whenever possible
 - `pkg/harness/runtime` should not directly import `modules/*`; composition should happen in a separate helper layer
+- do not infer kernel ownership from the directory prefix alone; `pkg/harness/builtins` is intentionally a separate companion module
 
 ---
 
@@ -95,10 +105,11 @@ Rules:
 These are not intended as the primary public integration surface:
 
 - `internal/*`
-- `cmd/*`
 - `examples/*`
+- `docs/plans/*`
 
 They are useful for reference and testing, but embedding applications should avoid depending on them directly.
+`cmd/harness-core` is public as a companion CLI module, but it is not a preferred library integration surface.
 
 ---
 

@@ -22,6 +22,18 @@ It is designed for builders who want a **small, composable, high-leverage core**
 - not a UI product
 - not a provider-specific framework
 
+## Repository module layout
+
+- root kernel module: `github.com/yiiilin/harness-core`
+- companion composition module: `github.com/yiiilin/harness-core/pkg/harness/builtins`
+- companion capability-pack module: `github.com/yiiilin/harness-core/modules`
+- companion adapter module: `github.com/yiiilin/harness-core/adapters`
+- companion CLI module: `github.com/yiiilin/harness-core/cmd/harness-core`
+- local development uses the committed `go.work`
+
+The root `pkg/harness` facade stays intentionally bare-kernel.
+Built-in capability packs are wired through `pkg/harness/builtins`, not root convenience wrappers.
+
 ## Current scaffold status
 
 Implemented today:
@@ -83,6 +95,8 @@ Implemented today:
 
 ## Default construction style
 
+Use the bare kernel plus the companion builtins module explicitly:
+
 ```go
 import (
   "github.com/yiiilin/harness-core/pkg/harness"
@@ -100,6 +114,14 @@ Then replace pieces incrementally as needed:
 - custom `Planner`
 - custom `EventSink`
 - custom tool and verifier registrations
+
+The most stable embedding path remains:
+- `pkg/harness`
+- `pkg/harness/postgres`
+- `pkg/harness/worker`
+- `pkg/harness/replay`
+
+Treat `pkg/harness/builtins`, `modules/*`, `adapters/*`, and `cmd/harness-core` as public companion modules with their own release cadence.
 
 ## Default durable Postgres construction style
 
@@ -175,6 +197,18 @@ go run ./cmd/harness-core migrate up
 
 The CLI is an operations convenience wrapper.
 Embedding platforms should use `pkg/harness/postgres` directly for bootstrap, status, pending-migration, and drift checks.
+
+## Verification commands
+
+```bash
+make test-workspace
+make release-check
+make build
+```
+
+- `make test-workspace` runs tests across the root kernel module plus all companion modules in `go.work`
+- `make release-check` runs the release gate focused on the stable kernel promise
+- `make build` writes the reference server binary to `bin/harness-core`
 
 ## Run minimal happy-path example
 

@@ -7,7 +7,7 @@ It wires the kernel directly through `pkg/harness`, registers the built-in tools
 ## What It Demonstrates
 
 - construct the kernel in-process
-- register built-in modules through `harness.RegisterBuiltins`
+- register built-in modules through `pkg/harness/builtins.Register`
 - attach a task to a session
 - assemble context explicitly
 - ask the planner for the next step explicitly

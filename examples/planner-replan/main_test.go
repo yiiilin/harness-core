@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness"
+	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
 
 func TestSequencePlannerSupportsRevisionedReplan(t *testing.T) {
 	opts := harness.Options{}
-	harness.RegisterBuiltins(&opts)
+	builtins.Register(&opts)
 	rt := harness.New(opts).WithPlanner(SequencePlanner{})
 
 	sess, err := rt.CreateSession("planner replan", "derive and replan shell work")
