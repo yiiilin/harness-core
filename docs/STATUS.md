@@ -4,6 +4,8 @@
 
 `harness-core` is a **pre-1.0 execution kernel for harness engineering**.
 
+For a fuller maintainers' assessment of current strengths, remaining pure-kernel gaps, and next priorities, see `docs/CURRENT_STATE.md`.
+
 It already has:
 - durable `task / session / plan / step` lifecycle contracts
 - a governed runtime loop: `plan -> policy -> approval -> execute -> verify -> recover`
