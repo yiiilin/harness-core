@@ -147,6 +147,7 @@ Read these together:
 
 - `docs/API.md`
 - `docs/API.zh-CN.md`
+- `docs/CHANGE_POLICY.md`
 - `docs/EMBEDDING.md`
 - `docs/PACKAGE_BOUNDARIES.md`
 - `docs/KERNEL_SCOPE.md`

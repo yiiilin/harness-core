@@ -6,6 +6,7 @@
 
 For a fuller maintainers' assessment of current strengths, remaining pure-kernel gaps, and next priorities, see `docs/CURRENT_STATE.md`.
 For explicit `v1.0.0` release gates, see `docs/V1_RELEASE_CHECKLIST.md`.
+For post-`v1` compatibility rules on the stable path, see `docs/CHANGE_POLICY.md`.
 
 It already has:
 - durable `task / session / plan / step` lifecycle contracts
@@ -23,6 +24,7 @@ It already has:
 - a public `pkg/harness/postgres` durable bootstrap path
 - a public `pkg/harness/worker` helper for claim/renew/run-or-recover/release loops
 - a public `pkg/harness/replay` helper for execution-cycle/audit replay projections
+- a dedicated `./release` test package for Tier 1 compatibility and durable upgrade/restart gates
 - public migration status / pending / drift helpers on `pkg/harness/postgres`
 - a public `pkg/harness` embedding facade
 - reference capability modules including PTY-backed shell execution
@@ -87,6 +89,7 @@ For existing-platform integration, the recommended path is now documented as:
 - replay/debug projection in `pkg/harness/replay`
 - integration patterns in `docs/EMBEDDING.md`
 - stability tiers in `docs/VERSIONING.md`
+- post-`v1` compatibility policy in `docs/CHANGE_POLICY.md`
 
 ## Current execution plan
 

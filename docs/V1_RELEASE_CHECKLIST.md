@@ -13,6 +13,7 @@ Use this together with:
 - `docs/KERNEL_SCOPE.md`
 - `docs/API.md`
 - `docs/VERSIONING.md`
+- `docs/CHANGE_POLICY.md`
 - `docs/CURRENT_STATE.md`
 - `docs/STATUS.md`
 
@@ -99,6 +100,8 @@ Exit criteria:
 
 - Tier 1 compatibility tests exist
 - CI has a release-oriented target for them
+- repository command entrypoint exists for them:
+  - `make test-release`
 - release notes can point to those packages as the supported stable path
 
 ### 3. Lock the durable Postgres upgrade contract
@@ -116,6 +119,7 @@ That requires explicit upgrade coverage for:
 Exit criteria:
 
 - at least one upgrade-path integration test exists
+- release gate includes a concrete previous-schema -> latest-schema upgrade test
 - migration and upgrade expectations are documented in public docs
 - `pkg/harness/postgres` is clearly stated as the canonical durable path
 - schema-breaking change policy is documented for post-`v1` releases
@@ -139,6 +143,8 @@ Exit criteria:
 
 - a documented release eval matrix exists
 - the matrix is runnable in CI
+- repository command entrypoint exists for it:
+  - `make release-check`
 - failures in those scenarios are treated as release blockers
 
 ### 5. Publish a narrow post-`v1` change policy

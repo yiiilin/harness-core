@@ -17,6 +17,7 @@ Use this together with:
 - `docs/API.md`
 - `docs/EMBEDDING.md`
 - `docs/VERSIONING.md`
+- `docs/CHANGE_POLICY.md`
 - `docs/KERNEL_SCOPE.md`
 - `docs/V1_RELEASE_CHECKLIST.md`
 
@@ -143,6 +144,7 @@ These areas are now in good shape and should be treated as current strengths:
 - runtime-handle persistence and lifecycle control
 - shell PTY execution extensibility
 - explicit stability guidance for embedders
+- dedicated release-gate tests for Tier 1 compatibility and durable restart/upgrade paths
 
 ## Current Pure-Kernel / Embedder-Facing Gaps
 

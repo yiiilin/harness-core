@@ -54,6 +54,22 @@ The workflow evals live under:
 
 - `./evals`
 
+### Release gate tests
+
+The repository now also has a dedicated release-oriented test package:
+
+- `./release`
+
+These tests are intentionally narrower than `go test ./...`.
+They protect the public `v1` story rather than every internal invariant.
+
+Current release-gate coverage includes:
+
+- Tier 1 public entrypoint presence and shape
+- in-memory approval -> resume -> replay flow through the stable embedding path
+- durable Postgres restart plus resumed approval flow through the stable embedding path
+- upgrade from the previous schema version to the latest schema version
+
 ### Human-readable workflow walkthroughs
 
 For visible scenario output rather than test assertions, run:
@@ -124,6 +140,31 @@ go test ./...
 go test ./evals -count=1
 ```
 
+### Run the release gate only
+
+```bash
+go test ./release -count=1
+```
+
+Or through `make`:
+
+```bash
+make test-release
+```
+
+### Run the current release-check matrix
+
+```bash
+make release-check
+```
+
+Current release-check matrix:
+
+- `./release`
+  - Tier 1 API compatibility and durable upgrade/restart gates
+- `./evals`
+  - public workflow composition gates
+
 ### Run the concrete workflow walkthrough
 
 ```bash
@@ -189,7 +230,7 @@ A useful rule of thumb:
 ## Near-term eval backlog
 
 1. add websocket end-to-end benchmark
-2. expand workflow eval cases across adapters and durable restart scenarios
+2. expand workflow eval cases across adapters and durable restart scenarios beyond the current release matrix
 3. add golden-output tests for protocol responses
 4. expose richer runtime metrics hooks beyond the in-memory recorder
 
