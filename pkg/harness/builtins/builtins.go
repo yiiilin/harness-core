@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
+	hverify "github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
 // Register wires the default built-in capability modules into runtime options.
@@ -17,6 +18,7 @@ func Register(opts *hruntime.Options) {
 	}
 	hasCustomPolicy := opts.Policy != nil
 	resolved := hruntime.WithDefaults(*opts)
+	hverify.RegisterBuiltins(resolved.Verifiers)
 	shellmodule.Register(resolved.Tools, resolved.Verifiers)
 	filesystemmodule.Register(resolved.Tools, resolved.Verifiers)
 	httpmodule.Register(resolved.Tools, resolved.Verifiers)
