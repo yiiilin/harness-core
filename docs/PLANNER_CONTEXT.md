@@ -26,6 +26,24 @@ The current demo planner exists to demonstrate the shape of the loop, not to act
 
 ---
 
+## Where the LLM fits
+
+`harness-core` does not ship a provider client, prompt stack, or model-routing layer.
+
+If you want LLM-backed planning, the embedding application should:
+
+- call the model provider it prefers
+- turn model output into one or more `plan.StepSpec` values
+- implement that translation behind `Planner`
+- optionally implement a richer `ContextAssembler`
+
+In other words:
+
+- kernel: planner/context contracts plus the execution loop
+- embedder: model client, prompts, retrieval, and provider routing
+
+---
+
 ## Current components
 
 ### DefaultContextAssembler
@@ -106,6 +124,7 @@ What the kernel now proves:
 
 What the kernel still intentionally does not do:
 - ship a heavyweight production planner
+- ship OpenAI/Anthropic/provider SDK wiring
 - ship retrieval/memory orchestration
 - infer long-horizon plans from free-form assistant text by itself
 

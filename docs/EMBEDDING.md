@@ -25,6 +25,40 @@ This document focuses on:
 - `pkg/harness/worker`
 - `pkg/harness/replay`
 
+## Pattern 0: LLM-Backed Planner
+
+The kernel intentionally does not include provider-specific model clients.
+
+Recommended shape:
+
+1. your platform calls the model it prefers
+2. your planner implementation converts model output into `plan.StepSpec`
+3. the kernel persists and executes those steps
+
+Minimal shape:
+
+```go
+type ModelPlanner struct {
+	Client MyModelClient
+}
+
+func (p ModelPlanner) PlanNext(ctx context.Context, state session.State, spec task.Spec, assembled runtime.ContextPackage) (plan.StepSpec, error) {
+	reply, err := p.Client.Plan(ctx, assembled)
+	if err != nil {
+		return plan.StepSpec{}, err
+	}
+	return translateReplyIntoStep(reply, spec, assembled)
+}
+```
+
+Keep these concerns outside the kernel:
+
+- provider SDK choice
+- prompt format
+- model fallback/routing
+- retrieval and memory policy
+- product-specific planning heuristics
+
 ## Pattern 1: External Run ID
 
 Kernel sessions use `session_id`.

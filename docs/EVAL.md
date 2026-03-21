@@ -8,9 +8,11 @@ This project currently uses three complementary validation layers:
 
 1. **unit / integration tests**
    - assert correctness of core behavior
-2. **path coverage tests**
+2. **workflow evals**
+   - assert that public embedding surfaces still compose into expected end-to-end flows
+3. **path coverage tests**
    - cover happy path and failure-path transitions
-3. **benchmarks**
+4. **benchmarks**
    - provide baseline latency/overhead data for the kernel loop
 
 ---
@@ -33,6 +35,37 @@ These verify:
 - plan completion behavior
 - task/session state changes
 - audit event emission
+
+### Public workflow evals
+- `TestWorkflowEvalApprovalResumeReplay`
+- `TestWorkflowEvalRecoverableClaimRun`
+- `TestWorkflowEvalRunLoopStopsAfterHandlingWork`
+- `TestWorkflowEvalConcreteShellScenarios`
+
+These verify, through public embedding surfaces only:
+- approval-paused worker flow
+- approval response and resumed execution
+- replay/debug projection after execution
+- claim -> interrupt -> recover workflow
+- worker outer-loop handling through `RunLoop(...)`
+- concrete shell-backed planner / approval / recovery scenarios
+
+The workflow evals live under:
+
+- `./evals`
+
+### Human-readable workflow walkthroughs
+
+For visible scenario output rather than test assertions, run:
+
+- `go run ./examples/workflow-scenarios`
+
+This example uses the real built-in shell module and prints:
+
+- planner-derived execution output
+- approval pause -> respond -> resume behavior
+- claim interruption -> recovery behavior
+- persisted execution-fact counts and replay counts
 
 ---
 
@@ -83,6 +116,19 @@ Measures runtime event emission overhead without tool execution:
 
 ```bash
 go test ./...
+```
+
+### Run workflow evals only
+
+```bash
+go test ./evals -count=1
+```
+
+### Run the concrete workflow walkthrough
+
+```bash
+go test ./examples/workflow-scenarios -count=1
+go run ./examples/workflow-scenarios
 ```
 
 ### Run runtime benchmarks
@@ -143,7 +189,7 @@ A useful rule of thumb:
 ## Near-term eval backlog
 
 1. add websocket end-to-end benchmark
-2. add table-driven transition correctness tests
+2. expand workflow eval cases across adapters and durable restart scenarios
 3. add golden-output tests for protocol responses
 4. expose richer runtime metrics hooks beyond the in-memory recorder
 
@@ -157,5 +203,6 @@ A useful rule of thumb:
 
 That means every new major primitive should ideally arrive with:
 - at least one correctness test
+- at least one workflow eval if it changes a public composition path
 - at least one path test if it changes control flow
 - at least one benchmark if it affects hot runtime paths

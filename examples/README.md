@@ -30,11 +30,15 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - `postgres-workers`
   - A durable multi-worker reference example.
   - Shows two runtime instances contending for runnable and recoverable sessions through claim/lease APIs.
+- `workflow-scenarios`
+  - A human-readable workflow walkthrough.
+  - Shows concrete planner, approval/resume, and recovery tasks running through the public kernel surfaces with visible stdout and replay facts.
 
 ## How To Use This Directory
 
 - Start with `minimal-agent` if you want to understand the bare kernel surface.
 - Move to `planner-context` and `planner-replan` if you are implementing custom planning logic.
+- Use `workflow-scenarios` if you want to watch a few concrete tasks move through the workflow before reading lower-level tests.
 - Use `platform-reference` if you are building a platform-side worker around PTY or interactive shell execution.
 - Use `postgres-embedded` and `postgres-workers` if you need durable runtime state or multi-instance coordination.
 - Use `go-client` if you are integrating through the shipped WebSocket adapter rather than embedding the kernel directly.
