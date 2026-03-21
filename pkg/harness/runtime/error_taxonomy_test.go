@@ -18,6 +18,7 @@ func TestClassifyErrorProvidesTransportNeutralKernelCategories(t *testing.T) {
 	}{
 		{name: "session conflict", err: session.ErrSessionVersionConflict, wantKind: hruntime.ErrorKindConflict, retryable: true},
 		{name: "approval conflict", err: approval.ErrApprovalVersionConflict, wantKind: hruntime.ErrorKindConflict, retryable: true},
+		{name: "runtime handle conflict", err: execution.ErrRuntimeHandleVersionConflict, wantKind: hruntime.ErrorKindConflict, retryable: true},
 		{name: "session not found", err: session.ErrSessionNotFound, wantKind: hruntime.ErrorKindNotFound, retryable: false},
 		{name: "approval not found", err: approval.ErrApprovalNotFound, wantKind: hruntime.ErrorKindNotFound, retryable: false},
 		{name: "execution record not found", err: execution.ErrRecordNotFound, wantKind: hruntime.ErrorKindNotFound, retryable: false},

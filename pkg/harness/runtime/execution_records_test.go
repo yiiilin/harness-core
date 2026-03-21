@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -75,6 +76,24 @@ func TestRunStepPersistsExecutionFactsAndRichEventEnvelope(t *testing.T) {
 				t.Fatalf("expected causation_id on verify event, got %#v", event)
 			}
 		}
+	}
+
+	storedEvents := mustListAuditEvents(t, rt, sess.SessionID)
+	var storedVerify *audit.Event
+	for i := range storedEvents {
+		if storedEvents[i].Type == audit.EventVerifyCompleted {
+			storedVerify = &storedEvents[i]
+			break
+		}
+	}
+	if storedVerify == nil {
+		t.Fatalf("expected persisted verify event, got %#v", storedEvents)
+	}
+	if storedVerify.VerificationID != verifyRec.VerificationID {
+		t.Fatalf("expected persisted verify event to retain verification_id %q, got %#v", verifyRec.VerificationID, storedVerify)
+	}
+	if cycleID, ok := auditEventStringField(*storedVerify, "CycleID"); !ok || cycleID != attempt.CycleID {
+		t.Fatalf("expected persisted verify event to expose cycle correlation %q, got %#v", attempt.CycleID, storedVerify)
 	}
 }
 
@@ -183,4 +202,111 @@ func TestApprovalResumePersistsOneLogicalExecutionCycleAcrossExecutionFacts(t *t
 			t.Fatalf("expected artifact cycle_id to match blocked attempt, got %#v", artifact)
 		}
 	}
+}
+
+func TestApprovalAuditEventsExposeApprovalCorrelation(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Tools:     tools,
+		Verifiers: verifiers,
+		Audit:     audits,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "approval audit", "approval events should stay correlated")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "keep approval audit correlated"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "approval audit", []plan.StepSpec{{
+		StepID: "step_approval_audit",
+		Title:  "approval audit step",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo approval", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	attempts := mustListAttempts(t, rt, attached.SessionID)
+	if len(attempts) != 1 {
+		t.Fatalf("expected one blocked attempt, got %#v", attempts)
+	}
+
+	requestEvents := mustListAuditEvents(t, rt, attached.SessionID)
+	var requestEvent *audit.Event
+	for i := range requestEvents {
+		if requestEvents[i].Type == audit.EventApprovalRequested {
+			requestEvent = &requestEvents[i]
+			break
+		}
+	}
+	if requestEvent == nil {
+		t.Fatalf("expected approval.requested event, got %#v", requestEvents)
+	}
+	if approvalID, ok := auditEventStringField(*requestEvent, "ApprovalID"); !ok || approvalID != initial.Execution.PendingApproval.ApprovalID {
+		t.Fatalf("expected approval.requested event to expose approval_id %q, got %#v", initial.Execution.PendingApproval.ApprovalID, requestEvent)
+	}
+	if cycleID, ok := auditEventStringField(*requestEvent, "CycleID"); !ok || cycleID != attempts[0].CycleID {
+		t.Fatalf("expected approval.requested event to expose cycle_id %q, got %#v", attempts[0].CycleID, requestEvent)
+	}
+
+	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+
+	responseEvents := mustListAuditEvents(t, rt, attached.SessionID)
+	var responseEvent *audit.Event
+	for i := range responseEvents {
+		if responseEvents[i].Type == audit.EventApprovalApproved {
+			responseEvent = &responseEvents[i]
+		}
+	}
+	if responseEvent == nil {
+		t.Fatalf("expected approval.approved event, got %#v", responseEvents)
+	}
+	if responseEvent.TaskID != attached.TaskID || responseEvent.TraceID == "" || responseEvent.CausationID == "" {
+		t.Fatalf("expected approval.approved event to retain task/trace/causation correlation, got %#v", responseEvent)
+	}
+	if approvalID, ok := auditEventStringField(*responseEvent, "ApprovalID"); !ok || approvalID != initial.Execution.PendingApproval.ApprovalID {
+		t.Fatalf("expected approval.approved event to expose approval_id %q, got %#v", initial.Execution.PendingApproval.ApprovalID, responseEvent)
+	}
+}
+
+func auditEventStringField(event audit.Event, field string) (string, bool) {
+	value := reflect.ValueOf(event).FieldByName(field)
+	if !value.IsValid() || value.Kind() != reflect.String {
+		return "", false
+	}
+	return value.String(), true
 }

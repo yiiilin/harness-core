@@ -57,9 +57,17 @@ The task reached terminal failure.
 ```json
 {
   "event_id": "evt_01",
+  "sequence": 42,
   "type": "tool.completed",
   "session_id": "sess_01",
+  "approval_id": "apv_01",
   "step_id": "step_01",
+  "attempt_id": "att_01",
+  "action_id": "act_01",
+  "verification_id": "ver_01",
+  "cycle_id": "cyc_01",
+  "trace_id": "trc_01",
+  "causation_id": "act_01",
   "payload": {},
   "created_at": 1770000000000
 }
@@ -67,7 +75,8 @@ The task reached terminal failure.
 
 ### Notes
 - `event_id` should be populated for runtime-emitted events, including in-memory flows
-- `session_id` and `step_id` allow trace reconstruction
+- `sequence` should preserve local emit order even when multiple events share the same timestamp
+- `session_id`, `step_id`, `attempt_id`, `action_id`, `verification_id`, `approval_id`, `cycle_id`, `trace_id`, and `causation_id` allow replay/debug correlation without payload scraping
 - `payload` is intentionally free-form but should remain structured JSON
 
 ---

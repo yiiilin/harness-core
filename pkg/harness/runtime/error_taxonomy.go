@@ -31,7 +31,8 @@ func ClassifyError(err error) ErrorInfo {
 	case err == nil:
 		return ErrorInfo{Kind: ErrorKindUnknown, Retryable: false}
 	case errors.Is(err, session.ErrSessionVersionConflict),
-		errors.Is(err, approval.ErrApprovalVersionConflict):
+		errors.Is(err, approval.ErrApprovalVersionConflict),
+		errors.Is(err, execution.ErrRuntimeHandleVersionConflict):
 		return ErrorInfo{Kind: ErrorKindConflict, Retryable: true}
 	case errors.Is(err, session.ErrSessionNotFound),
 		errors.Is(err, approval.ErrApprovalNotFound),

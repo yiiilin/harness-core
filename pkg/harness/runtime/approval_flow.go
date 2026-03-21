@@ -40,12 +40,17 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	events := []audit.Event{}
 	appendEvent := func(eventType string, payload map[string]any) {
 		events = append(events, audit.Event{
-			EventID:   "evt_" + uuid.NewString(),
-			Type:      eventType,
-			SessionID: rec.SessionID,
-			StepID:    rec.StepID,
-			Payload:   payload,
-			CreatedAt: time.Now().UnixMilli(),
+			EventID:    "evt_" + uuid.NewString(),
+			Type:       eventType,
+			SessionID:  rec.SessionID,
+			TaskID:     st.TaskID,
+			ApprovalID: rec.ApprovalID,
+			StepID:     rec.StepID,
+			CycleID:    executionCycleIDFromStep(rec.Step),
+			TraceID:    rec.ApprovalID,
+			CausationID: rec.ApprovalID,
+			Payload:    payload,
+			CreatedAt:  time.Now().UnixMilli(),
 		})
 	}
 

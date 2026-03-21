@@ -105,6 +105,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			StepID:      stepID,
 			AttemptID:   attemptRecord.AttemptID,
 			ActionID:    actionID,
+			CycleID:     attemptRecord.CycleID,
 			TraceID:     attemptRecord.TraceID,
 			CausationID: causationID,
 			Payload:     payload,
@@ -177,11 +178,13 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				if err != nil {
 					return err
 				}
-				pendingApproval = &rec
-				attemptRecord.ApprovalID = rec.ApprovalID
-				state.PendingApprovalID = rec.ApprovalID
-				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
+					pendingApproval = &rec
+					attemptRecord.ApprovalID = rec.ApprovalID
+					state.PendingApprovalID = rec.ApprovalID
+					events[len(events)-1].ApprovalID = rec.ApprovalID
+					events[len(events)-1].CycleID = attemptRecord.CycleID
+					events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
+					pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
 				if err != nil {
 					return err
 				}
@@ -214,10 +217,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			if err != nil {
 				return StepRunOutput{}, err
 			}
-			pendingApproval = &rec
-			attemptRecord.ApprovalID = rec.ApprovalID
-			state.PendingApprovalID = rec.ApprovalID
-			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
+				pendingApproval = &rec
+				attemptRecord.ApprovalID = rec.ApprovalID
+				state.PendingApprovalID = rec.ApprovalID
+				events[len(events)-1].ApprovalID = rec.ApprovalID
+				events[len(events)-1].CycleID = attemptRecord.CycleID
+				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
 			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
 			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
 			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
@@ -776,7 +781,14 @@ func upsertRuntimeHandle(store execution.RuntimeHandleStore, handle execution.Ru
 		handle.Status = execution.RuntimeHandleActive
 	}
 	if _, err := store.Create(handle); err != nil {
-		if _, getErr := store.Get(handle.HandleID); getErr == nil {
+		if current, getErr := store.Get(handle.HandleID); getErr == nil {
+			handle.Version = current.Version + 1
+			if handle.CreatedAt == 0 {
+				handle.CreatedAt = current.CreatedAt
+			}
+			if handle.UpdatedAt == 0 {
+				handle.UpdatedAt = current.UpdatedAt
+			}
 			return store.Update(handle)
 		}
 		return err

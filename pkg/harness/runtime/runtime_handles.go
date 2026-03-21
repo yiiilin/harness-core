@@ -5,6 +5,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
+	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
 type RuntimeHandleUpdate struct {
@@ -24,7 +25,7 @@ type RuntimeHandleInvalidateRequest struct {
 }
 
 func (s *Service) UpdateRuntimeHandle(ctx context.Context, handleID string, update RuntimeHandleUpdate) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		if update.Kind != nil {
 			handle.Kind = *update.Kind
 		}
@@ -42,7 +43,7 @@ func (s *Service) UpdateRuntimeHandle(ctx context.Context, handleID string, upda
 }
 
 func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleCloseRequest) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleClosed
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle closed")
 		handle.ClosedAt = s.nowMilli()
@@ -54,7 +55,7 @@ func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, reque
 }
 
 func (s *Service) InvalidateRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleInvalidateRequest) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleInvalidated
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
 		handle.InvalidatedAt = s.nowMilli()
@@ -65,15 +66,24 @@ func (s *Service) InvalidateRuntimeHandle(ctx context.Context, handleID string, 
 	})
 }
 
-func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, mutate func(execution.RuntimeHandle) execution.RuntimeHandle) (execution.RuntimeHandle, error) {
+func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, leaseID string, mutate func(execution.RuntimeHandle) execution.RuntimeHandle) (execution.RuntimeHandle, error) {
 	var updated execution.RuntimeHandle
-	apply := func(store execution.RuntimeHandleStore) error {
+	apply := func(store execution.RuntimeHandleStore, sessions session.Store) error {
 		if store == nil {
 			return execution.ErrRecordNotFound
 		}
 		current, err := store.Get(handleID)
 		if err != nil {
 			return err
+		}
+		if current.SessionID != "" && sessions != nil {
+			st, err := sessions.Get(current.SessionID)
+			if err != nil {
+				return err
+			}
+			if err := requireSessionLease(st, leaseID, s.nowMilli()); err != nil {
+				return err
+			}
 		}
 		if !isRuntimeHandleActive(current) {
 			return ErrRuntimeHandleNotActive
@@ -101,20 +111,22 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, muta
 		if updated.CreatedAt == 0 {
 			updated.CreatedAt = current.CreatedAt
 		}
+		updated.Version = current.Version + 1
 		updated.UpdatedAt = s.nowMilli()
 		return store.Update(updated)
 	}
 
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
-			return apply(s.repositoriesWithFallback(repos).RuntimeHandles)
+			repoSet := s.repositoriesWithFallback(repos)
+			return apply(repoSet.RuntimeHandles, repoSet.Sessions)
 		}); err != nil {
 			return execution.RuntimeHandle{}, err
 		}
 		return updated, nil
 	}
 
-	if err := apply(s.RuntimeHandles); err != nil {
+	if err := apply(s.RuntimeHandles, s.Sessions); err != nil {
 		return execution.RuntimeHandle{}, err
 	}
 	return updated, nil
@@ -136,6 +148,7 @@ func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, se
 		handle.StatusReason = reason
 		handle.InvalidatedAt = now
 		handle.UpdatedAt = now
+		handle.Version++
 		if err := store.Update(handle); err != nil {
 			return err
 		}

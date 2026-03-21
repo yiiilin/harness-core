@@ -30,16 +30,16 @@ func (r *Repo) Emit(event audit.Event) error {
 	payloadJSON, _ := json.Marshal(event.Payload)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO audit_events (
-  event_id, type, session_id, task_id, planning_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-`, event.EventID, event.Type, nullable(event.SessionID), nullable(event.TaskID), nullable(event.PlanningID), nullable(event.StepID), nullable(event.AttemptID), nullable(event.ActionID), nullable(event.TraceID), nullable(event.CausationID), nullableJSON(payloadJSON), event.CreatedAt)
+  event_id, type, session_id, task_id, planning_id, approval_id, step_id, attempt_id, action_id, verification_id, cycle_id, trace_id, causation_id, payload_json, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+`, event.EventID, event.Type, nullable(event.SessionID), nullable(event.TaskID), nullable(event.PlanningID), nullable(event.ApprovalID), nullable(event.StepID), nullable(event.AttemptID), nullable(event.ActionID), nullable(event.VerificationID), nullable(event.CycleID), nullable(event.TraceID), nullable(event.CausationID), nullableJSON(payloadJSON), event.CreatedAt)
 	return err
 }
 
 func (r *Repo) List(sessionID string) ([]audit.Event, error) {
 	ctx := context.Background()
 	query := `
-SELECT event_id, type, session_id, task_id, planning_id, step_id, attempt_id, action_id, trace_id, causation_id, payload_json, created_at
+SELECT event_id, sequence, type, session_id, task_id, planning_id, approval_id, step_id, attempt_id, action_id, verification_id, cycle_id, trace_id, causation_id, payload_json, created_at
 FROM audit_events
 `
 	args := []any{}
@@ -47,7 +47,7 @@ FROM audit_events
 		query += "WHERE session_id = $1\n"
 		args = append(args, sessionID)
 	}
-	query += "ORDER BY created_at ASC"
+	query += "ORDER BY created_at ASC, sequence ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ FROM audit_events
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].CreatedAt == out[j].CreatedAt {
-			return out[i].EventID < out[j].EventID
+			return out[i].Sequence < out[j].Sequence
 		}
 		return out[i].CreatedAt < out[j].CreatedAt
 	})
@@ -100,16 +100,19 @@ func (n *sqlNullString) Scan(value any) error {
 
 func scanEvent(scan scanner) (audit.Event, error) {
 	var evt audit.Event
-	var sessionID, taskID, planningID, stepID, attemptID, actionID, traceID, causationID, payloadRaw sqlNullString
-	if err := scan(&evt.EventID, &evt.Type, &sessionID, &taskID, &planningID, &stepID, &attemptID, &actionID, &traceID, &causationID, &payloadRaw, &evt.CreatedAt); err != nil {
+	var sessionID, taskID, planningID, approvalID, stepID, attemptID, actionID, verificationID, cycleID, traceID, causationID, payloadRaw sqlNullString
+	if err := scan(&evt.EventID, &evt.Sequence, &evt.Type, &sessionID, &taskID, &planningID, &approvalID, &stepID, &attemptID, &actionID, &verificationID, &cycleID, &traceID, &causationID, &payloadRaw, &evt.CreatedAt); err != nil {
 		return audit.Event{}, err
 	}
 	evt.SessionID = sessionID.String
 	evt.TaskID = taskID.String
 	evt.PlanningID = planningID.String
+	evt.ApprovalID = approvalID.String
 	evt.StepID = stepID.String
 	evt.AttemptID = attemptID.String
 	evt.ActionID = actionID.String
+	evt.VerificationID = verificationID.String
+	evt.CycleID = cycleID.String
 	evt.TraceID = traceID.String
 	evt.CausationID = causationID.String
 	if payloadRaw.String != "" {

@@ -376,11 +376,14 @@ func (r *RuntimeHandleRepo) Create(spec execution.RuntimeHandle) (execution.Runt
 	if spec.Status == "" {
 		spec.Status = execution.RuntimeHandleActive
 	}
+	if spec.Version == 0 {
+		spec.Version = 1
+	}
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO runtime_handles (
-  handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-`, spec.HandleID, spec.SessionID, nullable(spec.TaskID), nullable(spec.AttemptID), nullable(spec.CycleID), nullable(spec.TraceID), nullable(spec.Kind), nullable(spec.Value), string(spec.Status), nullable(spec.StatusReason), nullableJSON(metadataJSON), spec.CreatedAt, spec.UpdatedAt, nullableInt64(spec.ClosedAt), nullableInt64(spec.InvalidatedAt))
+  handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, version, created_at, updated_at, closed_at, invalidated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+`, spec.HandleID, spec.SessionID, nullable(spec.TaskID), nullable(spec.AttemptID), nullable(spec.CycleID), nullable(spec.TraceID), nullable(spec.Kind), nullable(spec.Value), string(spec.Status), nullable(spec.StatusReason), nullableJSON(metadataJSON), spec.Version, spec.CreatedAt, spec.UpdatedAt, nullableInt64(spec.ClosedAt), nullableInt64(spec.InvalidatedAt))
 	if err != nil {
 		return execution.RuntimeHandle{}, err
 	}
@@ -390,7 +393,7 @@ INSERT INTO runtime_handles (
 func (r *RuntimeHandleRepo) Get(id string) (execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
+SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, version, created_at, updated_at, closed_at, invalidated_at
 FROM runtime_handles WHERE handle_id = $1
 `, id)
 	return scanRuntimeHandle(row.Scan)
@@ -405,7 +408,7 @@ func (r *RuntimeHandleRepo) Update(next execution.RuntimeHandle) error {
 	if next.Status == "" {
 		next.Status = execution.RuntimeHandleActive
 	}
-	_, err = r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 UPDATE runtime_handles
 SET session_id = $2,
     task_id = $3,
@@ -417,19 +420,34 @@ SET session_id = $2,
     status = $9,
     status_reason = $10,
     metadata_json = $11,
-    created_at = $12,
-    updated_at = $13,
-    closed_at = $14,
-    invalidated_at = $15
+    version = $12,
+    created_at = $13,
+    updated_at = $14,
+    closed_at = $15,
+    invalidated_at = $16
 WHERE handle_id = $1
-`, next.HandleID, next.SessionID, nullable(next.TaskID), nullable(next.AttemptID), nullable(next.CycleID), nullable(next.TraceID), nullable(next.Kind), nullable(next.Value), string(next.Status), nullable(next.StatusReason), nullableJSON(metadataJSON), next.CreatedAt, next.UpdatedAt, nullableInt64(next.ClosedAt), nullableInt64(next.InvalidatedAt))
-	return err
+  AND version = $17
+`, next.HandleID, next.SessionID, nullable(next.TaskID), nullable(next.AttemptID), nullable(next.CycleID), nullable(next.TraceID), nullable(next.Kind), nullable(next.Value), string(next.Status), nullable(next.StatusReason), nullableJSON(metadataJSON), next.Version, next.CreatedAt, next.UpdatedAt, nullableInt64(next.ClosedAt), nullableInt64(next.InvalidatedAt), next.Version-1)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows > 0 {
+		return nil
+	}
+	if _, err := r.Get(next.HandleID); err != nil {
+		return err
+	}
+	return execution.ErrRuntimeHandleVersionConflict
 }
 
 func (r *RuntimeHandleRepo) List(sessionID string) ([]execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	query := `
-SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
+SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, version, created_at, updated_at, closed_at, invalidated_at
 FROM runtime_handles
 `
 	args := []any{}
@@ -620,7 +638,7 @@ func scanRuntimeHandle(scan scanner) (execution.RuntimeHandle, error) {
 	var taskID, attemptID, cycleID, traceID, kind, value, statusReason, metadataRaw sqlNullString
 	var status string
 	var closedAt, invalidatedAt sqlNullInt64
-	if err := scan(&rec.HandleID, &rec.SessionID, &taskID, &attemptID, &cycleID, &traceID, &kind, &value, &status, &statusReason, &metadataRaw, &rec.CreatedAt, &rec.UpdatedAt, &closedAt, &invalidatedAt); err != nil {
+	if err := scan(&rec.HandleID, &rec.SessionID, &taskID, &attemptID, &cycleID, &traceID, &kind, &value, &status, &statusReason, &metadataRaw, &rec.Version, &rec.CreatedAt, &rec.UpdatedAt, &closedAt, &invalidatedAt); err != nil {
 		return execution.RuntimeHandle{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String

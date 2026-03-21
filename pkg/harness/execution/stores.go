@@ -10,6 +10,7 @@ import (
 )
 
 var ErrRecordNotFound = errors.New("execution record not found")
+var ErrRuntimeHandleVersionConflict = errors.New("runtime handle version conflict")
 
 type AttemptStore interface {
 	Create(spec Attempt) (Attempt, error)
@@ -289,6 +290,9 @@ func (s *MemoryRuntimeHandleStore) Create(spec RuntimeHandle) (RuntimeHandle, er
 	if spec.UpdatedAt == 0 {
 		spec.UpdatedAt = now
 	}
+	if spec.Version == 0 {
+		spec.Version = 1
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[spec.HandleID] = spec
@@ -308,8 +312,12 @@ func (s *MemoryRuntimeHandleStore) Get(id string) (RuntimeHandle, error) {
 func (s *MemoryRuntimeHandleStore) Update(next RuntimeHandle) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.items[next.HandleID]; !ok {
+	current, ok := s.items[next.HandleID]
+	if !ok {
 		return ErrRecordNotFound
+	}
+	if next.Version != current.Version+1 {
+		return ErrRuntimeHandleVersionConflict
 	}
 	if next.Status == "" {
 		next.Status = RuntimeHandleActive

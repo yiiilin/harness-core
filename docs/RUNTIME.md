@@ -247,13 +247,19 @@ Runtime-handle lifecycle is also kernel-governed:
 - `active` handles may be updated, closed, or invalidated
 - `closed` and `invalidated` handles are terminal execution facts
 - control-surface mutations against terminal handles must fail cleanly instead of silently reopening or rewriting them
+- runtime handles now also carry a monotonically increasing `version` so conflicting mutations can fail cleanly instead of silently overwriting newer state
+- the unclaimed runtime-handle control surface is lease-aware: if the owning session has an active lease, direct handle mutation must fail rather than racing the current session holder
 
 The runtime event envelope also carries stable identifiers for:
+- `approval_id`
 - `task_id`
 - `attempt_id`
 - `action_id`
+- `verification_id`
+- `cycle_id`
 - `trace_id`
 - `causation_id`
+- `sequence`
 
 These identifiers exist to support replay, recovery, debugging, and observability consumers.
 

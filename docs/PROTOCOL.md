@@ -295,6 +295,7 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 ```json
 {
   "event_id": "evt_01",
+  "sequence": 42,
   "type": "plan.generated",
   "session_id": "sess_01",
   "task_id": "task_01",
@@ -311,10 +312,13 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 - `session_id` is required for session-scoped runtime events.
 - `task_id` should be present whenever a task is attached to the session.
 - `planning_id` should be present for planner-derived plan generation events when the runtime persisted a planning cycle record.
+- `approval_id` should be present for approval request/response events when an approval record exists.
 - `attempt_id` and `trace_id` should be present for step execution events.
 - `action_id` is required for tool invocation/completion/failure events.
 - `verification_id` is required for verification events.
+- `cycle_id` should be present for execution-linked events when the runtime is inside a logical execution cycle.
 - `causation_id` should point to the record that directly caused the event, such as an action or attempt record.
+- `sequence` should preserve sink-local emit order so durable audit consumers do not need to infer ordering from `event_id`.
 - adapter envelopes may wrap these objects, but must not redefine the meaning of the core fields.
 
 ### Execution fact correlation

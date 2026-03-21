@@ -3,7 +3,9 @@ package runtime_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
@@ -320,6 +322,60 @@ func TestRuntimeHandleControlSurfaceInvalidatesHandle(t *testing.T) {
 	}
 }
 
+func TestRuntimeHandleControlSurfaceRequiresUnclaimedSessionAndExposesVersion(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{})
+
+	sess := mustCreateSession(t, rt, "claimed runtime handle", "control surfaces should respect active session leases")
+	created, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_claimed_runtime",
+		SessionID: sess.SessionID,
+		Kind:      "pty",
+		Value:     "pty-claimed",
+		Status:    execution.RuntimeHandleActive,
+	})
+	if err != nil {
+		t.Fatalf("seed runtime handle: %v", err)
+	}
+
+	initialVersion, ok := runtimeHandleInt64Field(created, "Version")
+	if !ok {
+		t.Fatalf("expected RuntimeHandle to expose Version field, got %#v", created)
+	}
+
+	claimed, found, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !found || claimed.SessionID != sess.SessionID {
+		t.Fatalf("expected session %q to be claimed, got found=%v state=%#v", sess.SessionID, found, claimed)
+	}
+
+	nextValue := "pty-claimed-updated"
+	if _, err := rt.UpdateRuntimeHandle(context.Background(), created.HandleID, hruntime.RuntimeHandleUpdate{
+		Value: &nextValue,
+	}); !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+		t.Fatalf("expected unclaimed runtime handle mutation to fail while session lease is active, got %v", err)
+	}
+
+	if _, err := rt.ReleaseSessionLease(context.Background(), claimed.SessionID, claimed.LeaseID); err != nil {
+		t.Fatalf("release session lease: %v", err)
+	}
+
+	updated, err := rt.UpdateRuntimeHandle(context.Background(), created.HandleID, hruntime.RuntimeHandleUpdate{
+		Value: &nextValue,
+	})
+	if err != nil {
+		t.Fatalf("update runtime handle after lease release: %v", err)
+	}
+	updatedVersion, ok := runtimeHandleInt64Field(updated, "Version")
+	if !ok {
+		t.Fatalf("expected updated RuntimeHandle to expose Version field, got %#v", updated)
+	}
+	if updatedVersion <= initialVersion {
+		t.Fatalf("expected runtime handle version to advance after mutation, got before=%d after=%d", initialVersion, updatedVersion)
+	}
+}
+
 func TestAbortSessionInvalidatesActiveRuntimeHandles(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{})
 
@@ -350,6 +406,21 @@ func TestAbortSessionInvalidatesActiveRuntimeHandles(t *testing.T) {
 	}
 	if got.Status != execution.RuntimeHandleInvalidated || got.InvalidatedAt == 0 || got.StatusReason != "session aborted" {
 		t.Fatalf("expected abort to invalidate active runtime handles, got %#v", got)
+	}
+}
+
+func runtimeHandleInt64Field(handle execution.RuntimeHandle, field string) (int64, bool) {
+	value := reflect.ValueOf(handle).FieldByName(field)
+	if !value.IsValid() {
+		return 0, false
+	}
+	switch value.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int64(value.Uint()), true
+	default:
+		return 0, false
 	}
 }
 

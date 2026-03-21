@@ -2,6 +2,7 @@ package executionrepo_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/yiiilin/harness-core/internal/postgres/executionrepo"
@@ -42,6 +43,7 @@ func TestRuntimeHandleRepoPersistsLifecycleStateAgainstPostgres(t *testing.T) {
 	created.StatusReason = "client closed"
 	created.ClosedAt = 20
 	created.UpdatedAt = 20
+	created.Version++
 	created.Metadata["closed_by"] = "operator"
 	if err := repo.Update(created); err != nil {
 		t.Fatalf("update: %v", err)
@@ -53,6 +55,9 @@ func TestRuntimeHandleRepoPersistsLifecycleStateAgainstPostgres(t *testing.T) {
 	}
 	if got.Status != execution.RuntimeHandleClosed || got.ClosedAt != 20 || got.StatusReason != "client closed" {
 		t.Fatalf("unexpected persisted runtime handle: %#v", got)
+	}
+	if got.Version != created.Version {
+		t.Fatalf("expected runtime handle version %d after update, got %#v", created.Version, got)
 	}
 	if got.Metadata["origin"] != "integration-test" || got.Metadata["closed_by"] != "operator" {
 		t.Fatalf("expected lifecycle metadata to round-trip, got %#v", got.Metadata)
@@ -67,6 +72,45 @@ func TestRuntimeHandleRepoPersistsLifecycleStateAgainstPostgres(t *testing.T) {
 	}
 	if items[0].Status != execution.RuntimeHandleClosed || items[0].ClosedAt != 20 {
 		t.Fatalf("unexpected listed runtime handle: %#v", items[0])
+	}
+}
+
+func TestRuntimeHandleRepoRejectsStaleVersionAgainstPostgres(t *testing.T) {
+	pg := postgrestest.Start(t)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	repo := executionrepo.NewRuntimeHandleStore(db)
+	created, err := repo.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_pg_version_conflict",
+		SessionID: "sess_pg_runtime",
+		Kind:      "pty",
+		Value:     "pty-pg-runtime",
+		Status:    execution.RuntimeHandleActive,
+		CreatedAt: 10,
+		UpdatedAt: 10,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	first := created
+	first.Value = "pty-pg-runtime-updated"
+	first.Version++
+	first.UpdatedAt = 20
+	if err := repo.Update(first); err != nil {
+		t.Fatalf("update first: %v", err)
+	}
+
+	stale := created
+	stale.Value = "pty-pg-runtime-stale"
+	stale.Version++
+	stale.UpdatedAt = 30
+	if err := repo.Update(stale); !errors.Is(err, execution.ErrRuntimeHandleVersionConflict) {
+		t.Fatalf("expected runtime handle version conflict, got %v", err)
 	}
 }
 

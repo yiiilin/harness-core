@@ -109,6 +109,7 @@ type RuntimeHandle struct {
 	Status        RuntimeHandleStatus `json:"status"`
 	StatusReason  string              `json:"status_reason,omitempty"`
 	Metadata      map[string]any      `json:"metadata,omitempty"`
+	Version       int64               `json:"version,omitempty"`
 	CreatedAt     int64               `json:"created_at"`
 	UpdatedAt     int64               `json:"updated_at"`
 	ClosedAt      int64               `json:"closed_at,omitempty"`

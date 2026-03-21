@@ -83,13 +83,17 @@ ALTER TABLE plan_steps
 
 CREATE TABLE IF NOT EXISTS audit_events (
   event_id TEXT PRIMARY KEY,
+  sequence BIGSERIAL,
   type TEXT NOT NULL,
   session_id TEXT,
   task_id TEXT,
   planning_id TEXT,
+  approval_id TEXT,
   step_id TEXT,
   attempt_id TEXT,
   action_id TEXT,
+  verification_id TEXT,
+  cycle_id TEXT,
   trace_id TEXT,
   causation_id TEXT,
   payload_json TEXT,
@@ -99,11 +103,29 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS idx_audit_events_session_created
   ON audit_events(session_id, created_at);
 
+CREATE SEQUENCE IF NOT EXISTS audit_events_sequence_seq;
+
+ALTER TABLE audit_events
+  ADD COLUMN IF NOT EXISTS sequence BIGINT;
+
+ALTER TABLE audit_events
+  ALTER COLUMN sequence SET DEFAULT nextval('audit_events_sequence_seq');
+
+UPDATE audit_events
+SET sequence = nextval('audit_events_sequence_seq')
+WHERE sequence IS NULL;
+
+ALTER TABLE audit_events
+  ALTER COLUMN sequence SET NOT NULL;
+
 ALTER TABLE audit_events
   ADD COLUMN IF NOT EXISTS task_id TEXT,
   ADD COLUMN IF NOT EXISTS planning_id TEXT,
+  ADD COLUMN IF NOT EXISTS approval_id TEXT,
   ADD COLUMN IF NOT EXISTS attempt_id TEXT,
   ADD COLUMN IF NOT EXISTS action_id TEXT,
+  ADD COLUMN IF NOT EXISTS verification_id TEXT,
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT,
   ADD COLUMN IF NOT EXISTS trace_id TEXT,
   ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
@@ -289,6 +311,7 @@ CREATE TABLE IF NOT EXISTS runtime_handles (
   status TEXT NOT NULL,
   status_reason TEXT,
   metadata_json TEXT,
+  version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   closed_at BIGINT,
@@ -299,4 +322,5 @@ CREATE INDEX IF NOT EXISTS idx_runtime_handles_session_created
   ON runtime_handles(session_id, created_at);
 
 ALTER TABLE runtime_handles
-  ADD COLUMN IF NOT EXISTS cycle_id TEXT;
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT,
+  ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;

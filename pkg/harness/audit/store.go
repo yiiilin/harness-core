@@ -10,6 +10,7 @@ type Store interface {
 type MemoryStore struct {
 	mu     sync.RWMutex
 	events []Event
+	nextSeq int64
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -19,6 +20,10 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) Emit(event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if event.Sequence == 0 {
+		s.nextSeq++
+		event.Sequence = s.nextSeq
+	}
 	s.events = append(s.events, event)
 	return nil
 }
