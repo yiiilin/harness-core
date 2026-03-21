@@ -101,7 +101,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 				CreatedAt: time.Now().UnixMilli(),
 			})
 		}
-		if err := reconcileActiveRuntimeHandlesInStore(handleStore, current.SessionID, "session aborted"); err != nil {
+		if err := reconcileActiveRuntimeHandlesInStore(handleStore, current.SessionID, "session aborted", now); err != nil {
 			return err
 		}
 		if err := sessStore.Update(aborted); err != nil {

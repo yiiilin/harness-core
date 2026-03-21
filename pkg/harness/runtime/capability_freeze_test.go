@@ -31,6 +31,25 @@ func (p unversionedShellPlanner) PlanNext(_ context.Context, state session.State
 	}, nil
 }
 
+type verifiedUnversionedShellPlanner struct {
+	stepID string
+	verify verify.Spec
+	onFail plan.OnFailSpec
+}
+
+func (p verifiedUnversionedShellPlanner) PlanNext(_ context.Context, state session.State, _ task.Spec, _ hruntime.ContextPackage) (plan.StepSpec, error) {
+	if state.CurrentStepID != "" {
+		return plan.StepSpec{}, errors.New("planner exhausted")
+	}
+	return plan.StepSpec{
+		StepID: p.stepID,
+		Title:  "use frozen shell capability",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo frozen", "timeout_ms": 5000}},
+		Verify: p.verify,
+		OnFail: p.onFail,
+	}, nil
+}
+
 func TestCreatePlanFromPlannerFreezesCapabilityViewAndPinsToolVersion(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
@@ -188,5 +207,111 @@ func TestCreatePlanFromPlannerReplanCreatesNewCapabilityView(t *testing.T) {
 	}
 	if len(views) != 2 {
 		t.Fatalf("expected two distinct frozen capability views after replanning, got %#v", items)
+	}
+}
+
+func TestRunStepRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion(t *testing.T) {
+	tools := tool.NewRegistry()
+	original := &versionedHandler{version: "v2"}
+	drifted := &versionedHandler{version: "v2-drifted"}
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true, Metadata: map[string]any{"origin": "frozen"}}, original)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools: tools,
+		Planner: verifiedUnversionedShellPlanner{
+			stepID: "step_capability_drift",
+			verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+			onFail: plan.OnFailSpec{Strategy: "abort"},
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "capability drift", "reject drifted frozen capabilities")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run frozen capability without drift"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, _, err := rt.CreatePlanFromPlanner(context.Background(), attached.SessionID, "freeze before drift", 1)
+	if err != nil {
+		t.Fatalf("create plan from planner: %v", err)
+	}
+	if pl.Steps[0].Action.ToolVersion != "v2" {
+		t.Fatalf("expected frozen step to pin v2, got %#v", pl.Steps[0].Action)
+	}
+
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true, Metadata: map[string]any{"origin": "drifted"}}, drifted)
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if drifted.calls != 0 {
+		t.Fatalf("expected drifted handler to be blocked before execution, got %d calls", drifted.calls)
+	}
+	if out.Execution.Action.Error == nil || out.Execution.Action.Error.Code != "CAPABILITY_VIEW_DRIFT" {
+		t.Fatalf("expected CAPABILITY_VIEW_DRIFT action error, got %#v", out.Execution.Action)
+	}
+	if out.Session.Phase != session.PhaseFailed {
+		t.Fatalf("expected session failure after frozen capability drift, got %#v", out.Session)
+	}
+}
+
+func TestRecoverSessionRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion(t *testing.T) {
+	tools := tool.NewRegistry()
+	original := &versionedHandler{version: "v2"}
+	drifted := &versionedHandler{version: "v2-drifted"}
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true, Metadata: map[string]any{"origin": "frozen"}}, original)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools: tools,
+		Planner: verifiedUnversionedShellPlanner{
+			stepID: "step_recover_capability_drift",
+			verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+			onFail: plan.OnFailSpec{Strategy: "abort"},
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "capability recover drift", "recover frozen capability without drift")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "recover frozen capability"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, _, err := rt.CreatePlanFromPlanner(context.Background(), attached.SessionID, "freeze before recover drift", 1)
+	if err != nil {
+		t.Fatalf("create plan from planner: %v", err)
+	}
+	if pl.Steps[0].Action.ToolVersion != "v2" {
+		t.Fatalf("expected frozen step to pin v2, got %#v", pl.Steps[0].Action)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), attached.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+
+	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true, Metadata: map[string]any{"origin": "drifted"}}, drifted)
+
+	out, err := rt.RecoverSession(context.Background(), attached.SessionID)
+	if err != nil {
+		t.Fatalf("recover session: %v", err)
+	}
+	if drifted.calls != 0 {
+		t.Fatalf("expected drifted handler to be blocked during recovery, got %d calls", drifted.calls)
+	}
+	if out.Session.Phase != session.PhaseFailed {
+		t.Fatalf("expected recovery to fail on frozen capability drift, got %#v", out.Session)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected one recovered execution attempt, got %#v", out.Executions)
+	}
+	if out.Executions[0].Execution.Action.Error == nil || out.Executions[0].Execution.Action.Error.Code != "CAPABILITY_VIEW_DRIFT" {
+		t.Fatalf("expected recovered execution to surface CAPABILITY_VIEW_DRIFT, got %#v", out.Executions[0].Execution.Action)
 	}
 }

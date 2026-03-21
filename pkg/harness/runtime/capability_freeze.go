@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
@@ -198,6 +199,57 @@ func persistCapabilityViewInStore(store capability.SnapshotStore, pl plan.Spec, 
 		if _, err := store.Create(snapshot); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Service) frozenCapabilityEntryForStep(sessionID string, step plan.StepSpec) (capability.Snapshot, bool, error) {
+	viewID := capabilityViewIDFromStep(step)
+	if viewID == "" || step.Action.ToolName == "" {
+		return capability.Snapshot{}, false, nil
+	}
+	if s.CapabilitySnapshots == nil {
+		return capability.Snapshot{}, false, capability.ErrCapabilityViewNotFound
+	}
+	items, err := s.CapabilitySnapshots.List(sessionID)
+	if err != nil {
+		return capability.Snapshot{}, false, err
+	}
+	foundView := false
+	for _, item := range items {
+		if item.Scope != capability.SnapshotScopePlan || item.ViewID != viewID {
+			continue
+		}
+		foundView = true
+		if item.ToolName != step.Action.ToolName {
+			continue
+		}
+		if step.Action.ToolVersion != "" && item.Version != step.Action.ToolVersion {
+			continue
+		}
+		return item, true, nil
+	}
+	if !foundView {
+		return capability.Snapshot{}, false, capability.ErrCapabilityViewNotFound
+	}
+	return capability.Snapshot{}, false, capability.ErrCapabilityViewDrift
+}
+
+func validateFrozenCapabilityResolution(expected capability.Snapshot, resolution capability.Resolution) error {
+	if expected.ToolName != resolution.Definition.ToolName {
+		return capability.ErrCapabilityViewDrift
+	}
+	if expected.Version != resolution.Definition.Version {
+		return capability.ErrCapabilityViewDrift
+	}
+	if expected.CapabilityType != resolution.Definition.CapabilityType {
+		return capability.ErrCapabilityViewDrift
+	}
+	if expected.RiskLevel != resolution.Definition.RiskLevel {
+		return capability.ErrCapabilityViewDrift
+	}
+	if !reflect.DeepEqual(expected.Metadata, resolution.Definition.Metadata) {
+		return capability.ErrCapabilityViewDrift
 	}
 	return nil
 }

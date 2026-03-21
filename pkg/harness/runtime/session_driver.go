@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -89,6 +90,9 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 
 		stepOut, err := s.runStepWithDecision(ctx, sessionID, leaseID, selection.Step, nil, nil)
 		if err != nil {
+			if errors.Is(err, ErrStepBackoffActive) {
+				return out, nil
+			}
 			return SessionRunOutput{}, err
 		}
 		out.Executions = append(out.Executions, stepOut)

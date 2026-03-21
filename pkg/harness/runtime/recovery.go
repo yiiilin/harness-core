@@ -164,7 +164,7 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 			}
 		}
 		if shouldReconcileHandles {
-			if err := reconcileActiveRuntimeHandlesInStore(handleStore, sessionID, "session recovered"); err != nil {
+			if err := reconcileActiveRuntimeHandlesInStore(handleStore, sessionID, "session recovered", s.nowMilli()); err != nil {
 				return err
 			}
 		}

@@ -190,7 +190,11 @@ A step is the smallest executable unit in the runtime.
 - effective retry budget is bounded by both runtime `max_retries_per_step` and step-local `max_retries`
 - `abort` fails the session when verification fails
 - `replan` routes back to planning after verification failure
-- `retry` and `reinspect` keep the session in recovery only while retry budget remains
+- `retry` keeps the session in `RECOVER` while retry budget remains
+- `reinspect` re-enters `PREPARE` while retry budget remains so the runtime can re-check inputs before the next attempt
+- `backoff_ms` may cause the runtime to persist `step.metadata.retry_not_before`
+- if `retry_not_before` is still in the future, direct step execution should fail cleanly instead of running early
+- session-driver style execution should stop and return control when backoff is active rather than spinning
 
 ---
 
@@ -238,6 +242,26 @@ ToolDefinition {
   }
 }
 ```
+
+Capability-resolution failures may surface transport-neutral action error codes such as:
+- `CAPABILITY_NOT_FOUND`
+- `CAPABILITY_VERSION_NOT_FOUND`
+- `CAPABILITY_DISABLED`
+- `CAPABILITY_VIEW_NOT_FOUND`
+- `CAPABILITY_VIEW_DRIFT`
+
+Kernel service errors should also be mappable through a transport-neutral classification layer:
+- `conflict`
+- `not_found`
+- `budget`
+- `lease`
+- `runtime_handle`
+- `invalid`
+- `state`
+- `unknown`
+
+Retryability is a separate concern from kind.
+For example, a lease conflict or version conflict may be retryable, while a hard budget exhaustion or terminal runtime-handle state is not.
 
 ---
 
@@ -292,6 +316,15 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 - `verification_id` is required for verification events.
 - `causation_id` should point to the record that directly caused the event, such as an action or attempt record.
 - adapter envelopes may wrap these objects, but must not redefine the meaning of the core fields.
+
+### Execution fact correlation
+
+Execution facts such as attempts, action records, verification records, artifacts, and runtime handles may expose:
+- `attempt_id` for the concrete attempt record
+- `cycle_id` for the logical execution cycle shared across approval gating, resumed execution, verification, and recovery
+- `trace_id` for event/span correlation
+
+`cycle_id` is intentionally transport-neutral. It is for replay/debug grouping, not transport routing or worker identity.
 
 ---
 

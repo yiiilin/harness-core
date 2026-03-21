@@ -10,3 +10,5 @@ var ErrDirectActionInvokeUnsupported = errors.New("direct action invocation is u
 var ErrPlanRevisionBudgetExceeded = errors.New("plan revision budget exceeded")
 var ErrRuntimeBudgetExceeded = errors.New("total runtime budget exceeded")
 var ErrStepRetryBudgetExceeded = errors.New("step retry budget exceeded")
+var ErrStepBackoffActive = errors.New("step retry backoff active")
+var ErrRuntimeHandleNotActive = errors.New("runtime handle is not active")

@@ -60,6 +60,7 @@ type Service struct {
 	LoopBudgets         LoopBudgets
 	Planner             Planner
 	EventSink           EventSink
+	Clock               Clock
 	Metrics             Metrics
 	MetricsExporter     MetricsExporter
 	TraceExporter       TraceExporter
@@ -96,6 +97,7 @@ func New(opts Options) *Service {
 		LoopBudgets:         opts.LoopBudgets,
 		Planner:             opts.Planner,
 		EventSink:           opts.EventSink,
+		Clock:               opts.Clock,
 		Metrics:             metricsOrNoop(opts.Metrics),
 		MetricsExporter:     opts.MetricsExporter,
 		TraceExporter:       opts.TraceExporter,

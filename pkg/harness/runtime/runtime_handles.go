@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -46,7 +45,7 @@ func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, reque
 	return s.mutateRuntimeHandle(ctx, handleID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleClosed
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle closed")
-		handle.ClosedAt = time.Now().UnixMilli()
+		handle.ClosedAt = s.nowMilli()
 		if len(request.Metadata) > 0 {
 			handle.Metadata = mergeMaps(handle.Metadata, cloneAnyMap(request.Metadata))
 		}
@@ -58,7 +57,7 @@ func (s *Service) InvalidateRuntimeHandle(ctx context.Context, handleID string, 
 	return s.mutateRuntimeHandle(ctx, handleID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleInvalidated
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
-		handle.InvalidatedAt = time.Now().UnixMilli()
+		handle.InvalidatedAt = s.nowMilli()
 		if len(request.Metadata) > 0 {
 			handle.Metadata = mergeMaps(handle.Metadata, cloneAnyMap(request.Metadata))
 		}
@@ -76,6 +75,9 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, muta
 		if err != nil {
 			return err
 		}
+		if !isRuntimeHandleActive(current) {
+			return ErrRuntimeHandleNotActive
+		}
 		updated = mutate(current)
 		updated.HandleID = current.HandleID
 		if updated.SessionID == "" {
@@ -87,6 +89,9 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, muta
 		if updated.AttemptID == "" {
 			updated.AttemptID = current.AttemptID
 		}
+		if updated.CycleID == "" {
+			updated.CycleID = current.CycleID
+		}
 		if updated.TraceID == "" {
 			updated.TraceID = current.TraceID
 		}
@@ -96,7 +101,7 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, muta
 		if updated.CreatedAt == 0 {
 			updated.CreatedAt = current.CreatedAt
 		}
-		updated.UpdatedAt = time.Now().UnixMilli()
+		updated.UpdatedAt = s.nowMilli()
 		return store.Update(updated)
 	}
 
@@ -115,7 +120,7 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, muta
 	return updated, nil
 }
 
-func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, sessionID, reason string) error {
+func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, sessionID, reason string, now int64) error {
 	if store == nil || sessionID == "" {
 		return nil
 	}
@@ -123,7 +128,6 @@ func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, se
 	if err != nil {
 		return err
 	}
-	now := time.Now().UnixMilli()
 	for _, handle := range handles {
 		if !isRuntimeHandleActive(handle) {
 			continue

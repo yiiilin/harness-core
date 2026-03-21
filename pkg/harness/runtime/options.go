@@ -43,6 +43,7 @@ type Options struct {
 	LoopBudgets         LoopBudgets
 	Planner             Planner
 	EventSink           EventSink
+	Clock               Clock
 	Metrics             Metrics
 	MetricsExporter     MetricsExporter
 	TraceExporter       TraceExporter
@@ -153,6 +154,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Planner == nil {
 		opts.Planner = NoopPlanner{}
+	}
+	if opts.Clock == nil {
+		opts.Clock = systemClock{}
 	}
 	if opts.EventSink == nil {
 		opts.EventSink = AuditStoreSink{Store: opts.Audit}

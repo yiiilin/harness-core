@@ -109,6 +109,9 @@ The migration inspection helpers are also public so platforms can build their ow
   - event sink
   - metrics exporter
   - trace exporter
+- runtime error helpers:
+  - `runtime.ClassifyError`
+  - `runtime.IsRetryable`
 
 ### Lower-level packages
 Consumers may import lower-level packages directly when they need finer control, but the default path should begin with `pkg/harness`.
@@ -143,6 +146,9 @@ Intent:
 - these packages are importable and supported
 - contracts should remain coherent and documented
 - pre-1.0 evolution is still expected, especially when closing correctness gaps
+
+Adapter guidance:
+- transport adapters should prefer the transport-neutral runtime error helpers over hard-coding kernel sentinel errors into protocol mappings
 
 ### Internal-only / no stability promise
 - `internal/*`

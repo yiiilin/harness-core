@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
@@ -235,6 +236,9 @@ func TestRuntimeHandleControlSurfaceUpdatesAndClosesHandles(t *testing.T) {
 	if initial.Status != execution.RuntimeHandleActive {
 		t.Fatalf("expected active runtime handle by default, got %#v", initial)
 	}
+	if initial.CycleID == "" {
+		t.Fatalf("expected runtime handle cycle_id, got %#v", initial)
+	}
 
 	nextValue := "pty-session-1-updated"
 	updated, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_test_1", hruntime.RuntimeHandleUpdate{
@@ -246,6 +250,9 @@ func TestRuntimeHandleControlSurfaceUpdatesAndClosesHandles(t *testing.T) {
 	}
 	if updated.Status != execution.RuntimeHandleActive || updated.Value != nextValue {
 		t.Fatalf("unexpected updated runtime handle: %#v", updated)
+	}
+	if updated.CycleID != initial.CycleID {
+		t.Fatalf("expected update to preserve cycle_id %q, got %#v", initial.CycleID, updated)
 	}
 	if got, _ := updated.Metadata["attached_client"].(string); got != "cli" {
 		t.Fatalf("expected merged update metadata, got %#v", updated.Metadata)
@@ -261,8 +268,21 @@ func TestRuntimeHandleControlSurfaceUpdatesAndClosesHandles(t *testing.T) {
 	if closed.Status != execution.RuntimeHandleClosed || closed.ClosedAt == 0 || closed.StatusReason != "client closed" {
 		t.Fatalf("unexpected closed runtime handle: %#v", closed)
 	}
+	if closed.CycleID != initial.CycleID {
+		t.Fatalf("expected close to preserve cycle_id %q, got %#v", initial.CycleID, closed)
+	}
 	if got, _ := closed.Metadata["closed_by"].(string); got != "operator" {
 		t.Fatalf("expected close metadata to persist, got %#v", closed.Metadata)
+	}
+	if _, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_test_1", hruntime.RuntimeHandleUpdate{
+		Metadata: map[string]any{"late_update": true},
+	}); !errors.Is(err, hruntime.ErrRuntimeHandleNotActive) {
+		t.Fatalf("expected closed handle update to fail with ErrRuntimeHandleNotActive, got %v", err)
+	}
+	if _, err := rt.InvalidateRuntimeHandle(context.Background(), "hdl_test_1", hruntime.RuntimeHandleInvalidateRequest{
+		Reason: "late invalidate",
+	}); !errors.Is(err, hruntime.ErrRuntimeHandleNotActive) {
+		t.Fatalf("expected closed handle invalidate to fail with ErrRuntimeHandleNotActive, got %v", err)
 	}
 }
 
@@ -292,6 +312,11 @@ func TestRuntimeHandleControlSurfaceInvalidatesHandle(t *testing.T) {
 	}
 	if got, _ := invalidated.Metadata["reconciled_by"].(string); got != "runtime" {
 		t.Fatalf("expected invalidate metadata to persist, got %#v", invalidated.Metadata)
+	}
+	if _, err := rt.CloseRuntimeHandle(context.Background(), "hdl_invalidate", hruntime.RuntimeHandleCloseRequest{
+		Reason: "late close",
+	}); !errors.Is(err, hruntime.ErrRuntimeHandleNotActive) {
+		t.Fatalf("expected invalidated handle close to fail with ErrRuntimeHandleNotActive, got %v", err)
 	}
 }
 

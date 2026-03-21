@@ -214,3 +214,87 @@ func TestExecutionFactsPersistAcrossPostgresRuntimeReinit(t *testing.T) {
 		t.Fatalf("expected durable rich audit envelope after reinit, got %#v", events)
 	}
 }
+
+func TestApprovedPendingApprovalRecoveryPreservesExecutionCycleAcrossPostgresReinit(t *testing.T) {
+	pg := postgrestest.Start(t)
+
+	opts := hruntime.Options{}
+	builtins.Register(&opts)
+	opts.Policy = askPolicy{}
+
+	rt1, db1 := pg.OpenService(t, opts)
+
+	sess := mustCreateSession(t, rt1, "postgres cycle", "preserve logical execution cycle across reinit")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "recover one logical execution cycle"})
+	sess, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt1.CreatePlan(sess.SessionID, "approval durable cycle", []plan.StepSpec{{
+		StepID: "step_pg_cycle",
+		Title:  "durable approval cycle",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo durable cycle", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt1.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	attemptsBefore := mustListAttempts(t, rt1, sess.SessionID)
+	if len(attemptsBefore) != 1 || attemptsBefore[0].CycleID == "" {
+		t.Fatalf("expected one blocked attempt with cycle_id, got %#v", attemptsBefore)
+	}
+	cycleID := attemptsBefore[0].CycleID
+
+	if _, _, err := rt1.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+
+	if err := db1.Close(); err != nil {
+		t.Fatalf("close first db: %v", err)
+	}
+
+	rt2, db2 := pg.OpenService(t, opts)
+	defer db2.Close()
+
+	resumed, err := rt2.ResumePendingApproval(context.Background(), sess.SessionID)
+	if err != nil {
+		t.Fatalf("resume pending approval after reinit: %v", err)
+	}
+	if resumed.Session.PendingApprovalID != "" {
+		t.Fatalf("expected pending approval cleared after resume, got %#v", resumed.Session)
+	}
+
+	attempts := mustListAttempts(t, rt2, sess.SessionID)
+	if len(attempts) != 1 || attempts[0].CycleID != cycleID {
+		t.Fatalf("expected durable attempt to retain cycle_id %q, got %#v", cycleID, attempts)
+	}
+	actions := mustListActions(t, rt2, sess.SessionID)
+	if len(actions) != 1 || actions[0].CycleID != cycleID {
+		t.Fatalf("expected durable action to retain cycle_id %q, got %#v", cycleID, actions)
+	}
+	verifications := mustListVerifications(t, rt2, sess.SessionID)
+	if len(verifications) != 1 || verifications[0].CycleID != cycleID {
+		t.Fatalf("expected durable verification to retain cycle_id %q, got %#v", cycleID, verifications)
+	}
+	artifacts := mustListArtifacts(t, rt2, sess.SessionID)
+	if len(artifacts) == 0 {
+		t.Fatalf("expected durable artifacts")
+	}
+	for _, artifact := range artifacts {
+		if artifact.CycleID != cycleID {
+			t.Fatalf("expected durable artifact to retain cycle_id %q, got %#v", cycleID, artifact)
+		}
+	}
+}

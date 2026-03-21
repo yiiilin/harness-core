@@ -42,14 +42,16 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if state.PendingApprovalID != "" && (activeApproval == nil || state.PendingApprovalID != activeApproval.ApprovalID) {
 		return StepRunOutput{}, ErrSessionAwaitingApproval
 	}
-	if err := ensureRuntimeBudget(state, s.LoopBudgets); err != nil {
+	now := s.nowMilli()
+	if err := ensureRuntimeBudget(state, s.LoopBudgets, now); err != nil {
 		return StepRunOutput{}, err
 	}
 	if err := ensureStepRetryBudget(step, s.LoopBudgets); err != nil {
 		return StepRunOutput{}, err
 	}
-
-	now := time.Now().UnixMilli()
+	if backoffActive(step, now) {
+		return StepRunOutput{}, ErrStepBackoffActive
+	}
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
 	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
@@ -85,6 +87,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	attemptRecord.SessionID = sessionID
 	attemptRecord.TaskID = state.TaskID
 	attemptRecord.StepID = step.StepID
+	attemptRecord.CycleID = ensureExecutionCycleID(&step, attemptRecord.CycleID)
 	var actionRecord *execution.ActionRecord
 	var verificationRecord *execution.VerificationRecord
 	artifactRecords := []execution.Artifact{}
@@ -260,7 +263,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		s.Metrics.Record("step.run", map[string]any{"success": false, "policy_denied": true, "verify_failed": false, "action_failed": false, "duration_ms": int64(0)})
 		s.exportStepMetricSample(ctx, state, step, attemptRecord, nil, nil, false, true, false, false, 0)
 		step.Status = plan.StepFailed
-		step.FinishedAt = time.Now().UnixMilli()
+		step.FinishedAt = s.nowMilli()
 		attemptRecord.Status = execution.AttemptFailed
 		attemptRecord.Step = step
 		attemptRecord.FinishedAt = step.FinishedAt
@@ -332,6 +335,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		SessionID:   sessionID,
 		TaskID:      state.TaskID,
 		StepID:      step.StepID,
+		CycleID:     attemptRecord.CycleID,
 		ToolName:    step.Action.ToolName,
 		TraceID:     attemptRecord.TraceID,
 		CausationID: attemptRecord.AttemptID,
@@ -388,6 +392,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			StepID:     step.StepID,
 			AttemptID:  attemptRecord.AttemptID,
 			ActionID:   actionRecord.ActionID,
+			CycleID:    attemptRecord.CycleID,
 			TraceID:    attemptRecord.TraceID,
 			Name:       "action.result",
 			Kind:       "action_result",
@@ -396,7 +401,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				"meta":  actResult.Meta,
 				"error": actResult.Error,
 			},
-			CreatedAt: time.Now().UnixMilli(),
+			CreatedAt: s.nowMilli(),
 		})
 	}
 	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord)
@@ -409,15 +414,16 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		TaskID:         state.TaskID,
 		StepID:         step.StepID,
 		ActionID:       actionRecord.ActionID,
+		CycleID:        attemptRecord.CycleID,
 		TraceID:        attemptRecord.TraceID,
 		CausationID:    actionRecord.ActionID,
 		Spec:           step.Verify,
-		StartedAt:      time.Now().UnixMilli(),
+		StartedAt:      s.nowMilli(),
 	}
 	verifyResult, verifyErr := s.EvaluateVerify(ctx, step.Verify, actResult, state)
 	execResult.Verify = verifyResult
 	verificationRecord.Result = verifyResult
-	verificationRecord.FinishedAt = time.Now().UnixMilli()
+	verificationRecord.FinishedAt = s.nowMilli()
 	verifyEventIndex := len(events)
 	appendEvent(audit.EventVerifyCompleted, step.StepID, map[string]any{"success": verifyResult.Success, "reason": verifyResult.Reason}, actionRecord.ActionID, actionRecord.ActionID)
 	events[verifyEventIndex].VerificationID = verificationRecord.VerificationID
@@ -447,7 +453,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		step.Status = plan.StepFailed
 		state.RetryCount++
 	}
-	step.FinishedAt = time.Now().UnixMilli()
+	applyStepRetryBackoff(&step, next, s.nowMilli())
+	step.FinishedAt = s.nowMilli()
 	execResult.Step = step
 	attemptRecord.Step = step
 	attemptRecord.FinishedAt = step.FinishedAt
@@ -472,7 +479,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		switch nextApproval.Reply {
 		case approval.ReplyOnce:
 			nextApproval.Status = approval.StatusConsumed
-			nextApproval.ConsumedAt = time.Now().UnixMilli()
+			nextApproval.ConsumedAt = s.nowMilli()
 			finalizedApproval = &nextApproval
 		case approval.ReplyAlways:
 			nextApproval.Status = approval.StatusApproved
@@ -847,19 +854,32 @@ func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) pers
 }
 
 func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.State, step plan.StepSpec) (*capability.Resolution, action.Result, error) {
-	resolution, err := s.ResolveCapability(ctx, capability.Request{
+	req := capability.Request{
 		SessionID: state.SessionID,
 		TaskID:    state.TaskID,
 		StepID:    step.StepID,
 		Action:    step.Action,
-	})
+	}
+	frozen, hasFrozen, err := s.frozenCapabilityEntryForStep(state.SessionID, step)
 	if err != nil {
 		return nil, capabilityErrorResult(step.Action, err), err
+	}
+	if hasFrozen {
+		req.Action.ToolVersion = frozen.Version
+	}
+	resolution, err := s.ResolveCapability(ctx, req)
+	if err != nil {
+		return nil, capabilityErrorResult(step.Action, err), err
+	}
+	if hasFrozen {
+		if err := validateFrozenCapabilityResolution(frozen, resolution); err != nil {
+			return nil, capabilityErrorResult(step.Action, err), err
+		}
 	}
 	if resolution.Handler == nil {
 		return &resolution, action.Result{OK: false, Error: &action.Error{Code: "TOOL_NOT_IMPLEMENTED", Message: step.Action.ToolName}}, nil
 	}
-	result, invokeErr := resolution.Handler.Invoke(ctx, step.Action.Args)
+	result, invokeErr := resolution.Handler.Invoke(ctx, req.Action.Args)
 	return &resolution, result, invokeErr
 }
 
@@ -947,6 +967,7 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 			SessionID: attempt.SessionID,
 			TaskID:    attempt.TaskID,
 			AttemptID: attempt.AttemptID,
+			CycleID:   attempt.CycleID,
 			TraceID:   attempt.TraceID,
 			Status:    execution.RuntimeHandleActive,
 			CreatedAt: now,
@@ -971,6 +992,9 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 		}
 		if v, _ := mapItem["attempt_id"].(string); v != "" {
 			handle.AttemptID = v
+		}
+		if v, _ := mapItem["cycle_id"].(string); v != "" {
+			handle.CycleID = v
 		}
 		if v, _ := mapItem["trace_id"].(string); v != "" {
 			handle.TraceID = v
@@ -1022,6 +1046,9 @@ func runtimeHandleFromValue(raw any, attempt execution.Attempt, actionRecord *ex
 	}
 	if handle.AttemptID == "" {
 		handle.AttemptID = attempt.AttemptID
+	}
+	if handle.CycleID == "" {
+		handle.CycleID = attempt.CycleID
 	}
 	if handle.TraceID == "" {
 		handle.TraceID = attempt.TraceID

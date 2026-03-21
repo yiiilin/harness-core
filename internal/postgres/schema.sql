@@ -192,6 +192,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   task_id TEXT,
   step_id TEXT,
   approval_id TEXT,
+  cycle_id TEXT,
   trace_id TEXT,
   status TEXT NOT NULL,
   step_json TEXT NOT NULL,
@@ -203,12 +204,16 @@ CREATE TABLE IF NOT EXISTS attempts (
 CREATE INDEX IF NOT EXISTS idx_attempts_session_started
   ON attempts(session_id, started_at);
 
+ALTER TABLE attempts
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT;
+
 CREATE TABLE IF NOT EXISTS action_records (
   action_id TEXT PRIMARY KEY,
   attempt_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   task_id TEXT,
   step_id TEXT,
+  cycle_id TEXT,
   tool_name TEXT,
   trace_id TEXT,
   causation_id TEXT,
@@ -222,6 +227,9 @@ CREATE TABLE IF NOT EXISTS action_records (
 CREATE INDEX IF NOT EXISTS idx_action_records_session_started
   ON action_records(session_id, started_at);
 
+ALTER TABLE action_records
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT;
+
 CREATE TABLE IF NOT EXISTS verification_records (
   verification_id TEXT PRIMARY KEY,
   attempt_id TEXT NOT NULL,
@@ -229,6 +237,7 @@ CREATE TABLE IF NOT EXISTS verification_records (
   task_id TEXT,
   step_id TEXT,
   action_id TEXT,
+  cycle_id TEXT,
   trace_id TEXT,
   causation_id TEXT,
   status TEXT NOT NULL,
@@ -242,6 +251,9 @@ CREATE TABLE IF NOT EXISTS verification_records (
 CREATE INDEX IF NOT EXISTS idx_verification_records_session_started
   ON verification_records(session_id, started_at);
 
+ALTER TABLE verification_records
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT;
+
 CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -250,6 +262,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   attempt_id TEXT,
   action_id TEXT,
   verification_id TEXT,
+  cycle_id TEXT,
   trace_id TEXT,
   name TEXT,
   kind TEXT,
@@ -261,11 +274,15 @@ CREATE TABLE IF NOT EXISTS artifacts (
 CREATE INDEX IF NOT EXISTS idx_artifacts_session_created
   ON artifacts(session_id, created_at);
 
+ALTER TABLE artifacts
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT;
+
 CREATE TABLE IF NOT EXISTS runtime_handles (
   handle_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   task_id TEXT,
   attempt_id TEXT,
+  cycle_id TEXT,
   trace_id TEXT,
   kind TEXT,
   value TEXT,
@@ -280,3 +297,6 @@ CREATE TABLE IF NOT EXISTS runtime_handles (
 
 CREATE INDEX IF NOT EXISTS idx_runtime_handles_session_created
   ON runtime_handles(session_id, created_at);
+
+ALTER TABLE runtime_handles
+  ADD COLUMN IF NOT EXISTS cycle_id TEXT;

@@ -3,7 +3,6 @@ package session
 import (
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -21,14 +20,22 @@ type Store interface {
 type MemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]State
+	clock    Clock
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{sessions: map[string]State{}}
+	return NewMemoryStoreWithClock(systemClock{})
+}
+
+func NewMemoryStoreWithClock(clock Clock) *MemoryStore {
+	if clock == nil {
+		clock = systemClock{}
+	}
+	return &MemoryStore{sessions: map[string]State{}, clock: clock}
 }
 
 func (s *MemoryStore) Create(title, goal string) (State, error) {
-	now := time.Now().UnixMilli()
+	now := s.clock.NowMilli()
 	st := State{
 		SessionID:       uuid.NewString(),
 		Title:           title,
@@ -70,7 +77,7 @@ func (s *MemoryStore) Update(next State) error {
 	if next.CreatedAt == 0 {
 		next.CreatedAt = current.CreatedAt
 	}
-	next.UpdatedAt = time.Now().UnixMilli()
+	next.UpdatedAt = s.clock.NowMilli()
 	s.sessions[next.SessionID] = next
 	return nil
 }

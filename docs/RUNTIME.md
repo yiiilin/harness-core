@@ -101,6 +101,7 @@ Use the model for:
 
 Use program logic for:
 - retries
+- retry backoff enforcement
 - timeout handling
 - policy checks
 - deterministic success/failure checks
@@ -235,6 +236,18 @@ That includes:
 - artifacts
 - runtime handles
 
+These records now also support a logical `cycle_id`.
+
+Use the ids this way:
+- `attempt_id` identifies a concrete attempt record
+- `cycle_id` groups one logical execution cycle across approval blocking, resumed execution, verification, artifacts, and runtime handles
+- `trace_id` remains the observability correlation id for events and spans emitted during that cycle
+
+Runtime-handle lifecycle is also kernel-governed:
+- `active` handles may be updated, closed, or invalidated
+- `closed` and `invalidated` handles are terminal execution facts
+- control-surface mutations against terminal handles must fail cleanly instead of silently reopening or rewriting them
+
 The runtime event envelope also carries stable identifiers for:
 - `task_id`
 - `attempt_id`
@@ -268,6 +281,29 @@ Today they are used for:
 - compactor input
 - tool-output truncation boundaries
 
+### Current `OnFail` runtime behavior
+
+The kernel currently treats `OnFailSpec` as executable runtime policy, not planner-only metadata.
+
+- `abort` fails the session after verification failure
+- `replan` routes the session back to planning after verification failure
+- `retry` keeps the session recoverable and may persist `step.metadata.retry_not_before` when `backoff_ms` is set
+- `reinspect` re-enters `PREPARE` before the next attempt and may also persist `step.metadata.retry_not_before` when `backoff_ms` is set
+- when `retry_not_before` is still in the future, direct step execution must fail cleanly and the session driver must stop instead of busy-looping
+
+### Replaceable kernel clock
+
+Time-sensitive kernel behavior should not be hard-coded to wall-clock reads.
+
+The runtime now supports a small replaceable clock surface for:
+- retry backoff enforcement
+- runtime budget checks
+- lease claim / renew / release timestamps
+- runtime-handle lifecycle timestamps
+
+This exists for deterministic tests and replay-oriented embeddings.
+Adapters and platforms may still use real time by default; they should not need to fork kernel logic just to freeze or advance time in tests.
+
 ---
 
 ## Approval and resume
@@ -281,6 +317,7 @@ Current runtime behavior:
 - expose `ResumePendingApproval(...)`
 - support `once`, `always`, and `reject`
 - scope `always` reuse to the recorded approval request shape, matched rule, and resolved capability version
+- persist the blocked step's logical execution cycle so resumed or recovered execution facts stay attached to the same cycle
 
 Direct `action.invoke` style execution is intentionally unsupported at the kernel level.
 All governed tool execution should pass through the step runtime path so policy, approval, execution facts, and audit stay in one chain.
@@ -349,6 +386,9 @@ The resolved snapshot captures stable capability metadata such as:
 - version
 - capability type
 - risk level
+
+Execution against a frozen plan now validates the live capability definition against the frozen view before handler invocation.
+If the pinned capability version disappears or the live definition drifts in stable fields such as capability type, risk level, or metadata, execution must fail cleanly rather than silently replay against a changed capability.
 
 This keeps action execution replay-friendly even when the live registry continues to evolve.
 

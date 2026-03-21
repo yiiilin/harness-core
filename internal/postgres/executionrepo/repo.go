@@ -31,9 +31,9 @@ func (r *AttemptRepo) Create(spec execution.Attempt) (execution.Attempt, error) 
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO attempts (
-  attempt_id, session_id, task_id, step_id, approval_id, trace_id, status, step_json, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-`, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ApprovalID), nullable(spec.TraceID), string(spec.Status), string(stepJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
+  attempt_id, session_id, task_id, step_id, approval_id, cycle_id, trace_id, status, step_json, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+`, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ApprovalID), nullable(spec.CycleID), nullable(spec.TraceID), string(spec.Status), string(stepJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
 		return execution.Attempt{}, err
 	}
@@ -43,7 +43,7 @@ INSERT INTO attempts (
 func (r *AttemptRepo) Get(id string) (execution.Attempt, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT attempt_id, session_id, task_id, step_id, approval_id, trace_id, status, step_json, metadata_json, started_at, finished_at
+SELECT attempt_id, session_id, task_id, step_id, approval_id, cycle_id, trace_id, status, step_json, metadata_json, started_at, finished_at
 FROM attempts WHERE attempt_id = $1
 `, id)
 	return scanAttempt(row.Scan)
@@ -65,21 +65,22 @@ SET session_id = $2,
     task_id = $3,
     step_id = $4,
     approval_id = $5,
-    trace_id = $6,
-    status = $7,
-    step_json = $8,
-    metadata_json = $9,
-    started_at = $10,
-    finished_at = $11
+    cycle_id = $6,
+    trace_id = $7,
+    status = $8,
+    step_json = $9,
+    metadata_json = $10,
+    started_at = $11,
+    finished_at = $12
 WHERE attempt_id = $1
-`, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ApprovalID), nullable(next.TraceID), string(next.Status), string(stepJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
+`, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ApprovalID), nullable(next.CycleID), nullable(next.TraceID), string(next.Status), string(stepJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
 	return err
 }
 
 func (r *AttemptRepo) List(sessionID string) ([]execution.Attempt, error) {
 	ctx := context.Background()
 	query := `
-SELECT attempt_id, session_id, task_id, step_id, approval_id, trace_id, status, step_json, metadata_json, started_at, finished_at
+SELECT attempt_id, session_id, task_id, step_id, approval_id, cycle_id, trace_id, status, step_json, metadata_json, started_at, finished_at
 FROM attempts
 `
 	args := []any{}
@@ -113,9 +114,9 @@ func (r *ActionRepo) Create(spec execution.ActionRecord) (execution.ActionRecord
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO action_records (
-  action_id, attempt_id, session_id, task_id, step_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-`, spec.ActionID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ToolName), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
+  action_id, attempt_id, session_id, task_id, step_id, cycle_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+`, spec.ActionID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.CycleID), nullable(spec.ToolName), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
 		return execution.ActionRecord{}, err
 	}
@@ -125,7 +126,7 @@ INSERT INTO action_records (
 func (r *ActionRepo) Get(id string) (execution.ActionRecord, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT action_id, attempt_id, session_id, task_id, step_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
+SELECT action_id, attempt_id, session_id, task_id, step_id, cycle_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
 FROM action_records WHERE action_id = $1
 `, id)
 	return scanAction(row.Scan)
@@ -147,23 +148,24 @@ SET attempt_id = $2,
     session_id = $3,
     task_id = $4,
     step_id = $5,
-    tool_name = $6,
-    trace_id = $7,
-    causation_id = $8,
-    status = $9,
-    result_json = $10,
-    metadata_json = $11,
-    started_at = $12,
-    finished_at = $13
+    cycle_id = $6,
+    tool_name = $7,
+    trace_id = $8,
+    causation_id = $9,
+    status = $10,
+    result_json = $11,
+    metadata_json = $12,
+    started_at = $13,
+    finished_at = $14
 WHERE action_id = $1
-`, next.ActionID, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ToolName), nullable(next.TraceID), nullable(next.CausationID), string(next.Status), string(resultJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
+`, next.ActionID, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.CycleID), nullable(next.ToolName), nullable(next.TraceID), nullable(next.CausationID), string(next.Status), string(resultJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
 	return err
 }
 
 func (r *ActionRepo) List(sessionID string) ([]execution.ActionRecord, error) {
 	ctx := context.Background()
 	query := `
-SELECT action_id, attempt_id, session_id, task_id, step_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
+SELECT action_id, attempt_id, session_id, task_id, step_id, cycle_id, tool_name, trace_id, causation_id, status, result_json, metadata_json, started_at, finished_at
 FROM action_records
 `
 	args := []any{}
@@ -198,9 +200,9 @@ func (r *VerificationRepo) Create(spec execution.VerificationRecord) (execution.
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO verification_records (
-  verification_id, attempt_id, session_id, task_id, step_id, action_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-`, spec.VerificationID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ActionID), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(specJSON), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
+  verification_id, attempt_id, session_id, task_id, step_id, action_id, cycle_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+`, spec.VerificationID, spec.AttemptID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.ActionID), nullable(spec.CycleID), nullable(spec.TraceID), nullable(spec.CausationID), string(spec.Status), string(specJSON), string(resultJSON), nullableJSON(metadataJSON), spec.StartedAt, nullableInt64(spec.FinishedAt))
 	if err != nil {
 		return execution.VerificationRecord{}, err
 	}
@@ -210,7 +212,7 @@ INSERT INTO verification_records (
 func (r *VerificationRepo) Get(id string) (execution.VerificationRecord, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT verification_id, attempt_id, session_id, task_id, step_id, action_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
+SELECT verification_id, attempt_id, session_id, task_id, step_id, action_id, cycle_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
 FROM verification_records WHERE verification_id = $1
 `, id)
 	return scanVerification(row.Scan)
@@ -237,23 +239,24 @@ SET attempt_id = $2,
     task_id = $4,
     step_id = $5,
     action_id = $6,
-    trace_id = $7,
-    causation_id = $8,
-    status = $9,
-    spec_json = $10,
-    result_json = $11,
-    metadata_json = $12,
-    started_at = $13,
-    finished_at = $14
+    cycle_id = $7,
+    trace_id = $8,
+    causation_id = $9,
+    status = $10,
+    spec_json = $11,
+    result_json = $12,
+    metadata_json = $13,
+    started_at = $14,
+    finished_at = $15
 WHERE verification_id = $1
-`, next.VerificationID, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ActionID), nullable(next.TraceID), nullable(next.CausationID), string(next.Status), string(specJSON), string(resultJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
+`, next.VerificationID, next.AttemptID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.ActionID), nullable(next.CycleID), nullable(next.TraceID), nullable(next.CausationID), string(next.Status), string(specJSON), string(resultJSON), nullableJSON(metadataJSON), next.StartedAt, nullableInt64(next.FinishedAt))
 	return err
 }
 
 func (r *VerificationRepo) List(sessionID string) ([]execution.VerificationRecord, error) {
 	ctx := context.Background()
 	query := `
-SELECT verification_id, attempt_id, session_id, task_id, step_id, action_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
+SELECT verification_id, attempt_id, session_id, task_id, step_id, action_id, cycle_id, trace_id, causation_id, status, spec_json, result_json, metadata_json, started_at, finished_at
 FROM verification_records
 `
 	args := []any{}
@@ -287,9 +290,9 @@ func (r *ArtifactRepo) Create(spec execution.Artifact) (execution.Artifact, erro
 	metadataJSON, _ := json.Marshal(spec.Metadata)
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO artifacts (
-  artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, trace_id, name, kind, payload_json, metadata_json, created_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-`, spec.ArtifactID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.AttemptID), nullable(spec.ActionID), nullable(spec.VerificationID), nullable(spec.TraceID), nullable(spec.Name), nullable(spec.Kind), nullableJSON(payloadJSON), nullableJSON(metadataJSON), spec.CreatedAt)
+  artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, cycle_id, trace_id, name, kind, payload_json, metadata_json, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+`, spec.ArtifactID, spec.SessionID, nullable(spec.TaskID), nullable(spec.StepID), nullable(spec.AttemptID), nullable(spec.ActionID), nullable(spec.VerificationID), nullable(spec.CycleID), nullable(spec.TraceID), nullable(spec.Name), nullable(spec.Kind), nullableJSON(payloadJSON), nullableJSON(metadataJSON), spec.CreatedAt)
 	if err != nil {
 		return execution.Artifact{}, err
 	}
@@ -299,7 +302,7 @@ INSERT INTO artifacts (
 func (r *ArtifactRepo) Get(id string) (execution.Artifact, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, trace_id, name, kind, payload_json, metadata_json, created_at
+SELECT artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, cycle_id, trace_id, name, kind, payload_json, metadata_json, created_at
 FROM artifacts WHERE artifact_id = $1
 `, id)
 	return scanArtifact(row.Scan)
@@ -323,21 +326,22 @@ SET session_id = $2,
     attempt_id = $5,
     action_id = $6,
     verification_id = $7,
-    trace_id = $8,
-    name = $9,
-    kind = $10,
-    payload_json = $11,
-    metadata_json = $12,
-    created_at = $13
+    cycle_id = $8,
+    trace_id = $9,
+    name = $10,
+    kind = $11,
+    payload_json = $12,
+    metadata_json = $13,
+    created_at = $14
 WHERE artifact_id = $1
-`, next.ArtifactID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.AttemptID), nullable(next.ActionID), nullable(next.VerificationID), nullable(next.TraceID), nullable(next.Name), nullable(next.Kind), nullableJSON(payloadJSON), nullableJSON(metadataJSON), next.CreatedAt)
+`, next.ArtifactID, next.SessionID, nullable(next.TaskID), nullable(next.StepID), nullable(next.AttemptID), nullable(next.ActionID), nullable(next.VerificationID), nullable(next.CycleID), nullable(next.TraceID), nullable(next.Name), nullable(next.Kind), nullableJSON(payloadJSON), nullableJSON(metadataJSON), next.CreatedAt)
 	return err
 }
 
 func (r *ArtifactRepo) List(sessionID string) ([]execution.Artifact, error) {
 	ctx := context.Background()
 	query := `
-SELECT artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, trace_id, name, kind, payload_json, metadata_json, created_at
+SELECT artifact_id, session_id, task_id, step_id, attempt_id, action_id, verification_id, cycle_id, trace_id, name, kind, payload_json, metadata_json, created_at
 FROM artifacts
 `
 	args := []any{}
@@ -374,9 +378,9 @@ func (r *RuntimeHandleRepo) Create(spec execution.RuntimeHandle) (execution.Runt
 	}
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO runtime_handles (
-  handle_id, session_id, task_id, attempt_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-`, spec.HandleID, spec.SessionID, nullable(spec.TaskID), nullable(spec.AttemptID), nullable(spec.TraceID), nullable(spec.Kind), nullable(spec.Value), string(spec.Status), nullable(spec.StatusReason), nullableJSON(metadataJSON), spec.CreatedAt, spec.UpdatedAt, nullableInt64(spec.ClosedAt), nullableInt64(spec.InvalidatedAt))
+  handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+`, spec.HandleID, spec.SessionID, nullable(spec.TaskID), nullable(spec.AttemptID), nullable(spec.CycleID), nullable(spec.TraceID), nullable(spec.Kind), nullable(spec.Value), string(spec.Status), nullable(spec.StatusReason), nullableJSON(metadataJSON), spec.CreatedAt, spec.UpdatedAt, nullableInt64(spec.ClosedAt), nullableInt64(spec.InvalidatedAt))
 	if err != nil {
 		return execution.RuntimeHandle{}, err
 	}
@@ -386,7 +390,7 @@ INSERT INTO runtime_handles (
 func (r *RuntimeHandleRepo) Get(id string) (execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	row := r.db.QueryRowContext(ctx, `
-SELECT handle_id, session_id, task_id, attempt_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
+SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
 FROM runtime_handles WHERE handle_id = $1
 `, id)
 	return scanRuntimeHandle(row.Scan)
@@ -406,25 +410,26 @@ UPDATE runtime_handles
 SET session_id = $2,
     task_id = $3,
     attempt_id = $4,
-    trace_id = $5,
-    kind = $6,
-    value = $7,
-    status = $8,
-    status_reason = $9,
-    metadata_json = $10,
-    created_at = $11,
-    updated_at = $12,
-    closed_at = $13,
-    invalidated_at = $14
+    cycle_id = $5,
+    trace_id = $6,
+    kind = $7,
+    value = $8,
+    status = $9,
+    status_reason = $10,
+    metadata_json = $11,
+    created_at = $12,
+    updated_at = $13,
+    closed_at = $14,
+    invalidated_at = $15
 WHERE handle_id = $1
-`, next.HandleID, next.SessionID, nullable(next.TaskID), nullable(next.AttemptID), nullable(next.TraceID), nullable(next.Kind), nullable(next.Value), string(next.Status), nullable(next.StatusReason), nullableJSON(metadataJSON), next.CreatedAt, next.UpdatedAt, nullableInt64(next.ClosedAt), nullableInt64(next.InvalidatedAt))
+`, next.HandleID, next.SessionID, nullable(next.TaskID), nullable(next.AttemptID), nullable(next.CycleID), nullable(next.TraceID), nullable(next.Kind), nullable(next.Value), string(next.Status), nullable(next.StatusReason), nullableJSON(metadataJSON), next.CreatedAt, next.UpdatedAt, nullableInt64(next.ClosedAt), nullableInt64(next.InvalidatedAt))
 	return err
 }
 
 func (r *RuntimeHandleRepo) List(sessionID string) ([]execution.RuntimeHandle, error) {
 	ctx := context.Background()
 	query := `
-SELECT handle_id, session_id, task_id, attempt_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
+SELECT handle_id, session_id, task_id, attempt_id, cycle_id, trace_id, kind, value, status, status_reason, metadata_json, created_at, updated_at, closed_at, invalidated_at
 FROM runtime_handles
 `
 	args := []any{}
@@ -504,15 +509,16 @@ func (n *sqlNullInt64) Scan(value any) error {
 
 func scanAttempt(scan scanner) (execution.Attempt, error) {
 	var rec execution.Attempt
-	var taskID, stepID, approvalID, traceID, metadataRaw sqlNullString
+	var taskID, stepID, approvalID, cycleID, traceID, metadataRaw sqlNullString
 	var status, stepRaw string
 	var finishedAt sqlNullInt64
-	if err := scan(&rec.AttemptID, &rec.SessionID, &taskID, &stepID, &approvalID, &traceID, &status, &stepRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
+	if err := scan(&rec.AttemptID, &rec.SessionID, &taskID, &stepID, &approvalID, &cycleID, &traceID, &status, &stepRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
 		return execution.Attempt{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
 	rec.StepID = stepID.String
 	rec.ApprovalID = approvalID.String
+	rec.CycleID = cycleID.String
 	rec.TraceID = traceID.String
 	rec.Status = execution.AttemptStatus(status)
 	rec.FinishedAt = finishedAt.Int64
@@ -528,14 +534,15 @@ func scanAttempt(scan scanner) (execution.Attempt, error) {
 
 func scanAction(scan scanner) (execution.ActionRecord, error) {
 	var rec execution.ActionRecord
-	var taskID, stepID, toolName, traceID, causationID, metadataRaw sqlNullString
+	var taskID, stepID, cycleID, toolName, traceID, causationID, metadataRaw sqlNullString
 	var status, resultRaw string
 	var finishedAt sqlNullInt64
-	if err := scan(&rec.ActionID, &rec.AttemptID, &rec.SessionID, &taskID, &stepID, &toolName, &traceID, &causationID, &status, &resultRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
+	if err := scan(&rec.ActionID, &rec.AttemptID, &rec.SessionID, &taskID, &stepID, &cycleID, &toolName, &traceID, &causationID, &status, &resultRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
 		return execution.ActionRecord{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
 	rec.StepID = stepID.String
+	rec.CycleID = cycleID.String
 	rec.ToolName = toolName.String
 	rec.TraceID = traceID.String
 	rec.CausationID = causationID.String
@@ -553,15 +560,16 @@ func scanAction(scan scanner) (execution.ActionRecord, error) {
 
 func scanVerification(scan scanner) (execution.VerificationRecord, error) {
 	var rec execution.VerificationRecord
-	var taskID, stepID, actionID, traceID, causationID, metadataRaw sqlNullString
+	var taskID, stepID, actionID, cycleID, traceID, causationID, metadataRaw sqlNullString
 	var status, specRaw, resultRaw string
 	var finishedAt sqlNullInt64
-	if err := scan(&rec.VerificationID, &rec.AttemptID, &rec.SessionID, &taskID, &stepID, &actionID, &traceID, &causationID, &status, &specRaw, &resultRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
+	if err := scan(&rec.VerificationID, &rec.AttemptID, &rec.SessionID, &taskID, &stepID, &actionID, &cycleID, &traceID, &causationID, &status, &specRaw, &resultRaw, &metadataRaw, &rec.StartedAt, &finishedAt); err != nil {
 		return execution.VerificationRecord{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
 	rec.StepID = stepID.String
 	rec.ActionID = actionID.String
+	rec.CycleID = cycleID.String
 	rec.TraceID = traceID.String
 	rec.CausationID = causationID.String
 	rec.Status = execution.VerificationStatus(status)
@@ -579,8 +587,8 @@ func scanVerification(scan scanner) (execution.VerificationRecord, error) {
 
 func scanArtifact(scan scanner) (execution.Artifact, error) {
 	var rec execution.Artifact
-	var taskID, stepID, attemptID, actionID, verificationID, traceID, name, kind, payloadRaw, metadataRaw sqlNullString
-	if err := scan(&rec.ArtifactID, &rec.SessionID, &taskID, &stepID, &attemptID, &actionID, &verificationID, &traceID, &name, &kind, &payloadRaw, &metadataRaw, &rec.CreatedAt); err != nil {
+	var taskID, stepID, attemptID, actionID, verificationID, cycleID, traceID, name, kind, payloadRaw, metadataRaw sqlNullString
+	if err := scan(&rec.ArtifactID, &rec.SessionID, &taskID, &stepID, &attemptID, &actionID, &verificationID, &cycleID, &traceID, &name, &kind, &payloadRaw, &metadataRaw, &rec.CreatedAt); err != nil {
 		return execution.Artifact{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
@@ -588,6 +596,7 @@ func scanArtifact(scan scanner) (execution.Artifact, error) {
 	rec.AttemptID = attemptID.String
 	rec.ActionID = actionID.String
 	rec.VerificationID = verificationID.String
+	rec.CycleID = cycleID.String
 	rec.TraceID = traceID.String
 	rec.Name = name.String
 	rec.Kind = kind.String
@@ -608,14 +617,15 @@ func scanArtifact(scan scanner) (execution.Artifact, error) {
 
 func scanRuntimeHandle(scan scanner) (execution.RuntimeHandle, error) {
 	var rec execution.RuntimeHandle
-	var taskID, attemptID, traceID, kind, value, statusReason, metadataRaw sqlNullString
+	var taskID, attemptID, cycleID, traceID, kind, value, statusReason, metadataRaw sqlNullString
 	var status string
 	var closedAt, invalidatedAt sqlNullInt64
-	if err := scan(&rec.HandleID, &rec.SessionID, &taskID, &attemptID, &traceID, &kind, &value, &status, &statusReason, &metadataRaw, &rec.CreatedAt, &rec.UpdatedAt, &closedAt, &invalidatedAt); err != nil {
+	if err := scan(&rec.HandleID, &rec.SessionID, &taskID, &attemptID, &cycleID, &traceID, &kind, &value, &status, &statusReason, &metadataRaw, &rec.CreatedAt, &rec.UpdatedAt, &closedAt, &invalidatedAt); err != nil {
 		return execution.RuntimeHandle{}, translateErr(err)
 	}
 	rec.TaskID = taskID.String
 	rec.AttemptID = attemptID.String
+	rec.CycleID = cycleID.String
 	rec.TraceID = traceID.String
 	rec.Kind = kind.String
 	rec.Value = value.String

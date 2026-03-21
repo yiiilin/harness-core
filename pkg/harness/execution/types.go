@@ -36,6 +36,7 @@ type Attempt struct {
 	TaskID     string         `json:"task_id,omitempty"`
 	StepID     string         `json:"step_id,omitempty"`
 	ApprovalID string         `json:"approval_id,omitempty"`
+	CycleID    string         `json:"cycle_id,omitempty"`
 	TraceID    string         `json:"trace_id,omitempty"`
 	Status     AttemptStatus  `json:"status"`
 	Step       plan.StepSpec  `json:"step"`
@@ -50,6 +51,7 @@ type ActionRecord struct {
 	SessionID   string         `json:"session_id"`
 	TaskID      string         `json:"task_id,omitempty"`
 	StepID      string         `json:"step_id,omitempty"`
+	CycleID     string         `json:"cycle_id,omitempty"`
 	ToolName    string         `json:"tool_name,omitempty"`
 	TraceID     string         `json:"trace_id,omitempty"`
 	CausationID string         `json:"causation_id,omitempty"`
@@ -67,6 +69,7 @@ type VerificationRecord struct {
 	TaskID         string             `json:"task_id,omitempty"`
 	StepID         string             `json:"step_id,omitempty"`
 	ActionID       string             `json:"action_id,omitempty"`
+	CycleID        string             `json:"cycle_id,omitempty"`
 	TraceID        string             `json:"trace_id,omitempty"`
 	CausationID    string             `json:"causation_id,omitempty"`
 	Status         VerificationStatus `json:"status"`
@@ -85,6 +88,7 @@ type Artifact struct {
 	AttemptID      string         `json:"attempt_id,omitempty"`
 	ActionID       string         `json:"action_id,omitempty"`
 	VerificationID string         `json:"verification_id,omitempty"`
+	CycleID        string         `json:"cycle_id,omitempty"`
 	TraceID        string         `json:"trace_id,omitempty"`
 	Name           string         `json:"name,omitempty"`
 	Kind           string         `json:"kind,omitempty"`
@@ -98,6 +102,7 @@ type RuntimeHandle struct {
 	SessionID     string              `json:"session_id"`
 	TaskID        string              `json:"task_id,omitempty"`
 	AttemptID     string              `json:"attempt_id,omitempty"`
+	CycleID       string              `json:"cycle_id,omitempty"`
 	TraceID       string              `json:"trace_id,omitempty"`
 	Kind          string              `json:"kind,omitempty"`
 	Value         string              `json:"value,omitempty"`
