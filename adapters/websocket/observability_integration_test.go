@@ -9,7 +9,6 @@ import (
 
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
-	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
@@ -39,7 +38,7 @@ func TestWebSocketExposesExecutionFactListsAndEventReplay(t *testing.T) {
 	opts.Tools.Register(tool.Definition{ToolName: "demo.handle", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, websocketHandleHandler{})
 	rt := hruntime.New(opts)
 
-	srv := adapterws.New(config.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
+	srv := adapterws.New(adapterws.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/ws"
@@ -152,7 +151,7 @@ func TestWebSocketApprovalRejectsInvalidAndRepeatedReplies(t *testing.T) {
 	opts.Policy = askAllWebSocketPolicy{}
 	rt := hruntime.New(opts)
 
-	srv := adapterws.New(config.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
+	srv := adapterws.New(adapterws.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/ws"

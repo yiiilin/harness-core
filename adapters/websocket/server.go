@@ -9,7 +9,6 @@ import (
 
 	gorillaws "github.com/gorilla/websocket"
 	"github.com/yiiilin/harness-core/internal/auth"
-	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/protocol"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
@@ -20,12 +19,12 @@ import (
 )
 
 type Server struct {
-	cfg      config.Config
+	cfg      Config
 	runtime  *hruntime.Service
 	upgrader gorillaws.Upgrader
 }
 
-func New(cfg config.Config, runtime *hruntime.Service) *Server {
+func New(cfg Config, runtime *hruntime.Service) *Server {
 	return &Server{
 		cfg:      cfg,
 		runtime:  runtime,

@@ -26,6 +26,7 @@ This document focuses on:
 - `pkg/harness/postgres`
 - `pkg/harness/worker`
 - `pkg/harness/replay`
+- adapter-owned config surfaces such as `adapters/websocket.Config` when you choose to reuse a repository-shipped transport
 
 ## Pattern 0: LLM-Backed Planner
 
@@ -138,6 +139,10 @@ Projection path:
 - read kernel facts and cycles from runtime APIs
 - optionally use `pkg/harness/replay` to build ordered cycle/event views
 - present product-specific JSON/UI models outside kernel packages
+
+If you reuse a repository-shipped adapter:
+- pass adapter-owned config types directly, for example `websocket.Config`
+- keep env loading, durable bootstrap choice, and product-specific wiring in your platform layer or CLI wrapper
 
 ## Replay and Debug Projection
 

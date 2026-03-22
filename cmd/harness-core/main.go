@@ -50,7 +50,10 @@ func serveWebsocket(ctx context.Context, cfg config.Config) error {
 		}()
 		rt = durable
 	}
-	srv := websocket.New(cfg, rt)
+	srv := websocket.New(websocket.Config{
+		Addr:        cfg.Addr,
+		SharedToken: cfg.SharedToken,
+	}, rt)
 	return srv.ListenAndServe()
 }
 

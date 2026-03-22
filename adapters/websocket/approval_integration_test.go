@@ -8,7 +8,6 @@ import (
 
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
-	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
@@ -28,7 +27,7 @@ func TestWebSocketApprovalRespondAndResumeFlow(t *testing.T) {
 	opts.Policy = askAllWebSocketPolicy{}
 	rt := hruntime.New(opts)
 
-	srv := adapterws.New(config.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
+	srv := adapterws.New(adapterws.Config{Addr: "127.0.0.1:0", SharedToken: "dev-token"}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/ws"

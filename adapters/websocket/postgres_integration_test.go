@@ -8,7 +8,6 @@ import (
 
 	gorillaws "github.com/gorilla/websocket"
 	adapterws "github.com/yiiilin/harness-core/adapters/websocket"
-	"github.com/yiiilin/harness-core/internal/config"
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
@@ -30,11 +29,9 @@ func TestWebSocketPostgresStepRunHappyPath(t *testing.T) {
 	rt, db := pg.OpenService(t, opts)
 	defer db.Close()
 
-	srv := adapterws.New(config.Config{
+	srv := adapterws.New(adapterws.Config{
 		Addr:        "127.0.0.1:0",
 		SharedToken: "dev-token",
-		StorageMode: "postgres",
-		PostgresDSN: pg.DSN,
 	}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
@@ -145,11 +142,9 @@ func TestWebSocketPostgresPolicyDenyPath(t *testing.T) {
 	rt, db := pg.OpenService(t, opts)
 	defer db.Close()
 
-	srv := adapterws.New(config.Config{
+	srv := adapterws.New(adapterws.Config{
 		Addr:        "127.0.0.1:0",
 		SharedToken: "dev-token",
-		StorageMode: "postgres",
-		PostgresDSN: pg.DSN,
 	}, rt)
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()

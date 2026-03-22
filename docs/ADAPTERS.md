@@ -149,6 +149,8 @@ Today:
 
 - `adapters/http` is a thin reference HTTP control plane
 - `adapters/websocket` is the richer reference adapter
+- `adapters/websocket` exposes its own public `websocket.Config` for adapter-owned transport settings such as listen address and shared token
+- embedders should not need `internal/config` just to construct a repository-shipped adapter
 
 They are useful for examples and local integration, but they are not the
 required durable/bootstrap path for embedders.
