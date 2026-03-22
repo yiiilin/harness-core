@@ -155,6 +155,16 @@ Today:
 They are useful for examples and local integration, but they are not the
 required durable/bootstrap path for embedders.
 
+Do not move durable bootstrap settings such as:
+
+- storage mode
+- Postgres DSN
+- schema
+- migration policy
+
+into adapter config types.
+Those belong in the embedding app or public bootstrap helpers such as `pkg/harness/postgres.Config`.
+
 Embedders should still treat:
 
 - `pkg/harness/postgres` as the durable bootstrap entrypoint

@@ -118,6 +118,32 @@ rt := harness.New(opts)
 
 ---
 
+## 推荐的 durable Postgres 接入方式
+
+如果你的平台要接 durable runtime，优先使用 `pkg/harness/postgres.Config` 和 `OpenServiceWithConfig(...)`，而不是复制 `internal/*` wiring：
+
+```go
+var opts hruntime.Options
+builtins.Register(&opts)
+
+rt, db, err := hpostgres.OpenServiceWithConfig(context.Background(), hpostgres.Config{
+  DSN:             dsn,
+  Schema:          "agent_kernel",
+  MaxOpenConns:    8,
+  MaxIdleConns:    4,
+  ConnMaxLifetime: 30 * time.Minute,
+  ApplyMigrations: true,
+}, opts)
+if err != nil {
+  panic(err)
+}
+defer db.Close()
+```
+
+`internal/config` 仍然只是 reference CLI 的 env loader，不是 embedder API。
+
+---
+
 ## 运行临时 WebSocket adapter
 
 ```bash
@@ -143,6 +169,16 @@ cd examples/go-client
 export HARNESS_URL=ws://127.0.0.1:8787/ws
 export HARNESS_TOKEN=dev-token
 go run .
+```
+
+---
+
+## 运行 durable 平台接入示例
+
+```bash
+export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
+export HARNESS_POSTGRES_SCHEMA='platform_demo'
+go run ./examples/platform-durable-embedding
 ```
 
 ---

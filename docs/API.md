@@ -41,7 +41,10 @@ See:
 ### Stable root helper packages
 
 - `pkg/harness/postgres`
+  - `Config`
+  - `EnsureSchema(...)`
   - `OpenDB(...)`
+  - `OpenDBWithConfig(...)`
   - `EmbeddedMigrations()`
   - `ApplyMigrations(...)`
   - `ApplySchema(...)`
@@ -52,6 +55,7 @@ See:
   - `LatestSchemaVersion()`
   - `BuildOptions(...)`
   - `OpenService(...)`
+  - `OpenServiceWithConfig(...)`
 
 - `pkg/harness/worker`
   - `worker.New(worker.Options{Runtime: rt, ...})`
@@ -237,7 +241,14 @@ import (
 var opts hruntime.Options
 builtins.Register(&opts)
 
-rt, db, err := hpostgres.OpenService(context.Background(), dsn, opts)
+rt, db, err := hpostgres.OpenServiceWithConfig(context.Background(), hpostgres.Config{
+	DSN:             dsn,
+	Schema:          "agent_kernel",
+	MaxOpenConns:    8,
+	MaxIdleConns:    4,
+	ConnMaxLifetime: 30 * time.Minute,
+	ApplyMigrations: true,
+}, opts)
 if err != nil {
 	panic(err)
 }
@@ -255,3 +266,7 @@ _, _ = helper.RunOnce(context.Background())
 
 For platform integration patterns (external run id, external approval UI, remote PTY, restart recovery, accepted-first API wrapper), see `docs/EMBEDDING.md`.
 For transport-binding rules and event/error mapping guidance, see `docs/ADAPTERS.md`.
+
+Important boundary:
+- `pkg/harness/postgres.Config` is the embedder-facing durable bootstrap config surface
+- `internal/config` remains a reference CLI env loader, not a public embedder API

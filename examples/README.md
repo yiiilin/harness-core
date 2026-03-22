@@ -24,6 +24,9 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - `platform-embedding`
   - A small existing-platform embedding example built only on public packages.
   - Shows accepted-first run intake, external run ID mapping, worker-helper orchestration, external approval response, remote PTY wiring, and replay projection without local PTY verifiers.
+- `platform-durable-embedding`
+  - A durable platform-side embedding example built on the public Postgres bootstrap.
+  - Shows external run ID mapping, approval pause, service reopen, approval response, and resuming the same durable session.
 - `postgres-embedded`
   - The smallest durable embedding example through the public Postgres bootstrap.
   - Shows how to open a durable runtime and run work without adapters.

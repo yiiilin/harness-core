@@ -3,7 +3,10 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
@@ -14,6 +17,141 @@ import (
 func TestOpenDBRequiresDSN(t *testing.T) {
 	if _, err := hpostgres.OpenDB(context.Background(), "   "); err == nil {
 		t.Fatalf("expected empty DSN to be rejected")
+	}
+}
+
+func TestEnsureSchemaAndOpenDBWithConfigUseConfiguredSchema(t *testing.T) {
+	pg := postgrestest.Start(t)
+	adminDB, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer adminDB.Close()
+
+	schema := testSchemaName("bootstrap")
+	if err := hpostgres.EnsureSchema(context.Background(), adminDB, schema); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quoteTestIdentifier(schema)))
+	})
+
+	db, err := hpostgres.OpenDBWithConfig(context.Background(), hpostgres.Config{
+		DSN:    pg.DSN,
+		Schema: schema,
+	})
+	if err != nil {
+		t.Fatalf("open db with config: %v", err)
+	}
+	defer db.Close()
+
+	if err := hpostgres.ApplyMigrations(context.Background(), db); err != nil {
+		t.Fatalf("apply migrations in configured schema: %v", err)
+	}
+	currentSchema := currentSchemaName(t, db)
+	if currentSchema != schema {
+		t.Fatalf("expected current schema %q, got %q", schema, currentSchema)
+	}
+	version, err := hpostgres.SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("schema version with configured schema: %v", err)
+	}
+	if version != hpostgres.LatestSchemaVersion() {
+		t.Fatalf("expected latest schema version %q, got %q", hpostgres.LatestSchemaVersion(), version)
+	}
+	if !schemaHasTable(t, adminDB, schema, "sessions") {
+		t.Fatalf("expected sessions table inside configured schema %q", schema)
+	}
+}
+
+func TestOpenDBWithConfigCanApplyMigrationsOnOpenAndTunePool(t *testing.T) {
+	pg := postgrestest.Start(t)
+	adminDB, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer adminDB.Close()
+
+	schema := testSchemaName("pool")
+	if err := hpostgres.EnsureSchema(context.Background(), adminDB, schema); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quoteTestIdentifier(schema)))
+	})
+
+	db, err := hpostgres.OpenDBWithConfig(context.Background(), hpostgres.Config{
+		DSN:             pg.DSN,
+		Schema:          schema,
+		MaxOpenConns:    3,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Nanosecond,
+		ApplyMigrations: true,
+	})
+	if err != nil {
+		t.Fatalf("open db with config: %v", err)
+	}
+	defer db.Close()
+
+	if got := db.Stats().MaxOpenConnections; got != 3 {
+		t.Fatalf("expected max open connections 3, got %d", got)
+	}
+	version, err := hpostgres.SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("schema version after open with migrations: %v", err)
+	}
+	if version != hpostgres.LatestSchemaVersion() {
+		t.Fatalf("expected latest schema version %q, got %q", hpostgres.LatestSchemaVersion(), version)
+	}
+
+	for i := 0; i < 6; i++ {
+		if err := db.PingContext(context.Background()); err != nil {
+			t.Fatalf("ping configured db: %v", err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if db.Stats().MaxLifetimeClosed == 0 {
+		t.Fatalf("expected connection lifetime setting to retire at least one connection, got stats %#v", db.Stats())
+	}
+}
+
+func TestOpenServiceWithConfigProvidesDurableServiceInConfiguredSchema(t *testing.T) {
+	pg := postgrestest.Start(t)
+	adminDB, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer adminDB.Close()
+
+	schema := testSchemaName("service")
+	if err := hpostgres.EnsureSchema(context.Background(), adminDB, schema); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quoteTestIdentifier(schema)))
+	})
+
+	var opts hruntime.Options
+	builtins.Register(&opts)
+
+	rt, db, err := hpostgres.OpenServiceWithConfig(context.Background(), hpostgres.Config{
+		DSN:             pg.DSN,
+		Schema:          schema,
+		ApplyMigrations: true,
+	}, opts)
+	if err != nil {
+		t.Fatalf("open service with config: %v", err)
+	}
+	defer db.Close()
+
+	if rt.StorageMode != "postgres" {
+		t.Fatalf("expected postgres storage mode, got %q", rt.StorageMode)
+	}
+	if _, err := rt.CreateSession("schema-aware bootstrap", "persist through configured schema"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if !schemaHasTable(t, adminDB, schema, "sessions") {
+		t.Fatalf("expected sessions table inside configured schema %q", schema)
 	}
 }
 
@@ -221,4 +359,38 @@ func findMigrationStatus(t *testing.T, items []hpostgres.MigrationStatus, versio
 	}
 	t.Fatalf("expected migration status for version %s, got %#v", version, items)
 	return hpostgres.MigrationStatus{}
+}
+
+func testSchemaName(prefix string) string {
+	replacer := strings.NewReplacer("-", "_", ".", "_")
+	return fmt.Sprintf("hc_%s_%d", replacer.Replace(prefix), time.Now().UnixNano())
+}
+
+func currentSchemaName(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var schema string
+	if err := db.QueryRowContext(context.Background(), `SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatalf("read current schema: %v", err)
+	}
+	return schema
+}
+
+func schemaHasTable(t *testing.T, db *sql.DB, schema, table string) bool {
+	t.Helper()
+	var exists bool
+	if err := db.QueryRowContext(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1
+			  AND table_name = $2
+		)
+	`, schema, table).Scan(&exists); err != nil {
+		t.Fatalf("check table existence for %s.%s: %v", schema, table, err)
+	}
+	return exists
+}
+
+func quoteTestIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }

@@ -22,6 +22,7 @@ It already has:
 - vendor-neutral metrics and trace exporter hooks
 - Postgres-backed repositories and transaction runner wiring
 - a public `pkg/harness/postgres` durable bootstrap path
+- a public schema-aware `pkg/harness/postgres.Config` bootstrap surface
 - a public `pkg/harness/worker` helper for claim/renew/run-or-recover/release loops
 - a public `pkg/harness/replay` helper for execution-cycle/audit replay projections
 - a dedicated `./release` test package for Tier 1 compatibility and durable upgrade/restart gates
@@ -54,8 +55,9 @@ Remaining work is mainly future expansion, not a known core-boundary defect:
 - stronger product-layer projections outside the kernel
 
 For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
-The recommended public path is `pkg/harness/postgres`; the WebSocket adapter remains a reference transport layer.
+The recommended public path is `pkg/harness/postgres`, especially `OpenServiceWithConfig(...)` plus `postgres.Config`; the WebSocket adapter remains a reference transport layer.
 The same applies to migration inspection: use `pkg/harness/postgres`, while `cmd/harness-core migrate ...` is only an ops convenience wrapper.
+`internal/config` remains CLI-private reference wiring, not the embedder API.
 
 ## Not kernel gaps
 
@@ -68,6 +70,7 @@ The following are intentionally outside `harness-core`:
 - worker fleet orchestration and deployment topology
 
 Those belong in adapters, modules, or an embedding platform.
+The same currently applies to opaque continuation blobs for platform-specific loop resume state.
 
 ## Best use today
 

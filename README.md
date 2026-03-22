@@ -144,7 +144,14 @@ import (
 var opts hruntime.Options
 builtins.Register(&opts)
 
-rt, db, err := hpostgres.OpenService(context.Background(), dsn, opts)
+rt, db, err := hpostgres.OpenServiceWithConfig(context.Background(), hpostgres.Config{
+  DSN:             dsn,
+  Schema:          "agent_kernel",
+  MaxOpenConns:    8,
+  MaxIdleConns:    4,
+  ConnMaxLifetime: 30 * time.Minute,
+  ApplyMigrations: true,
+}, opts)
 if err != nil {
   panic(err)
 }
@@ -154,6 +161,7 @@ defer db.Close()
 The reference WebSocket adapter is optional transport glue, not the required public durable integration surface.
 The same applies to the minimal HTTP adapter under `adapters/http`.
 For migration inspection and bootstrap operations, prefer the public helpers on `pkg/harness/postgres`; the CLI only wraps those same helpers for local operations use.
+The CLI env loader under `internal/config` is reference-layer wiring, not the embedder API.
 
 ## Run temporary WebSocket adapter
 
@@ -164,6 +172,7 @@ go run ./cmd/harness-core
 ```
 
 If you want an in-process durable example instead of the WebSocket adapter, see `examples/postgres-embedded`.
+If you want a more realistic platform-style durable restart/approval flow, see `examples/platform-durable-embedding`.
 
 ## Run Postgres-backed WebSocket adapter
 
@@ -248,6 +257,14 @@ go run ./examples/postgres-workers
 ```bash
 export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
 go run ./examples/postgres-embedded
+```
+
+## Run durable platform embedding example
+
+```bash
+export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
+export HARNESS_POSTGRES_SCHEMA='platform_demo'
+go run ./examples/platform-durable-embedding
 ```
 
 ## Run Go WebSocket client example

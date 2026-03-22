@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,20 +40,22 @@ type SchemaApplier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// Config is the public schema-aware durable bootstrap configuration for
+// embedding harness-core on Postgres.
+type Config struct {
+	DSN             string
+	Schema          string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ApplyMigrations bool
+}
+
+var schemaNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*$`)
+
 // OpenDB opens and pings a Postgres database handle for durable runtime use.
 func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
-	if strings.TrimSpace(dsn) == "" {
-		return nil, errors.New("postgres DSN is required")
-	}
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return db, nil
+	return openAndPingDB(ctx, dsn, 0, 0, 0)
 }
 
 type txBeginner interface {
@@ -104,6 +109,63 @@ func SchemaVersion(ctx context.Context, db SchemaApplier) (string, error) {
 // LatestSchemaVersion reports the newest embedded migration version.
 func LatestSchemaVersion() string {
 	return internalpostgres.LatestMigrationVersion()
+}
+
+// EnsureSchema creates the target schema when it does not exist yet.
+func EnsureSchema(ctx context.Context, adminDB *sql.DB, schema string) error {
+	schema = strings.TrimSpace(schema)
+	if schema == "" {
+		return errors.New("schema is required")
+	}
+	if err := validateSchemaName(schema); err != nil {
+		return err
+	}
+	if adminDB == nil {
+		return errors.New("admin db is required")
+	}
+	_, err := adminDB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdentifier(schema)))
+	return err
+}
+
+// OpenDBWithConfig opens a Postgres database handle using embedder-facing
+// schema/search_path and pool configuration.
+func OpenDBWithConfig(ctx context.Context, cfg Config) (*sql.DB, error) {
+	dsn := strings.TrimSpace(cfg.DSN)
+	if dsn == "" {
+		return nil, errors.New("postgres DSN is required")
+	}
+	schema := strings.TrimSpace(cfg.Schema)
+	if schema != "" {
+		if err := validateSchemaName(schema); err != nil {
+			return nil, err
+		}
+		adminDB, err := openAndPingDB(ctx, dsn, 0, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		if err := EnsureSchema(ctx, adminDB, schema); err != nil {
+			_ = adminDB.Close()
+			return nil, err
+		}
+		if err := adminDB.Close(); err != nil {
+			return nil, err
+		}
+		dsn, err = dsnWithSearchPath(dsn, schema)
+		if err != nil {
+			return nil, err
+		}
+	}
+	db, err := openAndPingDB(ctx, dsn, cfg.MaxOpenConns, cfg.MaxIdleConns, cfg.ConnMaxLifetime)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ApplyMigrations {
+		if err := ApplyMigrations(ctx, db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+	return db, nil
 }
 
 // BuildOptions wires Postgres-backed repositories and transaction boundaries
@@ -162,12 +224,14 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 // OpenService opens a Postgres DB, applies schema, and returns a runtime
 // service using durable Postgres-backed repositories and transaction support.
 func OpenService(ctx context.Context, dsn string, opts hruntime.Options) (*hruntime.Service, *sql.DB, error) {
-	db, err := OpenDB(ctx, dsn)
+	return OpenServiceWithConfig(ctx, Config{DSN: dsn, ApplyMigrations: true}, opts)
+}
+
+// OpenServiceWithConfig opens a Postgres DB through the public schema-aware
+// config path and returns a durable runtime service.
+func OpenServiceWithConfig(ctx context.Context, cfg Config, opts hruntime.Options) (*hruntime.Service, *sql.DB, error) {
+	db, err := OpenDBWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, nil, err
-	}
-	if err := ApplyMigrations(ctx, db); err != nil {
-		_ = db.Close()
 		return nil, nil, err
 	}
 	return hruntime.New(BuildOptions(db, opts)), db, nil
@@ -224,16 +288,81 @@ func migrationApplied(ctx context.Context, db SchemaApplier, version string) (bo
 }
 
 func migrationTableExists(ctx context.Context, db SchemaApplier) (bool, error) {
+	schema, err := currentSchema(ctx, db)
+	if err != nil {
+		return false, err
+	}
 	var exists bool
 	if err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM information_schema.tables
-			WHERE table_schema = 'public'
+			WHERE table_schema = $1
 			  AND table_name = 'harness_schema_migrations'
 		)
-	`).Scan(&exists); err != nil {
+	`, schema).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil
+}
+
+func openAndPingDB(ctx context.Context, dsn string, maxOpenConns, maxIdleConns int, connMaxLifetime time.Duration) (*sql.DB, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return nil, errors.New("postgres DSN is required")
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if maxOpenConns > 0 {
+		db.SetMaxOpenConns(maxOpenConns)
+	}
+	if maxIdleConns > 0 {
+		db.SetMaxIdleConns(maxIdleConns)
+	}
+	if connMaxLifetime > 0 {
+		db.SetConnMaxLifetime(connMaxLifetime)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func currentSchema(ctx context.Context, db SchemaApplier) (string, error) {
+	var schema string
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(current_schema(), 'public')`).Scan(&schema); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(schema) == "" {
+		return "public", nil
+	}
+	return schema, nil
+}
+
+func validateSchemaName(schema string) error {
+	if !schemaNamePattern.MatchString(schema) {
+		return fmt.Errorf("invalid schema name %q", schema)
+	}
+	return nil
+}
+
+func quoteIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func dsnWithSearchPath(dsn, schema string) (string, error) {
+	searchPath := schema + ",public"
+	if strings.Contains(dsn, "://") {
+		parsed, err := url.Parse(dsn)
+		if err != nil {
+			return "", err
+		}
+		query := parsed.Query()
+		query.Set("search_path", searchPath)
+		parsed.RawQuery = query.Encode()
+		return parsed.String(), nil
+	}
+	return strings.TrimSpace(dsn) + " search_path=" + searchPath, nil
 }

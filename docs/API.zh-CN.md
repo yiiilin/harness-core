@@ -41,7 +41,10 @@ import "github.com/yiiilin/harness-core/pkg/harness"
 ### 稳定的根模块辅助包
 
 - `pkg/harness/postgres`
+  - `Config`
+  - `EnsureSchema(...)`
   - `OpenDB(...)`
+  - `OpenDBWithConfig(...)`
   - `EmbeddedMigrations()`
   - `ApplyMigrations(...)`
   - `ApplySchema(...)`
@@ -52,6 +55,7 @@ import "github.com/yiiilin/harness-core/pkg/harness"
   - `LatestSchemaVersion()`
   - `BuildOptions(...)`
   - `OpenService(...)`
+  - `OpenServiceWithConfig(...)`
 
 - `pkg/harness/worker`
   - `worker.New(worker.Options{Runtime: rt, ...})`
@@ -231,7 +235,14 @@ import (
 var opts hruntime.Options
 builtins.Register(&opts)
 
-rt, db, err := hpostgres.OpenService(context.Background(), dsn, opts)
+rt, db, err := hpostgres.OpenServiceWithConfig(context.Background(), hpostgres.Config{
+	DSN:             dsn,
+	Schema:          "agent_kernel",
+	MaxOpenConns:    8,
+	MaxIdleConns:    4,
+	ConnMaxLifetime: 30 * time.Minute,
+	ApplyMigrations: true,
+}, opts)
 if err != nil {
 	panic(err)
 }
@@ -249,3 +260,7 @@ _, _ = helper.RunOnce(context.Background())
 
 关于“外部 run_id、外部审批 UI、远端 PTY、重启恢复、accepted-first API 包装”的完整接入建议，请看 `docs/EMBEDDING.md`。
 关于 transport 适配规则与事件/错误映射，请看 `docs/ADAPTERS.md`。
+
+重要边界：
+- `pkg/harness/postgres.Config` 是给 embedding 平台使用的 durable bootstrap config
+- `internal/config` 仍然只是 reference CLI 的 env loader，不属于公开 embedder API

@@ -28,7 +28,30 @@ This document focuses on:
 - `pkg/harness/replay`
 - adapter-owned config surfaces such as `adapters/websocket.Config` when you choose to reuse a repository-shipped transport
 
-## Pattern 0: LLM-Backed Planner
+## Pattern 0: Durable Bootstrap Config
+
+Use `pkg/harness/postgres.Config` for embedder-facing durable runtime bootstrap:
+
+```go
+cfg := postgres.Config{
+	DSN:             dsn,
+	Schema:          "agent_kernel",
+	MaxOpenConns:    8,
+	MaxIdleConns:    4,
+	ConnMaxLifetime: 30 * time.Minute,
+	ApplyMigrations: true,
+}
+rt, db, err := postgres.OpenServiceWithConfig(ctx, cfg, opts)
+```
+
+Use `EnsureSchema(...)` when schema provisioning must happen explicitly.
+
+Important boundary:
+- this config is public embedding surface
+- the CLI env loader in `internal/config` is only reference-layer wiring
+- adapter config should stay transport-only and should not absorb DSN/schema/storage settings
+
+## Pattern 1: LLM-Backed Planner
 
 The kernel intentionally does not include provider-specific model clients.
 
@@ -62,7 +85,7 @@ Keep these concerns outside the kernel:
 - retrieval and memory policy
 - product-specific planning heuristics
 
-## Pattern 1: External Run ID
+## Pattern 2: External Run ID
 
 Kernel sessions use `session_id`.
 If your platform already has `run_id`, keep a mapping table in your platform store:
@@ -76,7 +99,7 @@ Use wrapper APIs in your service boundary:
 - resolve `session_id`
 - call kernel APIs
 
-## Pattern 2: External Approval UI
+## Pattern 3: External Approval UI
 
 Recommended flow:
 
@@ -90,7 +113,7 @@ Recommended flow:
 Kernel owns approval state machine correctness.
 Your platform owns human workflow, notification, and UI experience.
 
-## Pattern 3: Remote PTY Executor
+## Pattern 4: Remote PTY Executor
 
 Use shell module options with explicit PTY backend:
 
@@ -108,7 +131,7 @@ Key semantics:
 - `pty_stream_contains` can resume from `shell_stream.next_offset` when the action result includes that field (unless an explicit verifier `offset` overrides it)
 - remote executor stream inspection should be implemented in your platform/module layer
 
-## Pattern 4: Restart and Recovery
+## Pattern 5: Restart and Recovery
 
 For durable deployments, use `pkg/harness/postgres` bootstrap and run workers via `pkg/harness/worker`.
 
@@ -127,7 +150,7 @@ On service restart:
 - helper will claim available runnable/recoverable sessions
 - recovery remains lease-governed and transport-neutral
 
-## Pattern 5: Accepted-First API Wrapper
+## Pattern 6: Accepted-First API Wrapper
 
 Use an async platform API style:
 
@@ -166,5 +189,6 @@ Belongs in platform layer:
 - queue/fleet topology
 - billing/quota/reporting
 - transport protocol envelopes
+- opaque continuation blobs for platform-specific loop state, unless the kernel explicitly adds a future generic store for them
 
 If you need these platform concepts, add them around the kernel, not into it.
