@@ -249,3 +249,30 @@ func TestCompactSessionContextSupersedesPreviousSummaryAcrossTriggers(t *testing
 		t.Fatalf("expected two persisted lifecycle summaries, got %#v", items)
 	}
 }
+
+func TestMemoryContextSummaryStoreOrdersSameTimestampBySequence(t *testing.T) {
+	store := hruntime.NewMemoryContextSummaryStore()
+
+	first, err := store.Create(hruntime.ContextSummary{SummaryID: "ctx_b", SessionID: "sess1", CreatedAt: 100})
+	if err != nil {
+		t.Fatalf("create first summary: %v", err)
+	}
+	second, err := store.Create(hruntime.ContextSummary{SummaryID: "ctx_a", SessionID: "sess1", CreatedAt: 100})
+	if err != nil {
+		t.Fatalf("create second summary: %v", err)
+	}
+
+	items, err := store.List("sess1")
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected two summaries, got %#v", items)
+	}
+	if items[0].SummaryID != first.SummaryID || items[1].SummaryID != second.SummaryID {
+		t.Fatalf("expected insertion-stable ordering under same timestamp, got %#v", items)
+	}
+	if items[0].Sequence == 0 || items[1].Sequence != items[0].Sequence+1 {
+		t.Fatalf("expected monotonic summary sequence, got %#v", items)
+	}
+}

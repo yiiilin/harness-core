@@ -24,6 +24,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/contextsummary"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
@@ -43,12 +44,13 @@ type SchemaApplier interface {
 // Config is the public schema-aware durable bootstrap configuration for
 // embedding harness-core on Postgres.
 type Config struct {
-	DSN             string
-	Schema          string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
-	ApplyMigrations bool
+	DSN                string
+	Schema             string
+	MaxOpenConns       int
+	MaxIdleConns       int
+	ConnMaxLifetime    time.Duration
+	ApplyMigrations    bool
+	EnsureSchemaOnOpen bool
 }
 
 var schemaNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*$`)
@@ -134,21 +136,24 @@ func OpenDBWithConfig(ctx context.Context, cfg Config) (*sql.DB, error) {
 	if dsn == "" {
 		return nil, errors.New("postgres DSN is required")
 	}
+	var err error
 	schema := strings.TrimSpace(cfg.Schema)
 	if schema != "" {
 		if err := validateSchemaName(schema); err != nil {
 			return nil, err
 		}
-		adminDB, err := openAndPingDB(ctx, dsn, 0, 0, 0)
-		if err != nil {
-			return nil, err
-		}
-		if err := EnsureSchema(ctx, adminDB, schema); err != nil {
-			_ = adminDB.Close()
-			return nil, err
-		}
-		if err := adminDB.Close(); err != nil {
-			return nil, err
+		if cfg.EnsureSchemaOnOpen {
+			adminDB, err := openAndPingDB(ctx, dsn, 0, 0, 0)
+			if err != nil {
+				return nil, err
+			}
+			if err := EnsureSchema(ctx, adminDB, schema); err != nil {
+				_ = adminDB.Close()
+				return nil, err
+			}
+			if err := adminDB.Close(); err != nil {
+				return nil, err
+			}
 		}
 		dsn, err = dsnWithSearchPath(dsn, schema)
 		if err != nil {
@@ -210,6 +215,9 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 			},
 			RuntimeHandleFactory: func(dbtx internalpostgres.DBTX) execution.RuntimeHandleStore {
 				return executionrepo.NewRuntimeHandleStore(dbtx)
+			},
+			ContextSummaryFactory: func(dbtx internalpostgres.DBTX) contextsummary.Store {
+				return contextrepo.New(dbtx)
 			},
 			PlanningFactory: func(dbtx internalpostgres.DBTX) planning.Store {
 				return planningrepo.New(dbtx)

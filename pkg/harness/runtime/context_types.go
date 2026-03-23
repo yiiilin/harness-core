@@ -2,12 +2,8 @@ package runtime
 
 import (
 	"context"
-	"errors"
-	"sort"
-	"sync"
-	"time"
 
-	"github.com/google/uuid"
+	hcontextsummary "github.com/yiiilin/harness-core/pkg/harness/contextsummary"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
@@ -20,7 +16,7 @@ type LoopBudgets struct {
 	MaxToolOutputChars int   `json:"max_tool_output_chars"`
 }
 
-type CompactionTrigger string
+type CompactionTrigger = hcontextsummary.Trigger
 
 const (
 	CompactionTriggerPlan    CompactionTrigger = "plan"
@@ -127,19 +123,7 @@ func (pkg ContextPackage) ToMap() map[string]any {
 	return out
 }
 
-type ContextSummary struct {
-	SummaryID           string            `json:"summary_id"`
-	SessionID           string            `json:"session_id,omitempty"`
-	TaskID              string            `json:"task_id,omitempty"`
-	Trigger             CompactionTrigger `json:"trigger,omitempty"`
-	SupersedesSummaryID string            `json:"supersedes_summary_id,omitempty"`
-	Strategy            string            `json:"strategy,omitempty"`
-	Summary             map[string]any    `json:"summary,omitempty"`
-	Metadata            map[string]any    `json:"metadata,omitempty"`
-	OriginalBytes       int               `json:"original_bytes,omitempty"`
-	CompactedBytes      int               `json:"compacted_bytes,omitempty"`
-	CreatedAt           int64             `json:"created_at"`
-}
+type ContextSummary = hcontextsummary.Summary
 
 type ContextSummaryStore interface {
 	Create(spec ContextSummary) (ContextSummary, error)
@@ -157,49 +141,10 @@ func (NoopCompactor) Compact(_ context.Context, pkg ContextPackage, _ session.St
 	return pkg, nil, nil
 }
 
-var ErrContextSummaryNotFound = errors.New("context summary not found")
+var ErrContextSummaryNotFound = hcontextsummary.ErrContextSummaryNotFound
 
-type MemoryContextSummaryStore struct {
-	mu    sync.RWMutex
-	items map[string]ContextSummary
-}
+type MemoryContextSummaryStore = hcontextsummary.MemoryStore
 
 func NewMemoryContextSummaryStore() *MemoryContextSummaryStore {
-	return &MemoryContextSummaryStore{items: map[string]ContextSummary{}}
-}
-
-func (s *MemoryContextSummaryStore) Create(spec ContextSummary) (ContextSummary, error) {
-	if spec.SummaryID == "" {
-		spec.SummaryID = "ctx_" + uuid.NewString()
-	}
-	if spec.CreatedAt == 0 {
-		spec.CreatedAt = time.Now().UnixMilli()
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.items[spec.SummaryID] = spec
-	return spec, nil
-}
-
-func (s *MemoryContextSummaryStore) Get(id string) (ContextSummary, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	item, ok := s.items[id]
-	if !ok {
-		return ContextSummary{}, ErrContextSummaryNotFound
-	}
-	return item, nil
-}
-
-func (s *MemoryContextSummaryStore) List(sessionID string) ([]ContextSummary, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]ContextSummary, 0, len(s.items))
-	for _, item := range s.items {
-		if sessionID == "" || item.SessionID == sessionID {
-			out = append(out, item)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out, nil
+	return hcontextsummary.NewMemoryStore()
 }

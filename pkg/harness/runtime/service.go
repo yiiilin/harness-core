@@ -269,10 +269,7 @@ func (s *Service) ListPlanningRecords(sessionID string) ([]planning.Record, erro
 }
 
 func (s *Service) ListContextSummaries(sessionID string) ([]ContextSummary, error) {
-	if s.ContextSummaries == nil {
-		return nil, nil
-	}
-	return s.ContextSummaries.List(sessionID)
+	return s.listContextSummaries(context.Background(), sessionID)
 }
 
 func (s *Service) ListTools() []tool.Definition {

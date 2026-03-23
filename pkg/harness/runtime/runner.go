@@ -858,6 +858,9 @@ func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) pers
 	if repos.CapabilitySnapshots == nil {
 		repos.CapabilitySnapshots = s.CapabilitySnapshots
 	}
+	if repos.ContextSummaries == nil {
+		repos.ContextSummaries = s.ContextSummaries
+	}
 	if repos.PlanningRecords == nil {
 		repos.PlanningRecords = s.PlanningRecords
 	}

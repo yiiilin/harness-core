@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
@@ -38,7 +39,7 @@ func (s *Service) compactAssembledContext(ctx context.Context, state session.Sta
 }
 
 func (s *Service) compactContextPackage(ctx context.Context, assembled ContextPackage, state session.State, spec task.Spec, trigger CompactionTrigger) (ContextPackage, *ContextSummary, error) {
-	previous, err := s.latestContextSummary(state.SessionID)
+	previous, err := s.latestContextSummary(ctx, state.SessionID)
 	if err != nil {
 		return ContextPackage{}, nil, err
 	}
@@ -76,7 +77,7 @@ func (s *Service) compactContextPackage(ctx context.Context, assembled ContextPa
 	if previous != nil && previous.SummaryID != "" && previous.SummaryID != summary.SummaryID {
 		summary.SupersedesSummaryID = previous.SummaryID
 	}
-	persisted, err := s.ContextSummaries.Create(*summary)
+	persisted, err := s.persistContextSummary(ctx, *summary)
 	if err != nil {
 		return ContextPackage{}, nil, err
 	}
@@ -92,11 +93,11 @@ func (s *Service) compactContextPackage(ctx context.Context, assembled ContextPa
 	return assembled, &persisted, nil
 }
 
-func (s *Service) latestContextSummary(sessionID string) (*ContextSummary, error) {
-	if s.ContextSummaries == nil || sessionID == "" {
+func (s *Service) latestContextSummary(ctx context.Context, sessionID string) (*ContextSummary, error) {
+	if sessionID == "" {
 		return nil, nil
 	}
-	items, err := s.ContextSummaries.List(sessionID)
+	items, err := s.listContextSummaries(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,4 +123,42 @@ func (s *Service) shouldCompact(trigger CompactionTrigger) bool {
 
 func (s *Service) compactSessionContextBestEffort(ctx context.Context, sessionID string, trigger CompactionTrigger) {
 	_, _, _ = s.CompactSessionContext(ctx, sessionID, trigger)
+}
+
+func (s *Service) persistContextSummary(ctx context.Context, summary ContextSummary) (ContextSummary, error) {
+	create := func(store ContextSummaryStore) (ContextSummary, error) {
+		if store == nil {
+			return ContextSummary{}, nil
+		}
+		return store.Create(summary)
+	}
+	if s.Runner != nil {
+		var persisted ContextSummary
+		err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			var err error
+			persisted, err = create(s.repositoriesWithFallback(repos).ContextSummaries)
+			return err
+		})
+		return persisted, err
+	}
+	return create(s.ContextSummaries)
+}
+
+func (s *Service) listContextSummaries(ctx context.Context, sessionID string) ([]ContextSummary, error) {
+	list := func(store ContextSummaryStore) ([]ContextSummary, error) {
+		if store == nil {
+			return nil, nil
+		}
+		return store.List(sessionID)
+	}
+	if s.Runner != nil {
+		var items []ContextSummary
+		err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			var err error
+			items, err = list(s.repositoriesWithFallback(repos).ContextSummaries)
+			return err
+		})
+		return items, err
+	}
+	return list(s.ContextSummaries)
 }

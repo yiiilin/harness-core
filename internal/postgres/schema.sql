@@ -178,6 +178,9 @@ CREATE TABLE IF NOT EXISTS context_summaries (
   summary_id TEXT PRIMARY KEY,
   session_id TEXT,
   task_id TEXT,
+  sequence BIGSERIAL,
+  trigger TEXT,
+  supersedes_summary_id TEXT,
   strategy TEXT,
   summary_json TEXT,
   metadata_json TEXT,
@@ -186,8 +189,25 @@ CREATE TABLE IF NOT EXISTS context_summaries (
   created_at BIGINT NOT NULL
 );
 
+CREATE SEQUENCE IF NOT EXISTS context_summaries_sequence_seq;
+
+ALTER TABLE context_summaries
+  ADD COLUMN IF NOT EXISTS sequence BIGINT,
+  ADD COLUMN IF NOT EXISTS trigger TEXT,
+  ADD COLUMN IF NOT EXISTS supersedes_summary_id TEXT;
+
+ALTER TABLE context_summaries
+  ALTER COLUMN sequence SET DEFAULT nextval('context_summaries_sequence_seq');
+
+UPDATE context_summaries
+SET sequence = nextval('context_summaries_sequence_seq')
+WHERE sequence IS NULL;
+
+ALTER TABLE context_summaries
+  ALTER COLUMN sequence SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_context_summaries_session_created
-  ON context_summaries(session_id, created_at);
+  ON context_summaries(session_id, created_at, sequence);
 
 CREATE TABLE IF NOT EXISTS planning_records (
   planning_id TEXT PRIMARY KEY,

@@ -106,6 +106,18 @@ func WithDefaults(opts Options) Options {
 	if opts.Policy == nil {
 		opts.Policy = permission.DefaultEvaluator{}
 	}
+	if opts.ContextAssembler == nil {
+		opts.ContextAssembler = DefaultContextAssembler{}
+	}
+	if opts.ContextSummaries == nil {
+		opts.ContextSummaries = NewMemoryContextSummaryStore()
+	}
+	if opts.Compactor == nil {
+		opts.Compactor = NoopCompactor{}
+	}
+	if !opts.CompactionPolicy.OnPlan && !opts.CompactionPolicy.OnExecute && !opts.CompactionPolicy.OnRecover {
+		opts.CompactionPolicy = DefaultCompactionPolicy()
+	}
 	if opts.Runner == nil {
 		opts.Runner = persistence.NewMemoryUnitOfWork(persistence.RepositorySet{
 			Sessions:            opts.Sessions,
@@ -119,20 +131,9 @@ func WithDefaults(opts Options) Options {
 			RuntimeHandles:      opts.RuntimeHandles,
 			Approvals:           opts.Approvals,
 			CapabilitySnapshots: opts.CapabilitySnapshots,
+			ContextSummaries:    opts.ContextSummaries,
 			PlanningRecords:     opts.PlanningRecords,
 		})
-	}
-	if opts.ContextAssembler == nil {
-		opts.ContextAssembler = DefaultContextAssembler{}
-	}
-	if opts.ContextSummaries == nil {
-		opts.ContextSummaries = NewMemoryContextSummaryStore()
-	}
-	if opts.Compactor == nil {
-		opts.Compactor = NoopCompactor{}
-	}
-	if !opts.CompactionPolicy.OnPlan && !opts.CompactionPolicy.OnExecute && !opts.CompactionPolicy.OnRecover {
-		opts.CompactionPolicy = DefaultCompactionPolicy()
 	}
 	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxRetriesPerStep <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
 		defaults := DefaultLoopBudgets()

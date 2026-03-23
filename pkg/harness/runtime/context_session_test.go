@@ -8,6 +8,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -295,5 +296,67 @@ func TestRecoverSessionTreatsRecoveryCompactionAsBestEffort(t *testing.T) {
 	}
 	if stored.Phase != session.PhaseComplete {
 		t.Fatalf("expected stored session to remain complete after recovery, got %#v", stored)
+	}
+}
+
+func TestCompactSessionContextUsesRunnerContextSummaryStore(t *testing.T) {
+	compactor := &recordingCompactor{}
+	serviceSummaries := hruntime.NewMemoryContextSummaryStore()
+	runnerSummaries := hruntime.NewMemoryContextSummaryStore()
+	rt := hruntime.New(hruntime.Options{
+		Compactor:        compactor,
+		ContextSummaries: serviceSummaries,
+		Runner: sinkRunner{repos: persistence.RepositorySet{
+			ContextSummaries: runnerSummaries,
+		}},
+	})
+
+	sess := mustCreateSession(t, rt, "runner summaries", "persist summaries through runner repos")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "runner context summary store should win"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	_, summary, err := rt.CompactSessionContext(context.Background(), attached.SessionID, hruntime.CompactionTriggerPlan)
+	if err != nil {
+		t.Fatalf("compact session context: %v", err)
+	}
+	if summary == nil {
+		t.Fatalf("expected persisted summary")
+	}
+	_, secondSummary, err := rt.CompactSessionContext(context.Background(), attached.SessionID, hruntime.CompactionTriggerExecute)
+	if err != nil {
+		t.Fatalf("compact session context a second time: %v", err)
+	}
+	if secondSummary == nil {
+		t.Fatalf("expected second persisted summary")
+	}
+	if secondSummary.SupersedesSummaryID != summary.SummaryID {
+		t.Fatalf("expected second summary to supersede first runner-backed summary, got %#v", secondSummary)
+	}
+
+	runnerItems, err := runnerSummaries.List(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list runner summaries: %v", err)
+	}
+	if len(runnerItems) != 2 || runnerItems[0].SummaryID != summary.SummaryID || runnerItems[1].SummaryID != secondSummary.SummaryID {
+		t.Fatalf("expected runner summary store to receive persisted summary, got %#v", runnerItems)
+	}
+
+	serviceItems, err := serviceSummaries.List(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list service summaries: %v", err)
+	}
+	if len(serviceItems) != 0 {
+		t.Fatalf("expected service summary store to stay untouched when runner repo is present, got %#v", serviceItems)
+	}
+
+	listed, err := rt.ListContextSummaries(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list context summaries through service: %v", err)
+	}
+	if len(listed) != 2 || listed[1].SupersedesSummaryID != summary.SummaryID {
+		t.Fatalf("expected service listing to reflect runner-backed summaries, got %#v", listed)
 	}
 }

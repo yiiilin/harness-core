@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,71 @@ func TestOpenDBWithConfigCanApplyMigrationsOnOpenAndTunePool(t *testing.T) {
 	}
 	if db.Stats().MaxLifetimeClosed == 0 {
 		t.Fatalf("expected connection lifetime setting to retire at least one connection, got stats %#v", db.Stats())
+	}
+}
+
+func TestOpenDBWithConfigDoesNotRequireSchemaCreatePrivilegeByDefault(t *testing.T) {
+	pg := postgrestest.Start(t)
+	adminDB, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer adminDB.Close()
+
+	roleName := testSchemaName("role")
+	password := "limited-pass"
+	if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD %s", quoteTestIdentifier(roleName), pqQuoteLiteral(password))); err != nil {
+		t.Fatalf("create limited role: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP ROLE IF EXISTS %s", quoteTestIdentifier(roleName)))
+	})
+
+	limitedDSN := dsnWithCredentials(t, pg.DSN, roleName, password)
+	missingSchema := testSchemaName("missing")
+
+	db, err := hpostgres.OpenDBWithConfig(context.Background(), hpostgres.Config{
+		DSN:    limitedDSN,
+		Schema: missingSchema,
+	})
+	if err != nil {
+		t.Fatalf("expected open to succeed without schema create privilege, got %v", err)
+	}
+	defer db.Close()
+
+	if got := currentSearchPath(t, db); !strings.Contains(got, missingSchema) {
+		t.Fatalf("expected search_path to include %q, got %q", missingSchema, got)
+	}
+	if schemaExists(t, adminDB, missingSchema) {
+		t.Fatalf("did not expect schema %q to be auto-created on open", missingSchema)
+	}
+}
+
+func TestOpenDBWithConfigCanEnsureSchemaOnOpenWhenEnabled(t *testing.T) {
+	pg := postgrestest.Start(t)
+	adminDB, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer adminDB.Close()
+
+	schema := testSchemaName("ensure_on_open")
+	t.Cleanup(func() {
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quoteTestIdentifier(schema)))
+	})
+
+	db, err := hpostgres.OpenDBWithConfig(context.Background(), hpostgres.Config{
+		DSN:                pg.DSN,
+		Schema:             schema,
+		EnsureSchemaOnOpen: true,
+	})
+	if err != nil {
+		t.Fatalf("open db with schema ensure enabled: %v", err)
+	}
+	defer db.Close()
+
+	if !schemaExists(t, adminDB, schema) {
+		t.Fatalf("expected schema %q to be created on open", schema)
 	}
 }
 
@@ -429,4 +495,42 @@ func schemaHasTable(t *testing.T, db *sql.DB, schema, table string) bool {
 
 func quoteTestIdentifier(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func pqQuoteLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func dsnWithCredentials(t *testing.T, dsn, user, password string) string {
+	t.Helper()
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse dsn: %v", err)
+	}
+	parsed.User = url.UserPassword(user, password)
+	return parsed.String()
+}
+
+func currentSearchPath(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var searchPath string
+	if err := db.QueryRowContext(context.Background(), `SHOW search_path`).Scan(&searchPath); err != nil {
+		t.Fatalf("read search_path: %v", err)
+	}
+	return searchPath
+}
+
+func schemaExists(t *testing.T, db *sql.DB, schema string) bool {
+	t.Helper()
+	var exists bool
+	if err := db.QueryRowContext(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.schemata
+			WHERE schema_name = $1
+		)
+	`, schema).Scan(&exists); err != nil {
+		t.Fatalf("check schema existence for %s: %v", schema, err)
+	}
+	return exists
 }

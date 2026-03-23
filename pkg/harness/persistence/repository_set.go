@@ -4,6 +4,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/capability"
+	"github.com/yiiilin/harness-core/pkg/harness/contextsummary"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/planning"
@@ -23,5 +24,6 @@ type RepositorySet struct {
 	RuntimeHandles      execution.RuntimeHandleStore
 	Approvals           approval.Store
 	CapabilitySnapshots capability.SnapshotStore
+	ContextSummaries    contextsummary.Store
 	PlanningRecords     planning.Store
 }

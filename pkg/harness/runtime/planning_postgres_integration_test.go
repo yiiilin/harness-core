@@ -66,3 +66,62 @@ func TestPlanningRecordsPersistAcrossPostgresRuntimeReinitAndReplan(t *testing.T
 		t.Fatalf("expected durable planning records for both revisions, got %#v", records)
 	}
 }
+
+func TestContextSummariesPersistTriggerAndSupersedesAcrossPostgresRuntimeReinit(t *testing.T) {
+	pg := postgrestest.Start(t)
+
+	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
+	builtins.Register(&opts)
+
+	rt1, db1 := pg.OpenService(t, opts)
+
+	sess := mustCreateSession(t, rt1, "postgres summaries", "persist context summary metadata across restart")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "summary metadata survives restart"})
+	sess, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	firstPkg, firstSummary, err := rt1.CompactSessionContext(context.Background(), sess.SessionID, hruntime.CompactionTriggerPlan)
+	if err != nil {
+		t.Fatalf("compact plan summary: %v", err)
+	}
+	if firstSummary == nil || firstPkg.Compaction == nil {
+		t.Fatalf("expected first persisted summary, got summary=%#v pkg=%#v", firstSummary, firstPkg)
+	}
+
+	secondPkg, secondSummary, err := rt1.CompactSessionContext(context.Background(), sess.SessionID, hruntime.CompactionTriggerExecute)
+	if err != nil {
+		t.Fatalf("compact execute summary: %v", err)
+	}
+	if secondSummary == nil || secondPkg.Compaction == nil {
+		t.Fatalf("expected second persisted summary, got summary=%#v pkg=%#v", secondSummary, secondPkg)
+	}
+	if secondSummary.SupersedesSummaryID != firstSummary.SummaryID {
+		t.Fatalf("expected in-process supersedes chain before restart, got %#v", secondSummary)
+	}
+
+	if err := db1.Close(); err != nil {
+		t.Fatalf("close first db: %v", err)
+	}
+
+	rt2, db2 := pg.OpenService(t, opts)
+	defer db2.Close()
+
+	summaries, err := rt2.ListContextSummaries(sess.SessionID)
+	if err != nil {
+		t.Fatalf("list summaries after reinit: %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected two durable summaries, got %#v", summaries)
+	}
+	if summaries[0].SummaryID != firstSummary.SummaryID || summaries[0].Trigger != hruntime.CompactionTriggerPlan {
+		t.Fatalf("expected first durable summary to keep plan trigger, got %#v", summaries[0])
+	}
+	if summaries[1].SummaryID != secondSummary.SummaryID || summaries[1].Trigger != hruntime.CompactionTriggerExecute {
+		t.Fatalf("expected second durable summary to keep execute trigger, got %#v", summaries[1])
+	}
+	if summaries[1].SupersedesSummaryID != firstSummary.SummaryID {
+		t.Fatalf("expected durable supersedes chain %q, got %#v", firstSummary.SummaryID, summaries[1])
+	}
+}
