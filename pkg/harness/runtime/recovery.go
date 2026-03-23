@@ -104,9 +104,7 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 		return SessionRunOutput{}, err
 	}
 	out.Session = normalized
-	if _, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerRecover); err != nil {
-		return SessionRunOutput{}, err
-	}
+	s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerRecover)
 	next, err := s.runSession(ctx, sessionID, leaseID)
 	if err != nil {
 		return SessionRunOutput{}, err

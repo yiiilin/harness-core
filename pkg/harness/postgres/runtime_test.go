@@ -9,10 +9,20 @@ import (
 	"time"
 
 	"github.com/yiiilin/harness-core/internal/postgrestest"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hpostgres "github.com/yiiilin/harness-core/pkg/harness/postgres"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 )
+
+type recordingEventSink struct {
+	events []audit.Event
+}
+
+func (s *recordingEventSink) Emit(_ context.Context, event audit.Event) error {
+	s.events = append(s.events, event)
+	return nil
+}
 
 func TestOpenDBRequiresDSN(t *testing.T) {
 	if _, err := hpostgres.OpenDB(context.Background(), "   "); err == nil {
@@ -184,6 +194,32 @@ func TestBuildOptionsWiresDurableRuntimeStores(t *testing.T) {
 	}
 	if durable.EventSink == nil {
 		t.Fatalf("expected audit-backed event sink to be wired")
+	}
+}
+
+func TestBuildOptionsPreservesCallerEventSink(t *testing.T) {
+	pg := postgrestest.Start(t)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	custom := &recordingEventSink{}
+	durable := hpostgres.BuildOptions(db, hruntime.Options{EventSink: custom})
+
+	fanout, ok := durable.EventSink.(hruntime.FanoutEventSink)
+	if !ok {
+		t.Fatalf("expected BuildOptions to preserve caller sink via fanout, got %T", durable.EventSink)
+	}
+	if len(fanout.Sinks) != 2 {
+		t.Fatalf("expected fanout to include caller sink and audit sink, got %#v", fanout.Sinks)
+	}
+	if fanout.Sinks[0] != custom {
+		t.Fatalf("expected first fanout sink to be caller sink, got %#v", fanout.Sinks)
+	}
+	if _, ok := fanout.Sinks[1].(hruntime.AuditStoreSink); !ok {
+		t.Fatalf("expected second fanout sink to be audit sink, got %T", fanout.Sinks[1])
 	}
 }
 

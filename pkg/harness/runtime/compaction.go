@@ -119,3 +119,7 @@ func (s *Service) shouldCompact(trigger CompactionTrigger) bool {
 		return s.CompactionPolicy.OnPlan
 	}
 }
+
+func (s *Service) compactSessionContextBestEffort(ctx context.Context, sessionID string, trigger CompactionTrigger) {
+	_, _, _ = s.CompactSessionContext(ctx, sessionID, trigger)
+}

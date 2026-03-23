@@ -54,7 +54,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
 	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
-		existingAttempt, ok, err := findLatestBlockedAttemptInStore(s.Attempts, sessionID, activeApproval.ApprovalID)
+		existingAttempt, ok, err := s.findLatestBlockedAttempt(ctx, sessionID, activeApproval.ApprovalID)
 		if err != nil {
 			return StepRunOutput{}, err
 		}
@@ -934,6 +934,25 @@ func extractRuntimeHandles(result action.Result, attempt execution.Attempt, acti
 	collect(result.Data)
 	collect(result.Meta)
 	return out
+}
+
+func (s *Service) findLatestBlockedAttempt(ctx context.Context, sessionID, approvalID string) (execution.Attempt, bool, error) {
+	if approvalID == "" {
+		return execution.Attempt{}, false, nil
+	}
+	if s.Runner == nil {
+		return findLatestBlockedAttemptInStore(s.Attempts, sessionID, approvalID)
+	}
+	var (
+		attempt execution.Attempt
+		ok      bool
+	)
+	err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+		var err error
+		attempt, ok, err = findLatestBlockedAttemptInStore(s.repositoriesWithFallback(repos).Attempts, sessionID, approvalID)
+		return err
+	})
+	return attempt, ok, err
 }
 
 func appendRuntimeHandleSlice(raw any, appendHandle func(any)) {

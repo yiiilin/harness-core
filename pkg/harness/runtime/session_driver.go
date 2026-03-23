@@ -59,6 +59,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 				if resumed.UpdatedPlan != nil {
 					out.Plan = resumed.UpdatedPlan
 				}
+				s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
 				if isTerminalPhase(resumed.Session.Phase) || resumed.Session.PendingApprovalID != "" {
 					return out, nil
 				}
@@ -100,9 +101,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 		if stepOut.UpdatedPlan != nil {
 			out.Plan = stepOut.UpdatedPlan
 		}
-		if _, _, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerExecute); err != nil {
-			return SessionRunOutput{}, err
-		}
+		s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
 		if isTerminalPhase(stepOut.Session.Phase) || stepOut.Session.PendingApprovalID != "" {
 			return out, nil
 		}

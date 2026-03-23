@@ -216,7 +216,15 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 			},
 		},
 	}
-	opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}
+	if opts.EventSink == nil {
+		opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}
+	} else if aware, ok := opts.EventSink.(interface {
+		WithAuditStore(store audit.Store) hruntime.EventSink
+	}); ok {
+		opts.EventSink = aware.WithAuditStore(opts.Audit)
+	} else if opts.Audit != nil {
+		opts.EventSink = hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{opts.EventSink, hruntime.AuditStoreSink{Store: opts.Audit}}}
+	}
 	opts.StorageMode = "postgres"
 	return opts
 }

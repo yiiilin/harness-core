@@ -8,7 +8,9 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -237,6 +239,110 @@ func TestResumePendingApprovalExecutesStepAfterReplyOnce(t *testing.T) {
 	}
 	if storedApproval.Status != approval.StatusConsumed {
 		t.Fatalf("expected one-time approval to be consumed, got %#v", storedApproval)
+	}
+}
+
+func TestResumePendingApprovalReusesBlockedAttemptFromRunnerRepositories(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	approvals := approval.NewMemoryStore()
+	serviceAttempts := execution.NewMemoryAttemptStore()
+	runnerAttempts := execution.NewMemoryAttemptStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Approvals: approvals,
+		Attempts:  serviceAttempts,
+		Tools:     tools,
+		Verifiers: verifiers,
+		Audit:     audits,
+		Runner: sinkRunner{repos: persistence.RepositorySet{
+			Sessions:  sessions,
+			Tasks:     tasks,
+			Plans:     plans,
+			Approvals: approvals,
+			Attempts:  runnerAttempts,
+			Audits:    audits,
+		}},
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "resume runner attempt", "approval then resume through runner attempts")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "reuse blocked attempt from runner repos"})
+	sess, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(sess.SessionID, "approval", []plan.StepSpec{{
+		StepID: "step_resume_runner_attempt",
+		Title:  "resume through runner attempts",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo approved", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), sess.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval in execution result")
+	}
+	if attempts, err := serviceAttempts.List(sess.SessionID); err != nil {
+		t.Fatalf("list service attempts: %v", err)
+	} else if len(attempts) != 0 {
+		t.Fatalf("expected service attempt store to stay empty in mixed setup, got %#v", attempts)
+	}
+	attempts, err := runnerAttempts.List(sess.SessionID)
+	if err != nil {
+		t.Fatalf("list runner attempts: %v", err)
+	}
+	if len(attempts) != 1 || attempts[0].Status != execution.AttemptBlocked {
+		t.Fatalf("expected one blocked runner attempt before approval resume, got %#v", attempts)
+	}
+	blockedAttemptID := attempts[0].AttemptID
+
+	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyOnce}); err != nil {
+		t.Fatalf("respond approval: %v", err)
+	}
+
+	resumed, err := rt.ResumePendingApproval(context.Background(), sess.SessionID)
+	if err != nil {
+		t.Fatalf("resume pending approval: %v", err)
+	}
+	if resumed.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected session complete after resumed execution, got %#v", resumed.Session)
+	}
+
+	attempts, err = runnerAttempts.List(sess.SessionID)
+	if err != nil {
+		t.Fatalf("list runner attempts after resume: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("expected resume to reuse the original runner attempt, got %#v", attempts)
+	}
+	if attempts[0].AttemptID != blockedAttemptID || attempts[0].Status != execution.AttemptCompleted {
+		t.Fatalf("expected original runner attempt to complete in place, got %#v", attempts[0])
 	}
 }
 
