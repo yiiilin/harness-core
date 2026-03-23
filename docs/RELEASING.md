@@ -124,6 +124,12 @@ Use companion-module tags for:
 - adapter transport changes
 - CLI-only operational changes
 
+Companion module requirement rule:
+
+- repo-local dependencies inside companion `go.mod` files must use real released versions
+- `v0.0.0` is a workspace-only placeholder and must never ship in a published companion module
+- `replace` directives are acceptable for local workspace development, but external consumers do not honor dependency-module `replace` lines
+
 Do not tag companion modules as a proxy for kernel semantic changes unless the
 root module also needs a release.
 

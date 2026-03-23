@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +55,36 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ harness.RuntimeHandleUpdate
 	var _ harness.RuntimeHandleCloseRequest
 	var _ harness.RuntimeHandleInvalidateRequest
+}
+
+func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
+	t.Parallel()
+
+	files := []string{
+		"pkg/harness/builtins/go.mod",
+		"modules/go.mod",
+		"adapters/go.mod",
+		"cmd/harness-core/go.mod",
+	}
+
+	for _, rel := range files {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join("..", filepath.Clean(rel))
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", rel, err)
+			}
+			if strings.Contains(string(data), "github.com/yiiilin/harness-core v0.0.0") ||
+				strings.Contains(string(data), "github.com/yiiilin/harness-core/modules v0.0.0") ||
+				strings.Contains(string(data), "github.com/yiiilin/harness-core/pkg/harness/builtins v0.0.0") ||
+				strings.Contains(string(data), "github.com/yiiilin/harness-core/adapters v0.0.0") {
+				t.Fatalf("%s still contains workspace placeholder repo-local dependency versions", rel)
+			}
+		})
+	}
 }
 
 func TestTier1InMemoryWorkerApprovalReplayFlow(t *testing.T) {
