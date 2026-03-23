@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -19,7 +20,14 @@ func (s *Service) MarkClaimedSessionInFlight(ctx context.Context, sessionID, lea
 
 func (s *Service) markSessionInFlight(ctx context.Context, sessionID, leaseID, stepID string) (session.State, error) {
 	now := s.nowMilli()
-	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
+	state, err := s.ensureSessionLease(sessionID, leaseID)
+	if err != nil {
+		return session.State{}, err
+	}
+	if _, err := s.ensureRuntimeBudgetReady(ctx, state, leaseID, now); err != nil {
+		return session.State{}, err
+	}
+	return s.updateRecoveryState(ctx, sessionID, leaseID, "in_flight", func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInFlight
 		st.InFlightStepID = stepID
 		st.LastHeartbeatAt = now
@@ -37,7 +45,7 @@ func (s *Service) MarkClaimedSessionInterrupted(ctx context.Context, sessionID, 
 
 func (s *Service) markSessionInterrupted(ctx context.Context, sessionID, leaseID string) (session.State, error) {
 	now := s.nowMilli()
-	return s.updateRecoveryState(ctx, sessionID, leaseID, func(st session.State) session.State {
+	return s.updateRecoveryState(ctx, sessionID, leaseID, "interrupted", func(st session.State) session.State {
 		st.ExecutionState = session.ExecutionInterrupted
 		st.InterruptedAt = now
 		st.Phase = session.PhaseRecover
@@ -46,7 +54,7 @@ func (s *Service) markSessionInterrupted(ctx context.Context, sessionID, leaseID
 }
 
 func (s *Service) ListRecoverableSessions() ([]session.State, error) {
-	items, err := s.Sessions.List()
+	items, err := s.listSessionRecords(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +74,7 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 		return SessionRunOutput{}, err
 	}
 	out.Session = state
-	if latest, ok, err := s.latestPlanForSession(sessionID); err != nil {
+	if latest, ok, err := s.latestPlanForSession(ctx, sessionID); err != nil {
 		return SessionRunOutput{}, err
 	} else if ok {
 		out.Plan = planPointer(latest)
@@ -145,12 +153,13 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 		current.ExecutionState == session.ExecutionInterrupted ||
 		current.Phase == session.PhaseRecover
 	var updated session.State
-	normalize := func(sessStore session.Store, handleStore execution.RuntimeHandleStore) error {
+	normalize := func(sessStore session.Store, handleStore execution.RuntimeHandleStore, sink EventSink) error {
 		st, err := sessStore.Get(sessionID)
 		if err != nil {
 			return err
 		}
 		next := st
+		events := make([]audit.Event, 0)
 		if st.ExecutionState == session.ExecutionInFlight || st.ExecutionState == session.ExecutionInterrupted {
 			next.ExecutionState = session.ExecutionIdle
 			if !isTerminalPhase(st.Phase) {
@@ -161,43 +170,53 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 			}
 		}
 		if shouldReconcileHandles {
-			if err := reconcileActiveRuntimeHandlesInStore(handleStore, sessionID, "session recovered", s.nowMilli()); err != nil {
+			handles, err := reconcileActiveRuntimeHandlesInStore(handleStore, sessionID, "session recovered", s.nowMilli())
+			if err != nil {
 				return err
 			}
+			events = append(events, runtimeHandleAuditEvents(s.nowMilli(), audit.EventRuntimeHandleInvalidated, handles)...)
 		}
 		if next.ExecutionState == st.ExecutionState &&
 			next.Phase == st.Phase &&
 			next.CurrentStepID == st.CurrentStepID {
 			updated = st
+		} else {
+			updatedState, err := persistSessionUpdate(sessStore, next, st.LeaseID)
+			if err != nil {
+				return err
+			}
+			updated = updatedState
+			events = append(events, newAuditEventAt(s.nowMilli(), audit.EventRecoveryStateChanged, updated.SessionID, updated.TaskID, recoveryStepID(updated), recoveryStatePayload(st, updated, "recovered")))
+		}
+		if len(events) == 0 {
 			return nil
 		}
-		updatedState, err := persistSessionUpdate(sessStore, next, st.LeaseID)
-		if err != nil {
-			return err
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, events)
 		}
-		updated = updatedState
+		_ = s.emitEvents(ctx, events)
 		return nil
 	}
 
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			return normalize(repoSet.Sessions, repoSet.RuntimeHandles)
+			return normalize(repoSet.Sessions, repoSet.RuntimeHandles, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return session.State{}, err
 		}
 		return updated, nil
 	}
 
-	if err := normalize(s.Sessions, s.RuntimeHandles); err != nil {
+	if err := normalize(s.Sessions, s.RuntimeHandles, nil); err != nil {
 		return session.State{}, err
 	}
 	return updated, nil
 }
 
-func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID string, mutate func(session.State) session.State) (session.State, error) {
+func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID, mutation string, mutate func(session.State) session.State) (session.State, error) {
 	var updated session.State
-	update := func(store session.Store) error {
+	update := func(store session.Store, sink EventSink) error {
 		st, err := store.Get(sessionID)
 		if err != nil {
 			return err
@@ -211,6 +230,11 @@ func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID st
 			return err
 		}
 		updated = updatedState
+		event := newAuditEventAt(s.nowMilli(), audit.EventRecoveryStateChanged, updated.SessionID, updated.TaskID, recoveryStepID(updated), recoveryStatePayload(st, updated, mutation))
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
+		}
+		_ = s.emitEvents(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -220,15 +244,40 @@ func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID st
 			if repos.Sessions != nil {
 				store = repos.Sessions
 			}
-			return update(store)
+			return update(store, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return session.State{}, err
 		}
 		return updated, nil
 	}
 
-	if err := update(s.Sessions); err != nil {
+	if err := update(s.Sessions, nil); err != nil {
 		return session.State{}, err
 	}
 	return updated, nil
+}
+
+func recoveryStatePayload(before, after session.State, mutation string) map[string]any {
+	return map[string]any{
+		"mutation":               mutation,
+		"from_phase":             string(before.Phase),
+		"to_phase":               string(after.Phase),
+		"from_execution_state":   string(before.ExecutionState),
+		"to_execution_state":     string(after.ExecutionState),
+		"from_current_step_id":   before.CurrentStepID,
+		"to_current_step_id":     after.CurrentStepID,
+		"from_in_flight_step_id": before.InFlightStepID,
+		"to_in_flight_step_id":   after.InFlightStepID,
+		"pending_approval_id":    after.PendingApprovalID,
+		"runtime_started_at":     after.RuntimeStartedAt,
+		"last_heartbeat_at":      after.LastHeartbeatAt,
+		"interrupted_at":         after.InterruptedAt,
+	}
+}
+
+func recoveryStepID(st session.State) string {
+	if st.InFlightStepID != "" {
+		return st.InFlightStepID
+	}
+	return st.CurrentStepID
 }

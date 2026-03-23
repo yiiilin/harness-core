@@ -2,7 +2,9 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/internal/postgrestest"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
@@ -123,5 +125,68 @@ func TestContextSummariesPersistTriggerAndSupersedesAcrossPostgresRuntimeReinit(
 	}
 	if summaries[1].SupersedesSummaryID != firstSummary.SummaryID {
 		t.Fatalf("expected durable supersedes chain %q, got %#v", firstSummary.SummaryID, summaries[1])
+	}
+}
+
+func TestRuntimeBudgetAnchorPersistsAcrossPostgresRuntimeReinit(t *testing.T) {
+	pg := postgrestest.Start(t)
+
+	opts := hruntime.Options{
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  1,
+			MaxToolOutputChars: 2048,
+		},
+	}
+	builtins.Register(&opts)
+
+	rt1, db1 := pg.OpenService(t, opts)
+	rt1 = rt1.WithPlanner(sequencePlanner{})
+
+	sess := mustCreateSession(t, rt1, "postgres runtime budget", "persist runtime budget anchor across restart")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "durable runtime budget anchor"})
+	sess, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	first, _, err := rt1.CreatePlanFromPlanner(context.Background(), sess.SessionID, "initial postgres planning", 1)
+	if err != nil {
+		t.Fatalf("create first plan from planner: %v", err)
+	}
+
+	persistedBeforeRestart, err := rt1.GetSession(sess.SessionID)
+	if err != nil {
+		t.Fatalf("get session before restart: %v", err)
+	}
+	if persistedBeforeRestart.RuntimeStartedAt == 0 {
+		t.Fatalf("expected planning to persist runtime budget anchor, got %#v", persistedBeforeRestart)
+	}
+	persistedBeforeRestart.RuntimeStartedAt = time.Now().Add(-time.Minute).UnixMilli()
+	persistedBeforeRestart.Version++
+	if err := rt1.Sessions.Update(persistedBeforeRestart); err != nil {
+		t.Fatalf("age runtime budget anchor: %v", err)
+	}
+
+	if err := db1.Close(); err != nil {
+		t.Fatalf("close first db: %v", err)
+	}
+
+	rt2, db2 := pg.OpenService(t, opts)
+	rt2 = rt2.WithPlanner(sequencePlanner{})
+	defer db2.Close()
+
+	persistedAfterRestart, err := rt2.GetSession(sess.SessionID)
+	if err != nil {
+		t.Fatalf("get session after restart: %v", err)
+	}
+	if persistedAfterRestart.RuntimeStartedAt != persistedBeforeRestart.RuntimeStartedAt {
+		t.Fatalf("expected durable runtime budget anchor to persist across restart, before=%#v after=%#v", persistedBeforeRestart, persistedAfterRestart)
+	}
+
+	if _, _, err := rt2.CreatePlanFromPlanner(context.Background(), sess.SessionID, "replan after restart", 1); !errors.Is(err, hruntime.ErrRuntimeBudgetExceeded) {
+		t.Fatalf("expected durable runtime budget anchor to block replan after restart, got %v (first plan %#v)", err, first)
 	}
 }

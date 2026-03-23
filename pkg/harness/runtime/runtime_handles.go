@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 
+	"github.com/google/uuid"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -25,7 +27,7 @@ type RuntimeHandleInvalidateRequest struct {
 }
 
 func (s *Service) UpdateRuntimeHandle(ctx context.Context, handleID string, update RuntimeHandleUpdate) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", audit.EventRuntimeHandleUpdated, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		if update.Kind != nil {
 			handle.Kind = *update.Kind
 		}
@@ -46,7 +48,7 @@ func (s *Service) UpdateClaimedRuntimeHandle(ctx context.Context, handleID, leas
 	if leaseID == "" {
 		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
 	}
-	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, audit.EventRuntimeHandleUpdated, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		if update.Kind != nil {
 			handle.Kind = *update.Kind
 		}
@@ -64,7 +66,7 @@ func (s *Service) UpdateClaimedRuntimeHandle(ctx context.Context, handleID, leas
 }
 
 func (s *Service) CloseRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleCloseRequest) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", audit.EventRuntimeHandleClosed, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleClosed
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle closed")
 		handle.ClosedAt = s.nowMilli()
@@ -79,7 +81,7 @@ func (s *Service) CloseClaimedRuntimeHandle(ctx context.Context, handleID, lease
 	if leaseID == "" {
 		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
 	}
-	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, audit.EventRuntimeHandleClosed, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleClosed
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle closed")
 		handle.ClosedAt = s.nowMilli()
@@ -91,7 +93,7 @@ func (s *Service) CloseClaimedRuntimeHandle(ctx context.Context, handleID, lease
 }
 
 func (s *Service) InvalidateRuntimeHandle(ctx context.Context, handleID string, request RuntimeHandleInvalidateRequest) (execution.RuntimeHandle, error) {
-	return s.mutateRuntimeHandle(ctx, handleID, "", func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, "", audit.EventRuntimeHandleInvalidated, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleInvalidated
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
 		handle.InvalidatedAt = s.nowMilli()
@@ -106,7 +108,7 @@ func (s *Service) InvalidateClaimedRuntimeHandle(ctx context.Context, handleID, 
 	if leaseID == "" {
 		return execution.RuntimeHandle{}, session.ErrSessionLeaseNotHeld
 	}
-	return s.mutateRuntimeHandle(ctx, handleID, leaseID, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
+	return s.mutateRuntimeHandle(ctx, handleID, leaseID, audit.EventRuntimeHandleInvalidated, func(handle execution.RuntimeHandle) execution.RuntimeHandle {
 		handle.Status = execution.RuntimeHandleInvalidated
 		handle.StatusReason = runtimeHandleReasonOrDefault(request.Reason, "runtime handle invalidated")
 		handle.InvalidatedAt = s.nowMilli()
@@ -117,9 +119,9 @@ func (s *Service) InvalidateClaimedRuntimeHandle(ctx context.Context, handleID, 
 	})
 }
 
-func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, leaseID string, mutate func(execution.RuntimeHandle) execution.RuntimeHandle) (execution.RuntimeHandle, error) {
+func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, leaseID string, eventType string, mutate func(execution.RuntimeHandle) execution.RuntimeHandle) (execution.RuntimeHandle, error) {
 	var updated execution.RuntimeHandle
-	apply := func(store execution.RuntimeHandleStore, sessions session.Store) error {
+	apply := func(store execution.RuntimeHandleStore, sessions session.Store, sink EventSink) error {
 		if store == nil {
 			return execution.ErrRecordNotFound
 		}
@@ -164,33 +166,42 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, leas
 		}
 		updated.Version = current.Version + 1
 		updated.UpdatedAt = s.nowMilli()
-		return store.Update(updated)
+		if err := store.Update(updated); err != nil {
+			return err
+		}
+		events := runtimeHandleAuditEvents(s.nowMilli(), eventType, []execution.RuntimeHandle{updated})
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, events)
+		}
+		_ = s.emitEvents(ctx, events)
+		return nil
 	}
 
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			return apply(repoSet.RuntimeHandles, repoSet.Sessions)
+			return apply(repoSet.RuntimeHandles, repoSet.Sessions, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return execution.RuntimeHandle{}, err
 		}
 		return updated, nil
 	}
 
-	if err := apply(s.RuntimeHandles, s.Sessions); err != nil {
+	if err := apply(s.RuntimeHandles, s.Sessions, nil); err != nil {
 		return execution.RuntimeHandle{}, err
 	}
 	return updated, nil
 }
 
-func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, sessionID, reason string, now int64) error {
+func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, sessionID, reason string, now int64) ([]execution.RuntimeHandle, error) {
 	if store == nil || sessionID == "" {
-		return nil
+		return nil, nil
 	}
 	handles, err := store.List(sessionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	updated := make([]execution.RuntimeHandle, 0)
 	for _, handle := range handles {
 		if !isRuntimeHandleActive(handle) {
 			continue
@@ -201,10 +212,11 @@ func reconcileActiveRuntimeHandlesInStore(store execution.RuntimeHandleStore, se
 		handle.UpdatedAt = now
 		handle.Version++
 		if err := store.Update(handle); err != nil {
-			return err
+			return nil, err
 		}
+		updated = append(updated, handle)
 	}
-	return nil
+	return updated, nil
 }
 
 func isRuntimeHandleActive(handle execution.RuntimeHandle) bool {
@@ -216,4 +228,32 @@ func runtimeHandleReasonOrDefault(reason, fallback string) string {
 		return reason
 	}
 	return fallback
+}
+
+func runtimeHandleAuditEvents(now int64, eventType string, handles []execution.RuntimeHandle) []audit.Event {
+	events := make([]audit.Event, 0, len(handles))
+	for _, handle := range handles {
+		events = append(events, audit.Event{
+			EventID:     "evt_" + uuid.NewString(),
+			Type:        eventType,
+			SessionID:   handle.SessionID,
+			TaskID:      handle.TaskID,
+			AttemptID:   handle.AttemptID,
+			CycleID:     handle.CycleID,
+			TraceID:     handle.TraceID,
+			CausationID: handle.HandleID,
+			Payload: map[string]any{
+				"handle_id":      handle.HandleID,
+				"kind":           handle.Kind,
+				"value":          handle.Value,
+				"status":         handle.Status,
+				"status_reason":  handle.StatusReason,
+				"closed_at":      handle.ClosedAt,
+				"invalidated_at": handle.InvalidatedAt,
+				"version":        handle.Version,
+			},
+			CreatedAt: now,
+		})
+	}
+	return events
 }

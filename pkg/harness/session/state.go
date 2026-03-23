@@ -46,6 +46,7 @@ type State struct {
 	LeaseExpiresAt    int64          `json:"lease_expires_at,omitempty"`
 	LastHeartbeatAt   int64          `json:"last_heartbeat_at,omitempty"`
 	InterruptedAt     int64          `json:"interrupted_at,omitempty"`
+	RuntimeStartedAt  int64          `json:"runtime_started_at,omitempty"`
 	Metadata          map[string]any `json:"metadata,omitempty"`
 	Version           int64          `json:"version"`
 	CreatedAt         int64          `json:"created_at"`

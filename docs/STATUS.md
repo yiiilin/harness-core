@@ -11,14 +11,17 @@ For post-`v1` compatibility rules on the stable path, see `docs/CHANGE_POLICY.md
 It already has:
 - durable `task / session / plan / step` lifecycle contracts
 - a governed runtime loop: `plan -> policy -> approval -> execute -> verify -> recover`
+- runner-aware reads that resolve through the same effective repository set as runtime writes
 - optimistic concurrency for mutable session and approval records
 - claim / lease primitives for runnable and recoverable sessions
+- total runtime budgeting anchored at first real runtime activity, not raw session creation time
 - abort / cancel semantics
 - first-class execution facts: attempts, actions, verifications, artifacts, and runtime handles
 - runtime handle lifecycle control
 - plan-level capability freeze plus per-action capability snapshots
 - context compaction hooks plus durable context summaries
 - audit event envelopes with correlation ids
+- control-plane audit coverage for task attach, lease mutations, recovery state changes, and runtime-handle control
 - vendor-neutral metrics and trace exporter hooks
 - Postgres-backed repositories and transaction runner wiring
 - a public `pkg/harness/postgres` durable bootstrap path
@@ -39,20 +42,16 @@ It is not yet a complete product platform.
 
 ## Current pure-kernel gap status
 
-The focused pure-kernel follow-up plan in `docs/plans/2026-03-20-kernel-purity-followup-execution.md` is now implemented and verified.
+The latest hardening pass is tracked in `docs/plans/2026-03-23-kernel-hardening-checklist-execution.md`.
 
-That means the current kernel baseline already includes:
-- transport-neutral runtime metadata surfaces
-- a bare-kernel constructor path separate from builtins composition
-- first-class planning / replanning records
-- lifecycle-wide observability hooks
-- explicit lease heartbeat / expiry / reclaim semantics for runnable and recoverable work
-- claim-aware execution, approval resume, and recovery control-plane entrypoints
+That pass closed the remaining correctness-oriented kernel gaps that were still active at the service/runtime boundary:
+- runner-aware reads now follow the same effective repository set as runner-backed writes
+- `MaxTotalRuntimeMS` now starts from durable `runtime_started_at`, so queued sessions do not burn runtime budget before planning/execution begins
+- worker lease renewal cancellation is bounded when `RunOnce()` finishes
+- attach / lease / recovery / runtime-handle control-plane mutations now emit canonical audit events
 
-Remaining work is mainly future expansion, not a known core-boundary defect:
-- new capability modules
-- new adapters
-- stronger product-layer projections outside the kernel
+This does not mean `v1` is ready today.
+The remaining blockers are now primarily release-discipline items from `docs/V1_RELEASE_CHECKLIST.md`, not an open pure-kernel correctness checklist.
 
 For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
 The recommended public path is `pkg/harness/postgres`, especially `OpenServiceWithConfig(...)` plus `postgres.Config`; the WebSocket adapter remains a reference transport layer.
@@ -94,6 +93,13 @@ For existing-platform integration, the recommended path is now documented as:
 - stability tiers in `docs/VERSIONING.md`
 - post-`v1` compatibility policy in `docs/CHANGE_POLICY.md`
 
+Consistency rule for embedders:
+- `runtime.New(...)` installs an in-memory unit-of-work runner over the configured stores by default
+- when `runtime.Options.Runner` is present, runtime writes execute against the runner repository set
+- public getters/listers and internal runtime read helpers resolve through that same effective repository set, falling back to service stores only for repositories the runner does not override
+- embedders should prefer service read APIs over mixing direct store reads from partially overridden repositories
+- explicitly clearing `Service.Runner` opts into direct-store, best-effort event semantics and is mainly useful for tightly scoped local embeddings or tests
+
 ## Current execution plan
 
 Repository-wide roadmap: `docs/ROADMAP.md`
@@ -101,3 +107,4 @@ Repository-wide roadmap: `docs/ROADMAP.md`
 Pure-kernel follow-up plan:
 - `docs/plans/2026-03-20-kernel-purity-followup-execution.md`
 - `docs/plans/2026-03-20-kernel-claim-closure-execution.md`
+- `docs/plans/2026-03-23-kernel-hardening-checklist-execution.md`

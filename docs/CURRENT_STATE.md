@@ -32,6 +32,9 @@ It is no longer just a minimal runtime skeleton:
 - replay/debug reads are public
 - reusable worker orchestration is public
 - shell PTY execution is extensible enough for external platforms
+- service reads now stay aligned with runner-backed committed state
+- runtime budgets start from durable first-runtime activity rather than raw enqueue time
+- control-plane mutations are visible in the canonical audit stream
 
 It is still intentionally **not** a complete multi-user product platform.
 
@@ -110,6 +113,11 @@ The project now has a credible public embedding story:
 
 This is enough for serious consumers to embed the kernel without carrying the old patch burden in the most important areas.
 
+One important semantic detail is now explicit:
+
+- `runtime.New(...)` installs a local in-memory unit-of-work runner by default over the configured stores
+- embedders that want direct-store best-effort behavior must opt into it explicitly by clearing `Service.Runner`
+
 ### Extensibility: medium-high
 
 The design direction is now correct:
@@ -137,10 +145,13 @@ That is acceptable as long as the public docs keep making this distinction expli
 These areas are now in good shape and should be treated as current strengths:
 
 - kernel state-machine scope and boundaries
+- runner/store consistency across read and write paths
 - public durable Postgres bootstrap
 - approval / recovery / claimed execution closure
+- durable runtime-budget anchoring via `runtime_started_at`
 - execution-fact persistence model
 - replay/debug read model
+- control-plane audit coverage for attach / lease / recovery / runtime-handle control
 - runtime-handle persistence and lifecycle control
 - shell PTY execution extensibility
 - explicit stability guidance for embedders
@@ -151,12 +162,14 @@ These areas are now in good shape and should be treated as current strengths:
 The project no longer has a large kernel-boundary problem.
 
 The remaining gaps are now narrower and mostly about making the embedder surface cleaner and more replaceable.
+There is no longer an active tracked correctness checklist in this document for runner/read consistency, runtime-budget anchoring, worker renew cancellation, or control-plane audit visibility; those are now part of the current baseline.
 
-### 1. Worker helper outer-loop ergonomics are still minimal
+### 1. Worker helper outer-loop ergonomics are intentionally still minimal
 
 `pkg/harness/worker` now depends on a narrow worker-facing runtime interface rather than a concrete `*runtime.Service`.
 
-That cleanup is complete, but platforms may still want a slightly richer outer-loop surface around:
+The core correctness path is in place, including bounded renewal cancellation on `RunOnce()` shutdown.
+What remains is optional outer-loop ergonomics around:
 
 - polling
 - backoff

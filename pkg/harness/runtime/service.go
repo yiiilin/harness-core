@@ -156,11 +156,11 @@ func (s *Service) CreateSession(title, goal string) (session.State, error) {
 }
 
 func (s *Service) GetSession(id string) (session.State, error) {
-	return s.Sessions.Get(id)
+	return s.getSessionRecord(context.Background(), id)
 }
 
 func (s *Service) ListSessions() ([]session.State, error) {
-	return s.Sessions.List()
+	return s.listSessionRecords(context.Background())
 }
 
 func (s *Service) CreateTask(spec task.Spec) (task.Record, error) {
@@ -168,11 +168,11 @@ func (s *Service) CreateTask(spec task.Spec) (task.Record, error) {
 }
 
 func (s *Service) GetTask(id string) (task.Record, error) {
-	return s.Tasks.Get(id)
+	return s.getTaskRecord(context.Background(), id)
 }
 
 func (s *Service) ListTasks() ([]task.Record, error) {
-	return s.Tasks.List()
+	return s.listTaskRecords(context.Background())
 }
 
 func (s *Service) AttachTaskToSession(sessionID, taskID string) (session.State, error) {
@@ -184,88 +184,55 @@ func (s *Service) CreatePlan(sessionID, changeReason string, steps []plan.StepSp
 }
 
 func (s *Service) GetPlan(planID string) (plan.Spec, error) {
-	return s.Plans.Get(planID)
+	return s.getPlanRecord(context.Background(), planID)
 }
 
 func (s *Service) ListPlans(sessionID string) ([]plan.Spec, error) {
-	return s.Plans.ListBySession(sessionID)
+	return s.listPlanRecords(context.Background(), sessionID)
 }
 
 func (s *Service) GetApproval(id string) (approval.Record, error) {
-	if s.Approvals == nil {
-		return approval.Record{}, approval.ErrApprovalNotFound
-	}
-	return s.Approvals.Get(id)
+	return s.getApprovalRecord(context.Background(), id)
 }
 
 func (s *Service) ListApprovals(sessionID string) ([]approval.Record, error) {
-	if s.Approvals == nil {
-		return nil, nil
-	}
-	return s.Approvals.List(sessionID)
+	return s.listApprovalRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListAttempts(sessionID string) ([]execution.Attempt, error) {
-	if s.Attempts == nil {
-		return nil, nil
-	}
-	return s.Attempts.List(sessionID)
+	return s.listAttemptRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListActions(sessionID string) ([]execution.ActionRecord, error) {
-	if s.Actions == nil {
-		return nil, nil
-	}
-	return s.Actions.List(sessionID)
+	return s.listActionRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListVerifications(sessionID string) ([]execution.VerificationRecord, error) {
-	if s.Verifications == nil {
-		return nil, nil
-	}
-	return s.Verifications.List(sessionID)
+	return s.listVerificationRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListArtifacts(sessionID string) ([]execution.Artifact, error) {
-	if s.Artifacts == nil {
-		return nil, nil
-	}
-	return s.Artifacts.List(sessionID)
+	return s.listArtifactRecords(context.Background(), sessionID)
 }
 
 func (s *Service) GetRuntimeHandle(id string) (execution.RuntimeHandle, error) {
-	if s.RuntimeHandles == nil {
-		return execution.RuntimeHandle{}, execution.ErrRecordNotFound
-	}
-	return s.RuntimeHandles.Get(id)
+	return s.getRuntimeHandleRecord(context.Background(), id)
 }
 
 func (s *Service) ListRuntimeHandles(sessionID string) ([]execution.RuntimeHandle, error) {
-	if s.RuntimeHandles == nil {
-		return nil, nil
-	}
-	return s.RuntimeHandles.List(sessionID)
+	return s.listRuntimeHandleRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListCapabilitySnapshots(sessionID string) ([]capability.Snapshot, error) {
-	if s.CapabilitySnapshots == nil {
-		return nil, nil
-	}
-	return s.CapabilitySnapshots.List(sessionID)
+	return s.listCapabilitySnapshotRecords(context.Background(), sessionID)
 }
 
 func (s *Service) GetPlanningRecord(id string) (planning.Record, error) {
-	if s.PlanningRecords == nil {
-		return planning.Record{}, planning.ErrPlanningRecordNotFound
-	}
-	return s.PlanningRecords.Get(id)
+	return s.getPlanningRecord(context.Background(), id)
 }
 
 func (s *Service) ListPlanningRecords(sessionID string) ([]planning.Record, error) {
-	if s.PlanningRecords == nil {
-		return nil, nil
-	}
-	return s.PlanningRecords.List(sessionID)
+	return s.listPlanningRecords(context.Background(), sessionID)
 }
 
 func (s *Service) ListContextSummaries(sessionID string) ([]ContextSummary, error) {
@@ -281,9 +248,6 @@ func (s *Service) ListVerifiers() []verify.Definition {
 }
 
 func (s *Service) ListAuditEvents(sessionID string) ([]audit.Event, error) {
-	if s.Audit == nil {
-		return nil, nil
-	}
 	return s.listRelatedAuditEvents(sessionID)
 }
 

@@ -276,6 +276,7 @@ The runtime should emit structured events.
 ### Minimum event types
 - `task.created`
 - `session.created`
+- `session.task_attached`
 - `plan.generated`
 - `step.started`
 - `approval.requested`
@@ -286,6 +287,13 @@ The runtime should emit structured events.
 - `tool.failed`
 - `verify.completed`
 - `state.changed`
+- `lease.claimed`
+- `lease.renewed`
+- `lease.released`
+- `recovery.state_changed`
+- `runtime_handle.updated`
+- `runtime_handle.closed`
+- `runtime_handle.invalidated`
 - `session.aborted`
 - `task.completed`
 - `task.failed`
@@ -317,14 +325,23 @@ Runtime-generated events should use a stable envelope with correlation ids when 
 - `task_id` should be present whenever a task is attached to the session.
 - `planning_id` should be present for planner-derived plan generation events when the runtime persisted a planning cycle record.
 - `approval_id` should be present for approval request/response events when an approval record exists.
+- `step_id` should be present for recovery/control events when the runtime is mutating a specific current or in-flight step.
 - `attempt_id` and `trace_id` should be present for step execution events.
 - `action_id` is required for tool invocation/completion/failure events.
 - `verification_id` is required for verification events.
 - `cycle_id` should be present for execution-linked events when the runtime is inside a logical execution cycle.
-- `causation_id` should point to the record that directly caused the event, such as an action or attempt record.
+- `causation_id` should point to the record that directly caused the event, such as an action, attempt, or runtime handle record.
 - `sequence` should preserve sink-local emit order so durable audit consumers do not need to infer ordering from `event_id`.
 - adapter envelopes may wrap these objects, but must not redefine the meaning of the core fields.
 - request/response adapters should not claim their response payloads are a replacement for the event envelope.
+
+For `recovery.state_changed`, payloads should remain structured and should include a `mutation` field describing the recovery control-plane transition, such as `in_flight`, `interrupted`, or `recovered`.
+
+For runtime-handle control events, payloads should include `handle_id`, `status`, and `status_reason` when available so embedders can project handle lifecycle changes without transport-specific side channels.
+
+Control-plane event durability follows the runtime persistence boundary:
+- when the runtime has an active `Runner`, control-plane events are emitted through the runner-backed sink inside the same unit-of-work boundary as the mutation
+- when `Runner` is explicitly disabled, these emissions are best-effort after the mutation commits
 
 ### Execution fact correlation
 

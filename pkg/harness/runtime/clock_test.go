@@ -172,21 +172,43 @@ func TestRuntimeBudgetUsesInjectedClock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
 	}
-	step := plan.StepSpec{
-		StepID: "step_budget_clock",
-		Title:  "budgeted",
-		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo budget", "timeout_ms": 5000}},
-		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
-			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
-		}},
+	pl, err := rt.CreatePlan(attached.SessionID, "budget clock", []plan.StepSpec{
+		{
+			StepID: "step_budget_clock_first",
+			Title:  "budgeted first runtime activity",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo budget", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+		},
+		{
+			StepID: "step_budget_clock_second",
+			Title:  "budgeted second runtime activity",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo budget-again", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
 	}
 
 	clock.Advance(60001)
-	if _, err := rt.RunStep(context.Background(), attached.SessionID, step); !errors.Is(err, hruntime.ErrRuntimeBudgetExceeded) {
-		t.Fatalf("expected runtime budget to use injected clock, got %v", err)
+	firstOut, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("expected first runtime activity to set runtime budget anchor, got %v", err)
 	}
-	if handler.calls != 0 {
-		t.Fatalf("expected runtime budget rejection to block tool execution, got %d calls", handler.calls)
+	if firstOut.Session.RuntimeStartedAt != 61001 {
+		t.Fatalf("expected runtime budget anchor to use injected clock, got %#v", firstOut.Session)
+	}
+
+	clock.Advance(60001)
+	if _, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[1]); !errors.Is(err, hruntime.ErrRuntimeBudgetExceeded) {
+		t.Fatalf("expected runtime budget to use injected clock after anchor, got %v", err)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected runtime budget rejection to block second tool execution, got %d calls", handler.calls)
 	}
 }
 

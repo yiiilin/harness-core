@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
@@ -107,6 +109,102 @@ func TestRenewAndReleaseSessionLease(t *testing.T) {
 	if released.LeaseID != "" || released.LeaseExpiresAt != 0 {
 		t.Fatalf("expected lease fields cleared after release, got %#v", released)
 	}
+}
+
+func TestLeaseOperationsEmitAuditEventsWithinRunnerBoundary(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	audits := audit.NewMemoryStore()
+	runner := &countingRunner{repos: persistence.RepositorySet{
+		Sessions: sessions,
+		Audits:   audits,
+	}}
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Audit:    audits,
+		Runner:   runner,
+	})
+
+	sess := mustCreateSession(t, rt, "lease audit", "lease operations should emit audit events")
+
+	claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim runnable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected runnable session to be claimed")
+	}
+	if _, err := rt.RenewSessionLease(context.Background(), claimed.SessionID, claimed.LeaseID, 2*time.Minute); err != nil {
+		t.Fatalf("renew session lease: %v", err)
+	}
+	if _, err := rt.ReleaseSessionLease(context.Background(), claimed.SessionID, claimed.LeaseID); err != nil {
+		t.Fatalf("release session lease: %v", err)
+	}
+
+	if runner.calls < 3 {
+		t.Fatalf("expected lease operations to use runner boundary, got %d calls", runner.calls)
+	}
+
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	expected := map[string]bool{
+		audit.EventLeaseClaimed:  false,
+		audit.EventLeaseRenewed:  false,
+		audit.EventLeaseReleased: false,
+	}
+	for _, event := range events {
+		if _, ok := expected[event.Type]; !ok {
+			continue
+		}
+		expected[event.Type] = true
+		if got, _ := event.Payload["lease_id"].(string); got != claimed.LeaseID {
+			t.Fatalf("expected lease event %s to carry lease_id %q, got %#v", event.Type, claimed.LeaseID, event)
+		}
+	}
+	for typ, found := range expected {
+		if !found {
+			t.Fatalf("expected lease event %s, got %#v", typ, events)
+		}
+	}
+}
+
+func TestLeaseAuditFailuresAreBestEffortWithoutRunnerAndSurfaceWithRunner(t *testing.T) {
+	t.Run("without runner claim stays successful", func(t *testing.T) {
+		rt := hruntime.New(hruntime.Options{
+			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventLeaseClaimed: errors.New("boom:lease.claimed")}},
+		})
+		rt.Runner = nil
+		sess := mustCreateSession(t, rt, "lease best effort", "claim should stay successful without runner")
+
+		claimed, ok, err := rt.ClaimRunnableSession(context.Background(), time.Minute)
+		if err != nil {
+			t.Fatalf("expected claim to stay successful without runner, got %v", err)
+		}
+		if !ok || claimed.SessionID != sess.SessionID {
+			t.Fatalf("expected claimed session %q, got ok=%v state=%#v", sess.SessionID, ok, claimed)
+		}
+	})
+
+	t.Run("with runner claim surfaces emit failure", func(t *testing.T) {
+		sessions := session.NewMemoryStore()
+		audits := audit.NewMemoryStore()
+		runner := &countingRunner{repos: persistence.RepositorySet{
+			Sessions: sessions,
+			Audits:   audits,
+		}}
+		boom := errors.New("boom:lease.claimed")
+		rt := hruntime.New(hruntime.Options{
+			Sessions: sessions,
+			Audit:    audits,
+			Runner:   runner,
+			EventSink: selectiveFailingEventSink{failures: map[string]error{
+				audit.EventLeaseClaimed: boom,
+			}},
+		})
+		mustCreateSession(t, rt, "lease runner failure", "claim should surface emit error with runner")
+
+		if _, _, err := rt.ClaimRunnableSession(context.Background(), time.Minute); !errors.Is(err, boom) {
+			t.Fatalf("expected runner-backed claim to surface emit error, got %v", err)
+		}
+	})
 }
 
 func TestReleaseSessionLeaseRejectsExpiredHolder(t *testing.T) {

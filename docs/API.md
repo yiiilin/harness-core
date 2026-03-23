@@ -37,6 +37,9 @@ See:
   - constructors:
     - `harness.New(opts)`
     - `harness.NewDefault()`
+  - constructor default:
+    - runtime creation installs a local in-memory `Runner` over the configured stores unless you explicitly replace or clear it
+    - clearing `Service.Runner` opts into direct-store best-effort event semantics and should be treated as an explicit local-mode choice
 
 ### Stable root helper packages
 
@@ -118,7 +121,9 @@ Approval and coordination:
 - `ClaimRecoverableSession`
 - `RenewSessionLease`
 - `ReleaseSessionLease`
+- `MarkSessionInFlight`
 - `MarkClaimedSessionInFlight`
+- `MarkSessionInterrupted`
 - `MarkClaimedSessionInterrupted`
 
 Durable execution facts and reads:
@@ -135,11 +140,18 @@ Durable execution facts and reads:
 
 Runtime handle control:
 - `UpdateRuntimeHandle`
+- `UpdateClaimedRuntimeHandle`
 - `CloseRuntimeHandle`
+- `CloseClaimedRuntimeHandle`
 - `InvalidateRuntimeHandle`
+- `InvalidateClaimedRuntimeHandle`
 
 Context maintenance:
 - `CompactSessionContext`
+
+Read consistency rule:
+- public getters/listers resolve against the same effective repository set that runtime writes use
+- when a custom `Runner` overrides only some repositories, reads fall back only for the repositories the runner does not override
 
 ### Re-exported facade types
 
@@ -224,6 +236,28 @@ No compatibility promise:
 - `internal/*`
 - `examples/*`
 - `docs/plans/*`
+
+## Runtime Consistency Notes
+
+- When `runtime.Options.Runner` is configured, runtime writes execute against the runner repository set.
+- Public runtime getters/listers and internal helper reads resolve through that same effective repository set, falling back to service stores only for repositories the runner does not override.
+- Embedders should treat service methods as the supported read surface rather than mixing direct reads from stale or partially overridden stores.
+
+## Runtime Budget Semantics
+
+- `LoopBudgets.MaxTotalRuntimeMS` is enforced from durable `session.runtime_started_at`.
+- `runtime_started_at` is set on the first real runtime activity, not on raw session creation.
+- Planner-driven sessions, direct step execution, and claimed in-flight execution therefore share the same durable total-runtime clock semantics across restarts.
+
+## Audit Surface Notes
+
+`ListAuditEvents(sessionID)` is the canonical audit read surface for both execution and control-plane mutations.
+
+In addition to step events, embedders should expect control-plane events such as:
+- `session.task_attached`
+- `lease.claimed` / `lease.renewed` / `lease.released`
+- `recovery.state_changed`
+- `runtime_handle.updated` / `runtime_handle.closed` / `runtime_handle.invalidated`
 
 ## Minimal Embedding Path
 

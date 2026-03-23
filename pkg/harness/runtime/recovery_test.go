@@ -8,7 +8,9 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -63,6 +65,126 @@ func TestRecoveryStateTransitionsUseRunnerBoundary(t *testing.T) {
 	if runner.calls < baselineCalls+2 {
 		t.Fatalf("expected recovery writes to use runner, got %d calls from baseline %d", runner.calls, baselineCalls)
 	}
+}
+
+func TestRecoveryStateMutationsEmitAuditEventsAndHandleInvalidations(t *testing.T) {
+	opts := hruntime.Options{Audit: audit.NewMemoryStore()}
+	builtins.Register(&opts)
+	rt := hruntime.New(opts)
+
+	sess := mustCreateSession(t, rt, "recovery audit", "recovery state mutations should be audited")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "recover and invalidate stale handles"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	if _, err := rt.CreatePlan(attached.SessionID, "recover audit plan", []plan.StepSpec{{
+		StepID: "step_recovery_audit",
+		Title:  "recover and audit",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo recovery-audit", "timeout_ms": 5000}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			{Kind: "output_contains", Args: map[string]any{"text": "recovery-audit"}},
+		}},
+	}}); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	if _, err := rt.MarkSessionInFlight(context.Background(), attached.SessionID, "step_recovery_audit"); err != nil {
+		t.Fatalf("mark in-flight: %v", err)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), attached.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+	if _, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_recovery_audit",
+		SessionID: attached.SessionID,
+		TaskID:    attached.TaskID,
+		Kind:      "pty",
+		Value:     "pty-recovery-audit",
+		Status:    execution.RuntimeHandleActive,
+	}); err != nil {
+		t.Fatalf("seed runtime handle: %v", err)
+	}
+
+	out, err := rt.RecoverSession(context.Background(), attached.SessionID)
+	if err != nil {
+		t.Fatalf("recover session: %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected recovered session to complete, got %#v", out.Session)
+	}
+
+	events := mustListAuditEvents(t, rt, attached.SessionID)
+	mutations := map[string]bool{
+		"in_flight":   false,
+		"interrupted": false,
+		"recovered":   false,
+	}
+	foundHandleInvalidation := false
+	for _, event := range events {
+		switch event.Type {
+		case audit.EventRecoveryStateChanged:
+			if mutation, _ := event.Payload["mutation"].(string); mutation != "" {
+				if _, ok := mutations[mutation]; ok {
+					mutations[mutation] = true
+				}
+			}
+		case audit.EventRuntimeHandleInvalidated:
+			if got, _ := event.Payload["handle_id"].(string); got == "hdl_recovery_audit" {
+				foundHandleInvalidation = true
+			}
+		}
+	}
+	for mutation, found := range mutations {
+		if !found {
+			t.Fatalf("expected recovery mutation %q in audit trail, got %#v", mutation, events)
+		}
+	}
+	if !foundHandleInvalidation {
+		t.Fatalf("expected runtime handle invalidation event for recovery, got %#v", events)
+	}
+}
+
+func TestRecoveryAuditFailuresAreBestEffortWithoutRunnerAndSurfaceWithRunner(t *testing.T) {
+	t.Run("without runner recovery mutation stays successful", func(t *testing.T) {
+		rt := hruntime.New(hruntime.Options{
+			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventRecoveryStateChanged: errors.New("boom:recovery.state_changed")}},
+		})
+		rt.Runner = nil
+		sess := mustCreateSession(t, rt, "recovery best effort", "recovery mutation should stay successful without runner")
+
+		updated, err := rt.MarkSessionInFlight(context.Background(), sess.SessionID, "step_best_effort")
+		if err != nil {
+			t.Fatalf("expected recovery mutation to stay successful without runner, got %v", err)
+		}
+		if updated.ExecutionState != session.ExecutionInFlight {
+			t.Fatalf("expected in-flight state despite emit failure, got %#v", updated)
+		}
+	})
+
+	t.Run("with runner recovery mutation surfaces emit failure", func(t *testing.T) {
+		sessions := session.NewMemoryStore()
+		audits := audit.NewMemoryStore()
+		runner := &countingRunner{repos: persistence.RepositorySet{
+			Sessions: sessions,
+			Audits:   audits,
+		}}
+		boom := errors.New("boom:recovery.state_changed")
+		rt := hruntime.New(hruntime.Options{
+			Sessions: sessions,
+			Audit:    audits,
+			Runner:   runner,
+			EventSink: selectiveFailingEventSink{failures: map[string]error{
+				audit.EventRecoveryStateChanged: boom,
+			}},
+		})
+		sess := mustCreateSession(t, rt, "recovery runner failure", "recovery mutation should surface emit failure with runner")
+
+		if _, err := rt.MarkSessionInFlight(context.Background(), sess.SessionID, "step_runner_failure"); !errors.Is(err, boom) {
+			t.Fatalf("expected runner-backed recovery mutation to surface emit error, got %v", err)
+		}
+	})
 }
 
 func TestRunSessionStopsOnPendingApprovalAndRecoverSessionResumesToCompletion(t *testing.T) {

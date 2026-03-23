@@ -38,13 +38,6 @@ func (s *Service) AssembleContextForSession(ctx context.Context, sessionID strin
 	return assembled, summary, state, spec, nil
 }
 
-func (s *Service) latestPlanForSession(sessionID string) (plan.Spec, bool, error) {
-	if s.Plans == nil {
-		return plan.Spec{}, false, nil
-	}
-	return s.Plans.LatestBySession(sessionID)
-}
-
 func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeReason string, maxSteps int) (plan.Spec, ContextPackage, error) {
 	requestedMaxSteps := maxSteps
 	if maxSteps <= 0 {
@@ -59,6 +52,35 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 	metadata := map[string]any{
 		"requested_max_steps": requestedMaxSteps,
 		"effective_max_steps": maxSteps,
+	}
+
+	planningState, err := s.GetSession(sessionID)
+	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID: planningID,
+			SessionID:  sessionID,
+			Status:     planning.StatusFailed,
+			Reason:     changeReason,
+			Error:      err.Error(),
+			Metadata:   metadata,
+			StartedAt:  startedAt,
+			FinishedAt: s.nowMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
+	}
+	if err := ensureRuntimeBudget(planningState, s.LoopBudgets, startedAt); err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID: planningID,
+			SessionID:  sessionID,
+			TaskID:     planningState.TaskID,
+			Status:     planning.StatusFailed,
+			Reason:     changeReason,
+			Error:      err.Error(),
+			Metadata:   metadata,
+			StartedAt:  startedAt,
+			FinishedAt: s.nowMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
 	}
 
 	assembled, summary, planningState, spec, err := s.AssembleContextForSession(ctx, sessionID)
@@ -78,6 +100,22 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 	contextSummaryID := ""
 	if summary != nil {
 		contextSummaryID = summary.SummaryID
+	}
+	planningState, err = s.ensureRuntimeBudgetAnchor(ctx, planningState, "", startedAt)
+	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID:       planningID,
+			SessionID:        planningState.SessionID,
+			TaskID:           spec.TaskID,
+			Status:           planning.StatusFailed,
+			Reason:           changeReason,
+			Error:            err.Error(),
+			ContextSummaryID: contextSummaryID,
+			Metadata:         metadata,
+			StartedAt:        startedAt,
+			FinishedAt:       s.nowMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
 	}
 	view, err := s.freezeCapabilityView(ctx, planningState.SessionID, spec.TaskID)
 	if err != nil {

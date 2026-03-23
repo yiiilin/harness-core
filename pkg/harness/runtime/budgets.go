@@ -26,10 +26,10 @@ func ensurePlanRevisionBudgetInStore(store plan.Store, sessionID string, budgets
 }
 
 func ensureRuntimeBudget(state session.State, budgets LoopBudgets, now int64) error {
-	if budgets.MaxTotalRuntimeMS <= 0 || state.CreatedAt == 0 {
+	if budgets.MaxTotalRuntimeMS <= 0 || state.RuntimeStartedAt == 0 {
 		return nil
 	}
-	if now-state.CreatedAt > budgets.MaxTotalRuntimeMS {
+	if now-state.RuntimeStartedAt > budgets.MaxTotalRuntimeMS {
 		return ErrRuntimeBudgetExceeded
 	}
 	return nil

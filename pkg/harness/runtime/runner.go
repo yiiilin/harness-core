@@ -51,6 +51,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if backoffActive(step, now) {
 		return StepRunOutput{}, ErrStepBackoffActive
 	}
+	state, err = s.ensureRuntimeBudgetAnchor(ctx, state, leaseID, now)
+	if err != nil {
+		return StepRunOutput{}, err
+	}
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
 	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
@@ -439,8 +443,14 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	}
 
 	next := nextTransitionAfterVerification(state, step, decision, verified, s.LoopBudgets)
-	if verified && latestPlanHasRemainingSteps(s.Plans, sessionID, step.StepID) {
-		next = TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "step completed, continue plan"}
+	if verified {
+		hasRemaining, err := s.latestPlanHasRemainingSteps(ctx, sessionID, step.StepID)
+		if err != nil {
+			return StepRunOutput{}, err
+		}
+		if hasRemaining {
+			next = TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "step completed, continue plan"}
+		}
 	}
 	transitions = append(transitions, next)
 	appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason}, "", attemptRecord.AttemptID)
@@ -639,26 +649,6 @@ func updateTaskForTerminalInStore(store task.Store, state session.State) (*task.
 		return nil, err
 	}
 	return &rec, nil
-}
-
-func latestPlanHasRemainingSteps(store plan.Store, sessionID, completedStepID string) bool {
-	if store == nil {
-		return false
-	}
-	latest, ok, err := store.LatestBySession(sessionID)
-	if err != nil || !ok {
-		return false
-	}
-	for _, st := range latest.Steps {
-		status := st.Status
-		if st.StepID == completedStepID {
-			status = plan.StepCompleted
-		}
-		if status != plan.StepCompleted {
-			return true
-		}
-	}
-	return false
 }
 
 func actionErrorMessage(result action.Result) string {
@@ -874,7 +864,7 @@ func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.
 		StepID:    step.StepID,
 		Action:    step.Action,
 	}
-	frozen, hasFrozen, err := s.frozenCapabilityEntryForStep(state.SessionID, step)
+	frozen, hasFrozen, err := s.frozenCapabilityEntryForStep(ctx, state.SessionID, step)
 	if err != nil {
 		return nil, capabilityErrorResult(step.Action, err), err
 	}

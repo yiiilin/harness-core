@@ -28,6 +28,19 @@ This document focuses on:
 - `pkg/harness/replay`
 - adapter-owned config surfaces such as `adapters/websocket.Config` when you choose to reuse a repository-shipped transport
 
+## Effective Repository Consistency
+
+When you supply `runtime.Options.Runner`, the runtime treats the runner repository set as the committed source of truth for execution-time mutations.
+
+Constructor default:
+- `runtime.New(...)` installs an in-memory unit-of-work runner over the configured stores unless you explicitly replace or clear it
+- if you intentionally want direct-store best-effort behavior, clear `rt.Runner` after construction and treat event emission failures as advisory rather than transactional
+
+Embedder rule:
+- use public runtime read APIs such as `GetSession`, `ListAttempts`, `ListAuditEvents`, and replay helpers
+- do not assume the bare service stores are authoritative if your runner overrides some repositories
+- any repository the runner does not override falls back to the service store
+
 ## Pattern 0: Durable Bootstrap Config
 
 Use `pkg/harness/postgres.Config` for embedder-facing durable runtime bootstrap:
@@ -150,6 +163,11 @@ On service restart:
 - helper will claim available runnable/recoverable sessions
 - recovery remains lease-governed and transport-neutral
 
+Budget rule:
+- `LoopBudgets.MaxTotalRuntimeMS` is measured from durable `session.runtime_started_at`
+- that anchor is set on the first real runtime activity, such as planner execution, direct step execution, or claimed in-flight execution
+- queued sessions therefore do not burn runtime budget before the runtime actually starts work
+
 ## Pattern 6: Accepted-First API Wrapper
 
 Use an async platform API style:
@@ -174,6 +192,13 @@ Prefer this read chain:
 - `GetExecutionCycle(session_id, cycle_id)` when needed
 - `ListAuditEvents(session_id)`
 - `pkg/harness/replay` projection helpers for stable ordering and grouping
+
+The audit stream now includes both step-execution and control-plane events.
+Important control-plane examples:
+- `session.task_attached`
+- `lease.claimed` / `lease.renewed` / `lease.released`
+- `recovery.state_changed`
+- `runtime_handle.updated` / `runtime_handle.closed` / `runtime_handle.invalidated`
 
 Do not query internal tables directly from embedding code.
 

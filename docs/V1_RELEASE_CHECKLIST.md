@@ -109,6 +109,7 @@ Exit criteria:
 - repository command entrypoint exists for them:
   - `make test-release`
 - release notes can point to those packages as the supported stable path
+- public docs state the default local `Runner` behavior and the explicit opt-in path for no-runner best-effort mode
 
 ### 3. Lock the durable Postgres upgrade contract
 
@@ -141,6 +142,8 @@ matrix covering the kernel's core promises:
 - claim / lease / recoverable execution
 - durable restart / recovery
 - replay/debug fact visibility
+- runtime-budget anchoring from first real runtime activity
+- control-plane audit visibility for attach / lease / recovery / runtime-handle mutations
 
 The purpose is not more coverage for its own sake.
 The purpose is to protect the high-level behaviors embedders are buying.
@@ -260,11 +263,12 @@ Examples:
 
 If the goal is a disciplined `v1`, the next sequence should be:
 
-1. resolve the single-module compatibility story
-2. add Tier 1 compatibility tests
-3. lock the durable upgrade contract
-4. formalize the release eval matrix
-5. publish the post-`v1` change policy
+1. keep `docs/plans/2026-03-23-kernel-hardening-checklist-execution.md` green
+2. resolve the single-module compatibility story
+3. add Tier 1 compatibility tests
+4. lock the durable upgrade contract
+5. formalize the release eval matrix
+6. publish the post-`v1` change policy
 
 After those are complete, the project should be in a credible position to tag a
 small, focused `v1.0.0` as a harness-engineering kernel.

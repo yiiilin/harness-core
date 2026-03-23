@@ -77,6 +77,9 @@ func (s *MemoryStore) Update(next State) error {
 	if next.CreatedAt == 0 {
 		next.CreatedAt = current.CreatedAt
 	}
+	if next.RuntimeStartedAt == 0 {
+		next.RuntimeStartedAt = current.RuntimeStartedAt
+	}
 	next.UpdatedAt = s.clock.NowMilli()
 	s.sessions[next.SessionID] = next
 	return nil

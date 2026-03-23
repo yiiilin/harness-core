@@ -76,7 +76,7 @@ func TestRunStepRejectsWhenTotalRuntimeBudgetExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach task: %v", err)
 	}
-	attached.CreatedAt = time.Now().Add(-time.Minute).UnixMilli()
+	attached.RuntimeStartedAt = time.Now().Add(-time.Minute).UnixMilli()
 	attached.Version++
 	if err := sessions.Update(attached); err != nil {
 		t.Fatalf("update session: %v", err)
@@ -95,6 +95,95 @@ func TestRunStepRejectsWhenTotalRuntimeBudgetExceeded(t *testing.T) {
 	}
 	if handler.calls != 0 {
 		t.Fatalf("expected runtime budget to block tool execution, got %d calls", handler.calls)
+	}
+}
+
+func TestRunStepDoesNotBurnRuntimeBudgetBeforeFirstExecution(t *testing.T) {
+	clock := &fakeClock{now: 1000}
+	sessions := session.NewMemoryStoreWithClock(clock)
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	handler := &countingHandler{}
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		handler,
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify exit code."},
+		verify.ExitCodeChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Clock:     clock,
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Tools:     tools,
+		Verifiers: verifiers,
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 2048,
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "queue budget", "queue time should not consume runtime budget")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "runtime budget anchor"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	attached.CreatedAt = 1
+	attached.Version++
+	if err := sessions.Update(attached); err != nil {
+		t.Fatalf("age session: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "runtime budget anchor", []plan.StepSpec{
+		{
+			StepID: "step_runtime_anchor_first",
+			Title:  "first runtime activity",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo first", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+		},
+		{
+			StepID: "step_runtime_anchor_second",
+			Title:  "second runtime activity",
+			Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo second", "timeout_ms": 5000}},
+			Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+				{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	clock.Advance(60001)
+	firstOut, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("first run step should establish runtime anchor, got %v", err)
+	}
+	if firstOut.Session.RuntimeStartedAt != 61001 {
+		t.Fatalf("expected first runtime activity to anchor budget at 61001, got %#v", firstOut.Session)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected first runtime activity to execute once, got %d calls", handler.calls)
+	}
+
+	clock.Advance(60001)
+	if _, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[1]); !errors.Is(err, hruntime.ErrRuntimeBudgetExceeded) {
+		t.Fatalf("expected second run to exceed runtime budget from runtime_started_at, got %v", err)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected budget rejection to block second tool call, got %d calls", handler.calls)
 	}
 }
 

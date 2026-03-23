@@ -96,7 +96,7 @@ func capabilityViewIDFromStep(step plan.StepSpec) string {
 }
 
 func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, changeReason string, steps []plan.StepSpec, view capability.View, planningRecord planning.Record) (plan.Spec, error) {
-	sess, err := s.Sessions.Get(sessionID)
+	sess, err := s.getSessionRecord(ctx, sessionID)
 	if err != nil {
 		return plan.Spec{}, err
 	}
@@ -128,7 +128,7 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 				return err
 			}
 		}
-		event := newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+		event := newAuditEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, "", map[string]any{
 			"plan_id":       created.PlanID,
 			"planning_id":   planningRecord.PlanningID,
 			"revision":      created.Revision,
@@ -171,7 +171,7 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 			return plan.Spec{}, err
 		}
 	}
-	event := newLifecycleEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, map[string]any{
+	event := newAuditEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, "", map[string]any{
 		"plan_id":       created.PlanID,
 		"planning_id":   planningRecord.PlanningID,
 		"revision":      created.Revision,
@@ -202,15 +202,12 @@ func persistCapabilityViewInStore(store capability.SnapshotStore, pl plan.Spec, 
 	return nil
 }
 
-func (s *Service) frozenCapabilityEntryForStep(sessionID string, step plan.StepSpec) (capability.Snapshot, bool, error) {
+func (s *Service) frozenCapabilityEntryForStep(ctx context.Context, sessionID string, step plan.StepSpec) (capability.Snapshot, bool, error) {
 	viewID := capabilityViewIDFromStep(step)
 	if viewID == "" || step.Action.ToolName == "" {
 		return capability.Snapshot{}, false, nil
 	}
-	if s.CapabilitySnapshots == nil {
-		return capability.Snapshot{}, false, capability.ErrCapabilityViewNotFound
-	}
-	items, err := s.CapabilitySnapshots.List(sessionID)
+	items, err := s.listCapabilitySnapshotRecords(ctx, sessionID)
 	if err != nil {
 		return capability.Snapshot{}, false, err
 	}

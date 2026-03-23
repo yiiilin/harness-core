@@ -24,6 +24,9 @@ A task record was created.
 ### `session.created`
 A session was created.
 
+### `session.task_attached`
+A task was attached to a session and the task record moved into running state.
+
 ### `plan.generated`
 A plan revision was created.
 
@@ -45,14 +48,42 @@ Verifier evaluation finished.
 ### `state.changed`
 The runtime moved from one state to another.
 
+### `lease.claimed`
+A worker or coordinator claimed a session lease.
+
+### `lease.renewed`
+A held session lease was renewed.
+
+### `lease.released`
+A held session lease was released.
+
+### `recovery.state_changed`
+A recovery control-plane mutation changed session execution state.
+Typical `payload.mutation` values are `in_flight`, `interrupted`, and `recovered`.
+
+### `runtime_handle.updated`
+A runtime handle was updated through the control surface.
+
+### `runtime_handle.closed`
+A runtime handle was closed through the control surface.
+
+### `runtime_handle.invalidated`
+A runtime handle was invalidated through the control surface or recovery reconciliation.
+
 ### `policy.denied`
 A policy evaluator denied execution.
+
+### `session.aborted`
+The runtime explicitly aborted a session.
 
 ### `task.completed`
 The task reached terminal success.
 
 ### `task.failed`
 The task reached terminal failure.
+
+### `task.aborted`
+The task reached terminal aborted state.
 
 ---
 
@@ -81,6 +112,7 @@ The task reached terminal failure.
 - `event_id` should be populated for runtime-emitted events, including in-memory flows
 - `sequence` should preserve local emit order even when multiple events share the same timestamp
 - `session_id`, `step_id`, `attempt_id`, `action_id`, `verification_id`, `approval_id`, `cycle_id`, `trace_id`, and `causation_id` allow replay/debug correlation without payload scraping
+- runtime-handle control events should include `payload.handle_id`; many implementations also set `causation_id` to that handle id
 - `payload` is intentionally free-form but should remain structured JSON
 - transport adapters may wrap the event object, but should preserve these core fields unchanged
 
@@ -119,7 +151,24 @@ state.changed
 The runtime should not guarantee perfect global ordering across future distributed adapters,
 but should preserve per-step ordering within a single local execution.
 
+For control-plane operations, a typical sequence is:
+
+```text
+session.task_attached
+lease.claimed
+lease.renewed
+lease.released
+recovery.state_changed
+runtime_handle.updated
+runtime_handle.closed
+runtime_handle.invalidated
+```
+
 Request/response transports that do not stream events should document that limitation explicitly instead of implying response payloads are a complete observability surface.
+
+Control-plane emit semantics follow the runtime persistence boundary:
+- when a `Runner` is active, these events are emitted through the runner-backed sink inside the same unit-of-work boundary as the mutation
+- when `Runner` is explicitly disabled, control-plane event emission is best-effort after the mutation commits
 
 ---
 

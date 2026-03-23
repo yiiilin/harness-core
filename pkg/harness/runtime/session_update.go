@@ -57,6 +57,9 @@ func mergeSessionUpdate(current, desired session.State, leaseID string) session.
 	candidate := desired
 	candidate.Version = current.Version + 1
 	candidate.CreatedAt = current.CreatedAt
+	if candidate.RuntimeStartedAt == 0 {
+		candidate.RuntimeStartedAt = current.RuntimeStartedAt
+	}
 
 	if current.LeaseID != "" && (leaseID == "" || current.LeaseID == leaseID) {
 		candidate.LeaseID = current.LeaseID

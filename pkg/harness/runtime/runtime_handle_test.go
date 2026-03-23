@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
+	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -276,6 +278,21 @@ func TestRuntimeHandleControlSurfaceUpdatesAndClosesHandles(t *testing.T) {
 	if got, _ := closed.Metadata["closed_by"].(string); got != "operator" {
 		t.Fatalf("expected close metadata to persist, got %#v", closed.Metadata)
 	}
+	events := mustListAuditEvents(t, rt, attached.SessionID)
+	expected := map[string]bool{
+		audit.EventRuntimeHandleUpdated: false,
+		audit.EventRuntimeHandleClosed:  false,
+	}
+	for _, event := range events {
+		if _, ok := expected[event.Type]; ok {
+			expected[event.Type] = true
+		}
+	}
+	for typ, found := range expected {
+		if !found {
+			t.Fatalf("expected runtime handle control event %s, got %#v", typ, events)
+		}
+	}
 	if _, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_test_1", hruntime.RuntimeHandleUpdate{
 		Metadata: map[string]any{"late_update": true},
 	}); !errors.Is(err, hruntime.ErrRuntimeHandleNotActive) {
@@ -315,11 +332,161 @@ func TestRuntimeHandleControlSurfaceInvalidatesHandle(t *testing.T) {
 	if got, _ := invalidated.Metadata["reconciled_by"].(string); got != "runtime" {
 		t.Fatalf("expected invalidate metadata to persist, got %#v", invalidated.Metadata)
 	}
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	found := false
+	for _, event := range events {
+		if event.Type == audit.EventRuntimeHandleInvalidated {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected runtime handle invalidation event, got %#v", events)
+	}
 	if _, err := rt.CloseRuntimeHandle(context.Background(), "hdl_invalidate", hruntime.RuntimeHandleCloseRequest{
 		Reason: "late close",
 	}); !errors.Is(err, hruntime.ErrRuntimeHandleNotActive) {
 		t.Fatalf("expected invalidated handle close to fail with ErrRuntimeHandleNotActive, got %v", err)
 	}
+}
+
+func TestRuntimeHandleControlSurfaceEmitsAuditEventsWithinRunnerBoundary(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	runtimeHandles := execution.NewMemoryRuntimeHandleStore()
+	audits := audit.NewMemoryStore()
+	runner := &countingRunner{repos: persistence.RepositorySet{
+		Sessions:       sessions,
+		RuntimeHandles: runtimeHandles,
+		Audits:         audits,
+	}}
+	rt := hruntime.New(hruntime.Options{
+		Sessions:       sessions,
+		RuntimeHandles: runtimeHandles,
+		Audit:          audits,
+		Runner:         runner,
+	})
+
+	sess := mustCreateSession(t, rt, "runtime handle audit", "runtime handle mutations should be audited")
+	if _, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_audit_close",
+		SessionID: sess.SessionID,
+		Kind:      "pty",
+		Value:     "pty-audit-close",
+		Status:    execution.RuntimeHandleActive,
+	}); err != nil {
+		t.Fatalf("seed close handle: %v", err)
+	}
+	if _, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+		HandleID:  "hdl_audit_invalidate",
+		SessionID: sess.SessionID,
+		Kind:      "pty",
+		Value:     "pty-audit-invalidate",
+		Status:    execution.RuntimeHandleActive,
+	}); err != nil {
+		t.Fatalf("seed invalidate handle: %v", err)
+	}
+
+	nextValue := "pty-audit-close-updated"
+	if _, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_audit_close", hruntime.RuntimeHandleUpdate{Value: &nextValue}); err != nil {
+		t.Fatalf("update runtime handle: %v", err)
+	}
+	if _, err := rt.CloseRuntimeHandle(context.Background(), "hdl_audit_close", hruntime.RuntimeHandleCloseRequest{Reason: "operator close"}); err != nil {
+		t.Fatalf("close runtime handle: %v", err)
+	}
+	if _, err := rt.InvalidateRuntimeHandle(context.Background(), "hdl_audit_invalidate", hruntime.RuntimeHandleInvalidateRequest{Reason: "reconcile"}); err != nil {
+		t.Fatalf("invalidate runtime handle: %v", err)
+	}
+
+	if runner.calls < 3 {
+		t.Fatalf("expected runtime handle mutations to use runner boundary, got %d calls", runner.calls)
+	}
+
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	expected := map[string]string{
+		audit.EventRuntimeHandleUpdated:     "hdl_audit_close",
+		audit.EventRuntimeHandleClosed:      "hdl_audit_close",
+		audit.EventRuntimeHandleInvalidated: "hdl_audit_invalidate",
+	}
+	found := map[string]bool{}
+	for _, event := range events {
+		wantHandleID, ok := expected[event.Type]
+		if !ok {
+			continue
+		}
+		if got, _ := event.Payload["handle_id"].(string); got != wantHandleID {
+			t.Fatalf("expected runtime handle event %s to carry handle_id %q, got %#v", event.Type, wantHandleID, event)
+		}
+		found[event.Type] = true
+	}
+	for eventType := range expected {
+		if !found[eventType] {
+			t.Fatalf("expected runtime handle event %s, got %#v", eventType, events)
+		}
+	}
+}
+
+func TestRuntimeHandleAuditFailuresAreBestEffortWithoutRunnerAndSurfaceWithRunner(t *testing.T) {
+	t.Run("without runner runtime handle mutation stays successful", func(t *testing.T) {
+		rt := hruntime.New(hruntime.Options{
+			EventSink: selectiveFailingEventSink{failures: map[string]error{audit.EventRuntimeHandleUpdated: errors.New("boom:runtime_handle.updated")}},
+		})
+		rt.Runner = nil
+		sess := mustCreateSession(t, rt, "runtime handle best effort", "runtime handle mutation should stay successful without runner")
+		if _, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+			HandleID:  "hdl_best_effort",
+			SessionID: sess.SessionID,
+			Kind:      "pty",
+			Value:     "pty-best-effort",
+			Status:    execution.RuntimeHandleActive,
+		}); err != nil {
+			t.Fatalf("seed runtime handle: %v", err)
+		}
+
+		nextValue := "pty-best-effort-updated"
+		updated, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_best_effort", hruntime.RuntimeHandleUpdate{Value: &nextValue})
+		if err != nil {
+			t.Fatalf("expected runtime handle mutation to stay successful without runner, got %v", err)
+		}
+		if updated.Value != nextValue {
+			t.Fatalf("expected updated runtime handle despite emit failure, got %#v", updated)
+		}
+	})
+
+	t.Run("with runner runtime handle mutation surfaces emit failure", func(t *testing.T) {
+		sessions := session.NewMemoryStore()
+		runtimeHandles := execution.NewMemoryRuntimeHandleStore()
+		audits := audit.NewMemoryStore()
+		runner := &countingRunner{repos: persistence.RepositorySet{
+			Sessions:       sessions,
+			RuntimeHandles: runtimeHandles,
+			Audits:         audits,
+		}}
+		boom := errors.New("boom:runtime_handle.updated")
+		rt := hruntime.New(hruntime.Options{
+			Sessions:       sessions,
+			RuntimeHandles: runtimeHandles,
+			Audit:          audits,
+			Runner:         runner,
+			EventSink: selectiveFailingEventSink{failures: map[string]error{
+				audit.EventRuntimeHandleUpdated: boom,
+			}},
+		})
+		sess := mustCreateSession(t, rt, "runtime handle runner failure", "runtime handle mutation should surface emit failure with runner")
+		if _, err := rt.RuntimeHandles.Create(execution.RuntimeHandle{
+			HandleID:  "hdl_runner_failure",
+			SessionID: sess.SessionID,
+			Kind:      "pty",
+			Value:     "pty-runner-failure",
+			Status:    execution.RuntimeHandleActive,
+		}); err != nil {
+			t.Fatalf("seed runtime handle: %v", err)
+		}
+
+		nextValue := "pty-runner-failure-updated"
+		if _, err := rt.UpdateRuntimeHandle(context.Background(), "hdl_runner_failure", hruntime.RuntimeHandleUpdate{Value: &nextValue}); !errors.Is(err, boom) {
+			t.Fatalf("expected runner-backed runtime handle mutation to surface emit error, got %v", err)
+		}
+	})
 }
 
 func TestRuntimeHandleControlSurfaceRequiresUnclaimedSessionAndExposesVersion(t *testing.T) {

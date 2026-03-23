@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   lease_expires_at BIGINT,
   last_heartbeat_at BIGINT,
   interrupted_at BIGINT,
+  runtime_started_at BIGINT,
   metadata_json TEXT,
   version BIGINT NOT NULL DEFAULT 1,
   created_at BIGINT NOT NULL,
@@ -31,6 +32,9 @@ ALTER TABLE sessions
   ADD COLUMN IF NOT EXISTS lease_id TEXT,
   ADD COLUMN IF NOT EXISTS lease_claimed_at BIGINT,
   ADD COLUMN IF NOT EXISTS lease_expires_at BIGINT;
+
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS runtime_started_at BIGINT;
 
 ALTER TABLE sessions
   DROP COLUMN IF EXISTS parent_session_id;

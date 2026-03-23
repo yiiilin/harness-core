@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
@@ -29,12 +30,22 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 	expiresAt := now + leaseTTL.Milliseconds()
 
 	var updated session.State
-	renew := func(store session.Store) error {
+	renew := func(store session.Store, sink EventSink) error {
 		st, err := store.RenewLease(sessionID, leaseID, now, expiresAt)
 		if err != nil {
 			return err
 		}
 		updated = st
+		event := newAuditEventAt(s.nowMilli(), audit.EventLeaseRenewed, updated.SessionID, updated.TaskID, updated.InFlightStepID, map[string]any{
+			"lease_id":         leaseID,
+			"lease_claimed_at": updated.LeaseClaimedAt,
+			"lease_expires_at": updated.LeaseExpiresAt,
+			"ttl_ms":           leaseTTL.Milliseconds(),
+		})
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
+		}
+		_ = s.emitEvents(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -44,7 +55,7 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 			if repos.Sessions != nil {
 				store = repos.Sessions
 			}
-			return renew(store)
+			return renew(store, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return session.State{}, err
 		}
@@ -52,7 +63,7 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 		return updated, nil
 	}
 
-	if err := renew(s.Sessions); err != nil {
+	if err := renew(s.Sessions, nil); err != nil {
 		return session.State{}, err
 	}
 	s.exportLeaseObservability(ctx, "lease.renew", updated, leaseID, startedAt, s.nowMilli(), map[string]any{"ttl_ms": leaseTTL.Milliseconds()})
@@ -63,12 +74,22 @@ func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID st
 	startedAt := s.nowMilli()
 	now := s.nowMilli()
 	var updated session.State
-	release := func(store session.Store) error {
+	release := func(store session.Store, sink EventSink) error {
 		st, err := store.ReleaseLease(sessionID, leaseID, now)
 		if err != nil {
 			return err
 		}
 		updated = st
+		event := newAuditEventAt(s.nowMilli(), audit.EventLeaseReleased, sessionID, updated.TaskID, updated.InFlightStepID, map[string]any{
+			"lease_id":         leaseID,
+			"released_at":      now,
+			"lease_claimed_at": updated.LeaseClaimedAt,
+			"lease_expires_at": updated.LeaseExpiresAt,
+		})
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
+		}
+		_ = s.emitEvents(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -78,7 +99,7 @@ func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID st
 			if repos.Sessions != nil {
 				store = repos.Sessions
 			}
-			return release(store)
+			return release(store, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return session.State{}, err
 		}
@@ -86,7 +107,7 @@ func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID st
 		return updated, nil
 	}
 
-	if err := release(s.Sessions); err != nil {
+	if err := release(s.Sessions, nil); err != nil {
 		return session.State{}, err
 	}
 	s.exportLeaseObservability(ctx, "lease.release", updated, leaseID, startedAt, s.nowMilli(), map[string]any{})
@@ -104,7 +125,7 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 
 	var claimed session.State
 	var ok bool
-	claim := func(store session.Store) error {
+	claim := func(store session.Store, sink EventSink) error {
 		st, found, err := store.ClaimNext(mode, leaseID, now, expiresAt)
 		if err != nil {
 			return err
@@ -114,6 +135,17 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 		}
 		claimed = st
 		ok = true
+		event := newAuditEventAt(s.nowMilli(), audit.EventLeaseClaimed, claimed.SessionID, claimed.TaskID, claimed.InFlightStepID, map[string]any{
+			"lease_id":         claimed.LeaseID,
+			"claim_mode":       string(mode),
+			"lease_claimed_at": claimed.LeaseClaimedAt,
+			"lease_expires_at": claimed.LeaseExpiresAt,
+			"ttl_ms":           leaseTTL.Milliseconds(),
+		})
+		if sink != nil {
+			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
+		}
+		_ = s.emitEvents(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -123,7 +155,7 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 			if repos.Sessions != nil {
 				store = repos.Sessions
 			}
-			return claim(store)
+			return claim(store, s.eventSinkForRepos(repos))
 		}); err != nil {
 			return session.State{}, false, err
 		}
@@ -131,7 +163,7 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 		return claimed, ok, nil
 	}
 
-	if err := claim(s.Sessions); err != nil {
+	if err := claim(s.Sessions, nil); err != nil {
 		return session.State{}, false, err
 	}
 	s.exportLeaseObservability(ctx, "lease.claim", claimed, claimed.LeaseID, startedAt, s.nowMilli(), map[string]any{"claimed": ok, "claim_mode": string(mode), "ttl_ms": leaseTTL.Milliseconds()})

@@ -203,6 +203,143 @@ func TestWorkerRunOnceReportsNoWork(t *testing.T) {
 	}
 }
 
+func TestWorkerRunOnceCancelsBlockedRenewWhenRunCompletes(t *testing.T) {
+	renewStarted := make(chan struct{})
+	renewCanceled := make(chan struct{})
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-renew-cancel",
+			LeaseID:   "lease-renew-cancel",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			select {
+			case <-renewStarted:
+				return hruntime.SessionRunOutput{Session: session.State{SessionID: sessionID}}, nil
+			case <-ctx.Done():
+				return hruntime.SessionRunOutput{}, ctx.Err()
+			}
+		},
+		renewFn: func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
+			_ = sessionID
+			_ = leaseID
+			_ = leaseTTL
+			close(renewStarted)
+			<-ctx.Done()
+			close(renewCanceled)
+			return session.State{}, ctx.Err()
+		},
+		releaseState: session.State{SessionID: "sess-renew-cancel"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	done := make(chan struct {
+		res workerpkg.Result
+		err error
+	}, 1)
+	go func() {
+		res, err := w.RunOnce(context.Background())
+		done <- struct {
+			res workerpkg.Result
+			err error
+		}{res: res, err: err}
+	}()
+
+	select {
+	case out := <-done:
+		if out.err != nil {
+			t.Fatalf("expected renew cancellation during shutdown to be ignored, got %v", out.err)
+		}
+		if out.res.Released.SessionID != "sess-renew-cancel" {
+			t.Fatalf("expected lease release after run completion, got %#v", out.res)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung while waiting for blocked renew to cancel")
+	}
+
+	select {
+	case <-renewCanceled:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected blocked renew call to observe cancellation")
+	}
+}
+
+func TestWorkerRunOnceCancelsBlockedRenewWhenContextEnds(t *testing.T) {
+	renewStarted := make(chan struct{})
+	renewCanceled := make(chan struct{})
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-renew-context-cancel",
+			LeaseID:   "lease-renew-context-cancel",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			_ = sessionID
+			_ = leaseID
+			<-ctx.Done()
+			return hruntime.SessionRunOutput{}, ctx.Err()
+		},
+		renewFn: func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
+			_ = sessionID
+			_ = leaseID
+			_ = leaseTTL
+			close(renewStarted)
+			<-ctx.Done()
+			close(renewCanceled)
+			return session.State{}, ctx.Err()
+		},
+		releaseState: session.State{SessionID: "sess-renew-context-cancel"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.RunOnce(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-renewStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("renew never started before context cancellation")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected RunOnce to return context cancellation, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung after context cancellation")
+	}
+
+	select {
+	case <-renewCanceled:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected blocked renew call to observe worker context cancellation")
+	}
+}
+
 func TestWorkerRunLoopStopsAfterHandledIteration(t *testing.T) {
 	rt := &fakeRuntime{
 		claimRunnableResults: []claimResult{
@@ -515,6 +652,9 @@ type fakeRuntime struct {
 	runErr               error
 	recoverOutput        hruntime.SessionRunOutput
 	recoverErr           error
+	renewFn              func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error)
+	runClaimedFn         func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error)
+	recoverClaimedFn     func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error)
 	runClaimedCalls      int
 	recoverClaimedCalls  int
 	releaseCalls         int
@@ -539,10 +679,9 @@ func (f *fakeRuntime) ClaimRecoverableSession(ctx context.Context, leaseTTL time
 }
 
 func (f *fakeRuntime) RenewSessionLease(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
-	_ = ctx
-	_ = sessionID
-	_ = leaseID
-	_ = leaseTTL
+	if f.renewFn != nil {
+		return f.renewFn(ctx, sessionID, leaseID, leaseTTL)
+	}
 	return session.State{}, f.renewErr
 }
 
@@ -555,17 +694,17 @@ func (f *fakeRuntime) ReleaseSessionLease(ctx context.Context, sessionID, leaseI
 }
 
 func (f *fakeRuntime) RunClaimedSession(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
-	_ = ctx
-	_ = sessionID
-	_ = leaseID
 	f.runClaimedCalls++
+	if f.runClaimedFn != nil {
+		return f.runClaimedFn(ctx, sessionID, leaseID)
+	}
 	return f.runOutput, f.runErr
 }
 
 func (f *fakeRuntime) RecoverClaimedSession(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
-	_ = ctx
-	_ = sessionID
-	_ = leaseID
 	f.recoverClaimedCalls++
+	if f.recoverClaimedFn != nil {
+		return f.recoverClaimedFn(ctx, sessionID, leaseID)
+	}
 	return f.recoverOutput, f.recoverErr
 }

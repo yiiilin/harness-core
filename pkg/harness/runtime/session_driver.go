@@ -34,7 +34,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 		}
 		out.Session = state
 
-		latest, ok, err := s.latestPlanForSession(sessionID)
+		latest, ok, err := s.latestPlanForSession(ctx, sessionID)
 		if err != nil {
 			return SessionRunOutput{}, err
 		}
