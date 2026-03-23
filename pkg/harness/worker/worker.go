@@ -82,7 +82,7 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 				return
 			case <-ticker.C:
 				if _, err := w.runtime.RenewSessionLease(renewCtx, claimed.SessionID, claimed.LeaseID, w.leaseTTL); err != nil {
-					if renewCtx.Err() != nil && errors.Is(err, renewCtx.Err()) {
+					if renewCtx.Err() != nil {
 						return
 					}
 					select {

@@ -273,6 +273,77 @@ func TestWorkerRunOnceCancelsBlockedRenewWhenRunCompletes(t *testing.T) {
 	}
 }
 
+func TestWorkerRunOnceIgnoresDriverStyleRenewCancellationErrors(t *testing.T) {
+	renewStarted := make(chan struct{})
+	renewCanceled := make(chan struct{})
+	driverCanceledErr := errors.New("pq: canceling statement due to user request")
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-renew-driver-cancel",
+			LeaseID:   "lease-renew-driver-cancel",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			select {
+			case <-renewStarted:
+				return hruntime.SessionRunOutput{Session: session.State{SessionID: sessionID}}, nil
+			case <-ctx.Done():
+				return hruntime.SessionRunOutput{}, ctx.Err()
+			}
+		},
+		renewFn: func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
+			_ = sessionID
+			_ = leaseID
+			_ = leaseTTL
+			close(renewStarted)
+			<-ctx.Done()
+			close(renewCanceled)
+			return session.State{}, driverCanceledErr
+		},
+		releaseState: session.State{SessionID: "sess-renew-driver-cancel"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	done := make(chan struct {
+		res workerpkg.Result
+		err error
+	}, 1)
+	go func() {
+		res, err := w.RunOnce(context.Background())
+		done <- struct {
+			res workerpkg.Result
+			err error
+		}{res: res, err: err}
+	}()
+
+	select {
+	case out := <-done:
+		if out.err != nil {
+			t.Fatalf("expected driver-style renew cancellation to be ignored, got %v", out.err)
+		}
+		if out.res.Released.SessionID != "sess-renew-driver-cancel" {
+			t.Fatalf("expected lease release after run completion, got %#v", out.res)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung while waiting for renew cancellation")
+	}
+
+	select {
+	case <-renewCanceled:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected renew cancellation to propagate into renew context")
+	}
+}
+
 func TestWorkerRunOnceCancelsBlockedRenewWhenContextEnds(t *testing.T) {
 	renewStarted := make(chan struct{})
 	renewCanceled := make(chan struct{})
