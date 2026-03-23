@@ -20,6 +20,21 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
+type nthFailingSessionUpdateStore struct {
+	session.Store
+	updateErr        error
+	failOnUpdateCall int
+	updateCalls      int
+}
+
+func (s *nthFailingSessionUpdateStore) Update(next session.State) error {
+	s.updateCalls++
+	if s.failOnUpdateCall > 0 && s.updateCalls == s.failOnUpdateCall {
+		return s.updateErr
+	}
+	return s.Store.Update(next)
+}
+
 func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
@@ -44,6 +59,51 @@ func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	}
 }
 
+func TestListRecoverableSessionsIncludesNormalizedRecoveryStateAfterRestart(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+
+	rt1 := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+	})
+	sess := mustCreateSession(t, rt1, "normalized recovery listing", "normalized recovery state must stay discoverable")
+	tsk := mustCreateTask(t, rt1, task.Spec{TaskType: "demo", Goal: "normalized recovery state must stay discoverable"})
+	attached, err := rt1.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	if _, err := rt1.MarkSessionInFlight(context.Background(), attached.SessionID, "step_normalized_listing"); err != nil {
+		t.Fatalf("mark in-flight: %v", err)
+	}
+	if _, err := rt1.MarkSessionInterrupted(context.Background(), attached.SessionID); err != nil {
+		t.Fatalf("mark interrupted: %v", err)
+	}
+
+	normalized, err := sessions.Get(attached.SessionID)
+	if err != nil {
+		t.Fatalf("get interrupted session: %v", err)
+	}
+	normalized.ExecutionState = session.ExecutionIdle
+	normalized.Phase = session.PhaseRecover
+	normalized.Version++
+	if err := sessions.Update(normalized); err != nil {
+		t.Fatalf("persist normalized recovery state: %v", err)
+	}
+
+	rt2 := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+	})
+	items := mustListRecoverableSessions(t, rt2)
+	if len(items) != 1 || items[0].SessionID != attached.SessionID {
+		t.Fatalf("expected normalized recovery session to stay listed as recoverable, got %#v", items)
+	}
+}
+
 func TestRecoveryStateTransitionsUseRunnerBoundary(t *testing.T) {
 	sessions := session.NewMemoryStore()
 	runner := &countingRunner{repos: persistence.RepositorySet{Sessions: sessions}}
@@ -64,6 +124,39 @@ func TestRecoveryStateTransitionsUseRunnerBoundary(t *testing.T) {
 
 	if runner.calls < baselineCalls+2 {
 		t.Fatalf("expected recovery writes to use runner, got %d calls from baseline %d", runner.calls, baselineCalls)
+	}
+}
+
+func TestMarkSessionInFlightDoesNotPersistRuntimeBudgetAnchorWhenMutationFails(t *testing.T) {
+	clock := &fakeClock{now: 4242}
+	boom := errors.New("boom:session.update")
+	sessions := &nthFailingSessionUpdateStore{
+		Store:            session.NewMemoryStoreWithClock(clock),
+		updateErr:        boom,
+		failOnUpdateCall: 1,
+	}
+	runner := &countingRunner{repos: persistence.RepositorySet{Sessions: sessions}}
+	rt := hruntime.New(hruntime.Options{
+		Clock:    clock,
+		Sessions: sessions,
+		Runner:   runner,
+	})
+
+	sess := mustCreateSession(t, rt, "runtime anchor rollback", "failed in-flight mutation must not burn runtime budget")
+
+	if _, err := rt.MarkSessionInFlight(context.Background(), sess.SessionID, "step_anchor_fail"); !errors.Is(err, boom) {
+		t.Fatalf("expected in-flight mutation failure, got %v", err)
+	}
+
+	persisted, err := rt.GetSession(sess.SessionID)
+	if err != nil {
+		t.Fatalf("get session after failed in-flight mutation: %v", err)
+	}
+	if persisted.RuntimeStartedAt != 0 {
+		t.Fatalf("expected runtime budget anchor to remain unset after failed in-flight mutation, got %#v", persisted)
+	}
+	if persisted.ExecutionState != session.ExecutionIdle {
+		t.Fatalf("expected execution state to remain idle after failed in-flight mutation, got %#v", persisted)
 	}
 }
 

@@ -77,6 +77,35 @@ func TestClaimRecoverableSessionClaimsInterruptedSession(t *testing.T) {
 	}
 }
 
+func TestClaimRecoverableSessionClaimsNormalizedRecoveryState(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	rt := hruntime.New(hruntime.Options{Sessions: sessions})
+
+	normalized := mustCreateSession(t, rt, "normalized", "recover me after normalization")
+	normalized.Phase = session.PhaseRecover
+	normalized.ExecutionState = session.ExecutionIdle
+	normalized.InFlightStepID = "step_normalized_recovery"
+	normalized.InterruptedAt = time.Now().UnixMilli()
+	normalized.Version++
+	if err := sessions.Update(normalized); err != nil {
+		t.Fatalf("update normalized recovery session: %v", err)
+	}
+
+	claimed, ok, err := rt.ClaimRecoverableSession(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("claim recoverable session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected normalized recovery session to be claimed")
+	}
+	if claimed.SessionID != normalized.SessionID {
+		t.Fatalf("expected normalized recovery session %s, got %#v", normalized.SessionID, claimed)
+	}
+	if claimed.LeaseID == "" || claimed.LeaseExpiresAt == 0 {
+		t.Fatalf("expected normalized recovery claim to attach lease, got %#v", claimed)
+	}
+}
+
 func TestRenewAndReleaseSessionLease(t *testing.T) {
 	sessions := session.NewMemoryStore()
 	rt := hruntime.New(hruntime.Options{Sessions: sessions})

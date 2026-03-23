@@ -68,7 +68,9 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 		runFn = w.runtime.RecoverClaimedSession
 	}
 
-	renewCtx, renewCancel := context.WithCancel(ctx)
+	runCtx, runCancel := context.WithCancelCause(ctx)
+	defer runCancel(nil)
+	renewCtx, renewCancel := context.WithCancel(runCtx)
 	var wg sync.WaitGroup
 	renewErrCh := make(chan error, 1)
 	wg.Add(1)
@@ -85,6 +87,7 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 					if renewCtx.Err() != nil {
 						return
 					}
+					runCancel(err)
 					select {
 					case renewErrCh <- err:
 					default:
@@ -96,19 +99,26 @@ func (w *Worker) RunOnce(ctx context.Context) (Result, error) {
 		}
 	}()
 
-	runOut, runErr := runFn(ctx, claimed.SessionID, claimed.LeaseID)
+	runOut, runErr := runFn(runCtx, claimed.SessionID, claimed.LeaseID)
 	renewCancel()
 	wg.Wait()
 	cancelRenewErr := drainError(renewErrCh)
 
-	if cancelRenewErr != nil && runErr == nil {
-		runErr = cancelRenewErr
+	if cancelRenewErr != nil {
+		switch {
+		case runErr == nil:
+			runErr = cancelRenewErr
+		case errors.Is(runErr, context.Canceled), errors.Is(runErr, context.DeadlineExceeded):
+			runErr = cancelRenewErr
+		}
 	}
 
 	res.Run = runOut
 	res.ApprovalPending = runOut.Session.PendingApprovalID != ""
 
-	rel, relErr := w.runtime.ReleaseSessionLease(ctx, claimed.SessionID, claimed.LeaseID)
+	releaseCtx, releaseCancel := context.WithTimeout(context.WithoutCancel(ctx), w.releaseCleanupTimeout())
+	defer releaseCancel()
+	rel, relErr := w.runtime.ReleaseSessionLease(releaseCtx, claimed.SessionID, claimed.LeaseID)
 	res.Released = rel
 
 	switch {
@@ -221,6 +231,15 @@ func (w *Worker) claim(ctx context.Context) (session.State, session.ClaimMode, e
 		}
 	}
 	return session.State{}, "", nil
+}
+
+func (w *Worker) releaseCleanupTimeout() time.Duration {
+	timeout := w.leaseTTL
+	const maxCleanupTimeout = 5 * time.Second
+	if timeout <= 0 || timeout > maxCleanupTimeout {
+		timeout = maxCleanupTimeout
+	}
+	return timeout
 }
 
 func drainError(ch <-chan error) error {

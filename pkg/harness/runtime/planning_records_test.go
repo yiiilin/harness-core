@@ -2,9 +2,11 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
 	hplanning "github.com/yiiilin/harness-core/pkg/harness/planning"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -13,6 +15,36 @@ import (
 )
 
 type planningSummaryCompactor struct{}
+
+type nthFailingPlanningStore struct {
+	hplanning.Store
+	createErr        error
+	failOnCreateCall int
+	createCalls      int
+}
+
+func (s *nthFailingPlanningStore) Create(spec hplanning.Record) (hplanning.Record, error) {
+	s.createCalls++
+	if s.failOnCreateCall > 0 && s.createCalls == s.failOnCreateCall {
+		return hplanning.Record{}, s.createErr
+	}
+	return s.Store.Create(spec)
+}
+
+type nthFailingSnapshotStore struct {
+	capability.SnapshotStore
+	createErr        error
+	failOnCreateCall int
+	createCalls      int
+}
+
+func (s *nthFailingSnapshotStore) Create(spec capability.Snapshot) (capability.Snapshot, error) {
+	s.createCalls++
+	if s.failOnCreateCall > 0 && s.createCalls == s.failOnCreateCall {
+		return capability.Snapshot{}, s.createErr
+	}
+	return s.SnapshotStore.Create(spec)
+}
 
 func (planningSummaryCompactor) Compact(_ context.Context, pkg hruntime.ContextPackage, state session.State, spec task.Spec, _ hruntime.LoopBudgets) (hruntime.ContextPackage, *hruntime.ContextSummary, error) {
 	return pkg, &hruntime.ContextSummary{
@@ -192,5 +224,70 @@ func TestCreatePlanFromPlannerPersistsDistinctRecordsAcrossReplans(t *testing.T)
 	}
 	if records[0].CapabilityViewID == "" || records[1].CapabilityViewID == "" || records[0].CapabilityViewID == records[1].CapabilityViewID {
 		t.Fatalf("expected replanning to freeze a distinct capability view per cycle, got %#v", records)
+	}
+}
+
+func TestCreatePlanFromPlannerStaysSuccessfulWhenNoRunnerPlanningRecordPersistenceFails(t *testing.T) {
+	boom := errors.New("boom:planning.create")
+	opts := hruntime.Options{
+		Compactor:       planningSummaryCompactor{},
+		PlanningRecords: &nthFailingPlanningStore{Store: hplanning.NewMemoryStore(), createErr: boom, failOnCreateCall: 1},
+	}
+	builtins.Register(&opts)
+	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt.Runner = nil
+
+	sess := mustCreateSession(t, rt, "planning record failure", "no-runner planning record failures should be best effort")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner result should still be returned"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, _, err := rt.CreatePlanFromPlanner(context.Background(), attached.SessionID, "planner derived", 1)
+	if err != nil {
+		t.Fatalf("expected no-runner planner to stay successful when planning record persistence fails, got %v", err)
+	}
+	if pl.PlanID == "" || len(pl.Steps) != 1 {
+		t.Fatalf("expected persisted plan despite planning record failure, got %#v", pl)
+	}
+
+	plans := mustListPlans(t, rt, attached.SessionID)
+	if len(plans) != 1 || plans[0].PlanID != pl.PlanID {
+		t.Fatalf("expected plan to remain visible despite planning record failure, got %#v", plans)
+	}
+}
+
+func TestCreatePlanFromPlannerDegradesGracefullyWhenNoRunnerCapabilitySnapshotPersistenceFails(t *testing.T) {
+	boom := errors.New("boom:snapshot.create")
+	opts := hruntime.Options{
+		Compactor:           planningSummaryCompactor{},
+		CapabilitySnapshots: &nthFailingSnapshotStore{SnapshotStore: capability.NewMemorySnapshotStore(), createErr: boom, failOnCreateCall: 1},
+	}
+	builtins.Register(&opts)
+	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt.Runner = nil
+
+	sess := mustCreateSession(t, rt, "snapshot failure", "no-runner snapshot failures should not strand a broken plan")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner result should still execute after snapshot failure"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, _, err := rt.CreatePlanFromPlanner(context.Background(), attached.SessionID, "planner derived", 1)
+	if err != nil {
+		t.Fatalf("expected no-runner planner to stay successful when snapshot persistence fails, got %v", err)
+	}
+	if len(pl.Steps) != 1 {
+		t.Fatalf("expected one planned step, got %#v", pl)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("expected degraded plan to remain executable after snapshot persistence failure, got %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected degraded plan to complete successfully, got %#v", out.Session)
 	}
 }

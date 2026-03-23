@@ -45,7 +45,7 @@ func (s *Service) RenewSessionLease(ctx context.Context, sessionID, leaseID stri
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
 		}
-		_ = s.emitEvents(ctx, []audit.Event{event})
+		s.emitEventsBestEffort(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -89,7 +89,7 @@ func (s *Service) ReleaseSessionLease(ctx context.Context, sessionID, leaseID st
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
 		}
-		_ = s.emitEvents(ctx, []audit.Event{event})
+		s.emitEventsBestEffort(ctx, []audit.Event{event})
 		return nil
 	}
 
@@ -145,7 +145,7 @@ func (s *Service) claimSession(ctx context.Context, mode session.ClaimMode, leas
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
 		}
-		_ = s.emitEvents(ctx, []audit.Event{event})
+		s.emitEventsBestEffort(ctx, []audit.Event{event})
 		return nil
 	}
 

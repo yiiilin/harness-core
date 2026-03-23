@@ -411,6 +411,204 @@ func TestWorkerRunOnceCancelsBlockedRenewWhenContextEnds(t *testing.T) {
 	}
 }
 
+func TestWorkerRunOnceCancelsRunWhenLeaseRenewalFails(t *testing.T) {
+	runCanceled := make(chan error, 1)
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-renew-fail",
+			LeaseID:   "lease-renew-fail",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			_ = sessionID
+			_ = leaseID
+			<-ctx.Done()
+			runCanceled <- ctx.Err()
+			return hruntime.SessionRunOutput{}, ctx.Err()
+		},
+		renewFn: func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error) {
+			_ = ctx
+			_ = sessionID
+			_ = leaseID
+			_ = leaseTTL
+			return session.State{}, session.ErrSessionLeaseNotHeld
+		},
+		releaseState: session.State{SessionID: "sess-renew-fail"},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.RunOnce(context.Background())
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, session.ErrSessionLeaseNotHeld) {
+			t.Fatalf("expected lease-loss error, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung after lease renewal failure")
+	}
+
+	select {
+	case err := <-runCanceled:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected run context cancellation after lease loss, got %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected in-flight run to be canceled after lease renewal failure")
+	}
+}
+
+func TestWorkerRunOnceReleasesLeaseWithCleanupContextAfterRunCancellation(t *testing.T) {
+	runStarted := make(chan struct{})
+	releaseObserved := make(chan error, 1)
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-release-cleanup",
+			LeaseID:   "lease-release-cleanup",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			_ = sessionID
+			_ = leaseID
+			close(runStarted)
+			<-ctx.Done()
+			return hruntime.SessionRunOutput{}, ctx.Err()
+		},
+		releaseFn: func(ctx context.Context, sessionID, leaseID string) (session.State, error) {
+			_ = sessionID
+			_ = leaseID
+			releaseObserved <- ctx.Err()
+			if err := ctx.Err(); err != nil {
+				return session.State{}, err
+			}
+			return session.State{SessionID: "sess-release-cleanup"}, nil
+		},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      time.Second,
+		RenewInterval: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.RunOnce(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-runStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("run never started before cancellation")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected run context cancellation, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung after context cancellation")
+	}
+
+	select {
+	case err := <-releaseObserved:
+		if err != nil {
+			t.Fatalf("expected release to run with cleanup context, got release err context %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("release was not attempted after run cancellation")
+	}
+}
+
+func TestWorkerRunOnceBoundsCleanupReleaseAfterRunCancellation(t *testing.T) {
+	runStarted := make(chan struct{})
+	releaseObserved := make(chan error, 1)
+
+	rt := &fakeRuntime{
+		claimRunnableOk: true,
+		claimRunnableState: session.State{
+			SessionID: "sess-release-timeout",
+			LeaseID:   "lease-release-timeout",
+		},
+		runClaimedFn: func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error) {
+			_ = sessionID
+			_ = leaseID
+			close(runStarted)
+			<-ctx.Done()
+			return hruntime.SessionRunOutput{}, ctx.Err()
+		},
+		releaseFn: func(ctx context.Context, sessionID, leaseID string) (session.State, error) {
+			_ = sessionID
+			_ = leaseID
+			<-ctx.Done()
+			releaseObserved <- ctx.Err()
+			return session.State{}, ctx.Err()
+		},
+	}
+
+	w, err := workerpkg.New(workerpkg.Options{
+		Runtime:       rt,
+		LeaseTTL:      25 * time.Millisecond,
+		RenewInterval: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.RunOnce(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-runStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("run never started before cancellation")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected run cancellation to remain visible, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("worker RunOnce hung in unbounded release cleanup")
+	}
+
+	select {
+	case err := <-releaseObserved:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected bounded cleanup deadline, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("release cleanup did not observe a bounded timeout")
+	}
+}
+
 func TestWorkerRunLoopStopsAfterHandledIteration(t *testing.T) {
 	rt := &fakeRuntime{
 		claimRunnableResults: []claimResult{
@@ -724,6 +922,7 @@ type fakeRuntime struct {
 	recoverOutput        hruntime.SessionRunOutput
 	recoverErr           error
 	renewFn              func(ctx context.Context, sessionID, leaseID string, leaseTTL time.Duration) (session.State, error)
+	releaseFn            func(ctx context.Context, sessionID, leaseID string) (session.State, error)
 	runClaimedFn         func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error)
 	recoverClaimedFn     func(ctx context.Context, sessionID, leaseID string) (hruntime.SessionRunOutput, error)
 	runClaimedCalls      int
@@ -757,10 +956,10 @@ func (f *fakeRuntime) RenewSessionLease(ctx context.Context, sessionID, leaseID 
 }
 
 func (f *fakeRuntime) ReleaseSessionLease(ctx context.Context, sessionID, leaseID string) (session.State, error) {
-	_ = ctx
-	_ = sessionID
-	_ = leaseID
 	f.releaseCalls++
+	if f.releaseFn != nil {
+		return f.releaseFn(ctx, sessionID, leaseID)
+	}
 	return f.releaseState, f.releaseErr
 }
 

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 )
@@ -26,15 +27,16 @@ type FanoutEventSink struct {
 }
 
 func (s FanoutEventSink) Emit(ctx context.Context, event audit.Event) error {
+	var errs []error
 	for _, sink := range s.Sinks {
 		if sink == nil {
 			continue
 		}
 		if err := sink.Emit(ctx, event); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (s FanoutEventSink) WithAuditStore(store audit.Store) EventSink {

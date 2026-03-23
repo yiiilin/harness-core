@@ -132,7 +132,10 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 			}
 		}
 		if response.Reply == approval.ReplyReject {
-			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, rec.SessionID, step)
+			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, rec.SessionID, step)
+			if err != nil {
+				return approval.Record{}, session.State{}, err
+			}
 			if _, updatedTaskErr = updateTaskForTerminalInStore(s.Tasks, st); updatedTaskErr != nil {
 				return approval.Record{}, session.State{}, updatedTaskErr
 			}
@@ -141,7 +144,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		if err := s.Sessions.Update(st); err != nil {
 			return approval.Record{}, session.State{}, err
 		}
-		_ = s.emitEvents(context.Background(), events)
+		s.emitEventsBestEffort(context.Background(), events)
 	}
 	if updatedTaskUpdated && updatedTaskErr != nil {
 		return approval.Record{}, session.State{}, updatedTaskErr

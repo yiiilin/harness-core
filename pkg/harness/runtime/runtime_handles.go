@@ -173,7 +173,7 @@ func (s *Service) mutateRuntimeHandle(ctx context.Context, handleID string, leas
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, events)
 		}
-		_ = s.emitEvents(ctx, events)
+		s.emitEventsBestEffort(ctx, events)
 		return nil
 	}
 

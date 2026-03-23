@@ -155,7 +155,11 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 		return plan.Spec{}, err
 	}
 	if err := persistCapabilityViewInStore(s.CapabilitySnapshots, created, view); err != nil {
-		return plan.Spec{}, err
+		degraded, degradeErr := degradeFrozenPlanInStore(s.Plans, created)
+		if degradeErr != nil {
+			return plan.Spec{}, degradeErr
+		}
+		created = degraded
 	}
 	if s.PlanningRecords != nil {
 		planningRecord.SessionID = created.SessionID
@@ -167,9 +171,7 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 		if planningRecord.FinishedAt == 0 {
 			planningRecord.FinishedAt = s.nowMilli()
 		}
-		if _, err := s.PlanningRecords.Create(planningRecord); err != nil {
-			return plan.Spec{}, err
-		}
+		_, _ = s.PlanningRecords.Create(planningRecord)
 	}
 	event := newAuditEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, "", map[string]any{
 		"plan_id":       created.PlanID,
@@ -179,8 +181,37 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 		"step_count":    len(created.Steps),
 	})
 	event.PlanningID = planningRecord.PlanningID
-	_ = s.emitEventsWithSink(ctx, s.EventSink, []audit.Event{event})
+	s.emitEventsBestEffortWithSink(ctx, s.EventSink, []audit.Event{event})
 	return created, nil
+}
+
+func degradeFrozenPlanInStore(store plan.Store, created plan.Spec) (plan.Spec, error) {
+	if store == nil {
+		return created, nil
+	}
+	degraded := created
+	for i := range degraded.Steps {
+		degraded.Steps[i] = clearCapabilityViewPin(degraded.Steps[i])
+	}
+	if err := store.Update(degraded); err != nil {
+		return plan.Spec{}, err
+	}
+	return degraded, nil
+}
+
+func clearCapabilityViewPin(step plan.StepSpec) plan.StepSpec {
+	if len(step.Metadata) == 0 {
+		return step
+	}
+	metadata := cloneAnyMap(step.Metadata)
+	delete(metadata, capabilityViewMetadataKey)
+	delete(metadata, capabilityPlanReasonKey)
+	if len(metadata) == 0 {
+		step.Metadata = nil
+	} else {
+		step.Metadata = metadata
+	}
+	return step
 }
 
 func persistCapabilityViewInStore(store capability.SnapshotStore, pl plan.Spec, view capability.View) error {

@@ -7,17 +7,6 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
-func (s *Service) ensureRuntimeBudgetReady(ctx context.Context, state session.State, leaseID string, now int64) (session.State, error) {
-	updated, err := s.ensureRuntimeBudgetAnchor(ctx, state, leaseID, now)
-	if err != nil {
-		return session.State{}, err
-	}
-	if err := ensureRuntimeBudget(updated, s.LoopBudgets, now); err != nil {
-		return session.State{}, err
-	}
-	return updated, nil
-}
-
 func (s *Service) ensureRuntimeBudgetAnchor(ctx context.Context, state session.State, leaseID string, startedAt int64) (session.State, error) {
 	if state.RuntimeStartedAt != 0 {
 		return state, nil

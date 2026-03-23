@@ -147,6 +147,39 @@ func TestRunStepBestEffortEventEmissionWithoutRunner(t *testing.T) {
 	}
 }
 
+func TestRunStepBestEffortEventEmissionWithoutRunnerStillPersistsAuditSequence(t *testing.T) {
+	rt, sess, step := newHappyRuntime(t)
+	rt.Runner = nil
+	rt.EventSink = hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{
+		selectiveFailingEventSink{failures: map[string]error{
+			audit.EventStepStarted: errors.New("boom:step.started"),
+		}},
+		rt.EventSink,
+	}}
+
+	out, err := rt.RunStep(context.Background(), sess.SessionID, step)
+	if err != nil {
+		t.Fatalf("expected run step to stay successful without runner compensation, got %v", err)
+	}
+
+	assertOrderedEventTypes(t, out.Events,
+		audit.EventStepStarted,
+		audit.EventToolCalled,
+		audit.EventToolCompleted,
+		audit.EventVerifyCompleted,
+		audit.EventStateChanged,
+	)
+
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	assertOrderedEventTypes(t, events,
+		audit.EventStepStarted,
+		audit.EventToolCalled,
+		audit.EventToolCompleted,
+		audit.EventVerifyCompleted,
+		audit.EventStateChanged,
+	)
+}
+
 func TestRunStepPersistsExecutionFactsWithPartialRunnerRepositories(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "demo.handle", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, runtimeHandleHandler{})

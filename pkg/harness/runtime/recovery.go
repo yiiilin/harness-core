@@ -24,10 +24,13 @@ func (s *Service) markSessionInFlight(ctx context.Context, sessionID, leaseID, s
 	if err != nil {
 		return session.State{}, err
 	}
-	if _, err := s.ensureRuntimeBudgetReady(ctx, state, leaseID, now); err != nil {
+	if err := ensureRuntimeBudget(state, s.LoopBudgets, now); err != nil {
 		return session.State{}, err
 	}
 	return s.updateRecoveryState(ctx, sessionID, leaseID, "in_flight", func(st session.State) session.State {
+		if st.RuntimeStartedAt == 0 {
+			st.RuntimeStartedAt = now
+		}
 		st.ExecutionState = session.ExecutionInFlight
 		st.InFlightStepID = stepID
 		st.LastHeartbeatAt = now
@@ -60,7 +63,7 @@ func (s *Service) ListRecoverableSessions() ([]session.State, error) {
 	}
 	out := make([]session.State, 0)
 	for _, st := range items {
-		if st.ExecutionState == session.ExecutionInFlight || st.ExecutionState == session.ExecutionInterrupted {
+		if session.IsRecoverableState(st) {
 			out = append(out, st)
 		}
 	}
@@ -194,7 +197,7 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, events)
 		}
-		_ = s.emitEvents(ctx, events)
+		s.emitEventsBestEffort(ctx, events)
 		return nil
 	}
 
@@ -234,7 +237,7 @@ func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID, m
 		if sink != nil {
 			return s.emitEventsWithSink(ctx, sink, []audit.Event{event})
 		}
-		_ = s.emitEvents(ctx, []audit.Event{event})
+		s.emitEventsBestEffort(ctx, []audit.Event{event})
 		return nil
 	}
 

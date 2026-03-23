@@ -51,10 +51,6 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if backoffActive(step, now) {
 		return StepRunOutput{}, ErrStepBackoffActive
 	}
-	state, err = s.ensureRuntimeBudgetAnchor(ctx, state, leaseID, now)
-	if err != nil {
-		return StepRunOutput{}, err
-	}
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
 	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
@@ -226,8 +222,14 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			events[len(events)-1].ApprovalID = rec.ApprovalID
 			events[len(events)-1].CycleID = attemptRecord.CycleID
 			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
-			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+			if err != nil {
+				return StepRunOutput{}, err
+			}
+			updatedTask, err = updateTaskForTerminalInStore(s.Tasks, state)
+			if err != nil {
+				return StepRunOutput{}, err
+			}
 			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
 			if err != nil {
 				return StepRunOutput{}, err
@@ -242,7 +244,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			s.exportApprovalRequestObservability(ctx, state, attemptRecord, *pendingApproval)
 		}
 		if s.Runner == nil {
-			_ = s.emitEvents(ctx, events)
+			s.emitEventsBestEffort(ctx, events)
 		}
 		return StepRunOutput{
 			Session:     state,
@@ -261,11 +263,6 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	step.Status = plan.StepRunning
 	execResult.Step = step
 	appendEvent(audit.EventStepStarted, step.StepID, map[string]any{"title": step.Title}, "", attemptRecord.AttemptID)
-
-	if _, err := s.markSessionInFlight(ctx, sessionID, leaseID, step.StepID); err != nil {
-		return StepRunOutput{}, err
-	}
-	state, _ = s.GetSession(sessionID)
 
 	if decision.Action == permission.Deny {
 		s.Metrics.Record("step.run", map[string]any{"success": false, "policy_denied": true, "verify_failed": false, "action_failed": false, "duration_ms": int64(0)})
@@ -320,8 +317,14 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				return StepRunOutput{}, err
 			}
 		} else {
-			updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
-			updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+			if err != nil {
+				return StepRunOutput{}, err
+			}
+			updatedTask, err = updateTaskForTerminalInStore(s.Tasks, state)
+			if err != nil {
+				return StepRunOutput{}, err
+			}
 			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
 			if err != nil {
 				return StepRunOutput{}, err
@@ -332,9 +335,17 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			}
 		}
 		if s.Runner == nil {
-			_ = s.emitEvents(ctx, events)
+			s.emitEventsBestEffort(ctx, events)
 		}
 		return StepRunOutput{Session: state, Execution: execResult, Transitions: transitions, Events: events, UpdatedPlan: updatedPlan, UpdatedTask: updatedTask}, nil
+	}
+
+	if _, err := s.markSessionInFlight(ctx, sessionID, leaseID, step.StepID); err != nil {
+		return StepRunOutput{}, err
+	}
+	state, err = s.GetSession(sessionID)
+	if err != nil {
+		return StepRunOutput{}, err
 	}
 
 	actionRecord = &execution.ActionRecord{
@@ -541,8 +552,14 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			return StepRunOutput{}, err
 		}
 	} else {
-		updatedPlan, _ = updateLatestPlanStepInStore(s.Plans, sessionID, step)
-		updatedTask, _ = updateTaskForTerminalInStore(s.Tasks, state)
+		updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+		if err != nil {
+			return StepRunOutput{}, err
+		}
+		updatedTask, err = updateTaskForTerminalInStore(s.Tasks, state)
+		if err != nil {
+			return StepRunOutput{}, err
+		}
 		updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
 		if err != nil {
 			return StepRunOutput{}, err
@@ -565,7 +582,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		}
 	}
 	if s.Runner == nil {
-		_ = s.emitEvents(ctx, events)
+		s.emitEventsBestEffort(ctx, events)
 	}
 	s.Metrics.Record("step.run", map[string]any{
 		"success":       verified,
@@ -789,6 +806,10 @@ func (s *Service) emitEvents(ctx context.Context, events []audit.Event) error {
 	return s.emitEventsWithSink(ctx, s.EventSink, events)
 }
 
+func (s *Service) emitEventsBestEffort(ctx context.Context, events []audit.Event) {
+	s.emitEventsBestEffortWithSink(ctx, s.EventSink, events)
+}
+
 func (s *Service) emitEventsWithSink(ctx context.Context, sink EventSink, events []audit.Event) error {
 	if sink == nil {
 		return nil
@@ -799,6 +820,15 @@ func (s *Service) emitEventsWithSink(ctx context.Context, sink EventSink, events
 		}
 	}
 	return nil
+}
+
+func (s *Service) emitEventsBestEffortWithSink(ctx context.Context, sink EventSink, events []audit.Event) {
+	if sink == nil {
+		return
+	}
+	for _, event := range events {
+		_ = sink.Emit(ctx, event)
+	}
 }
 
 func (s *Service) eventSinkForRepos(repos persistence.RepositorySet) EventSink {

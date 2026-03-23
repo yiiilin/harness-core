@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -42,7 +43,7 @@ func (s *Service) createSessionWithAudit(title, goal string) (session.State, err
 	if err != nil {
 		return session.State{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventSessionCreated, created.SessionID, "", "", map[string]any{
+	s.emitEventsBestEffort(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventSessionCreated, created.SessionID, "", "", map[string]any{
 		"title": created.Title,
 		"goal":  created.Goal,
 	})})
@@ -82,7 +83,7 @@ func (s *Service) createTaskWithAudit(spec task.Spec) (task.Record, error) {
 	if err != nil {
 		return task.Record{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventTaskCreated, created.SessionID, created.TaskID, "", map[string]any{
+	s.emitEventsBestEffort(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventTaskCreated, created.SessionID, created.TaskID, "", map[string]any{
 		"task_type": created.TaskType,
 		"goal":      created.Goal,
 		"status":    created.Status,
@@ -98,6 +99,7 @@ func (s *Service) attachTaskToSession(sessionID, taskID string) (session.State, 
 		if err != nil {
 			return err
 		}
+		originalSession := sess
 		tsk, err := taskStore.Get(taskID)
 		if err != nil {
 			return err
@@ -112,6 +114,11 @@ func (s *Service) attachTaskToSession(sessionID, taskID string) (session.State, 
 		tsk.SessionID = sess.SessionID
 		tsk.Status = task.StatusRunning
 		if err := taskStore.Update(tsk); err != nil {
+			if sink == nil {
+				if rollbackErr := rollbackAttachedSession(sessStore, originalSession, sess); rollbackErr != nil {
+					return fmt.Errorf("attach task update failed: %w; session rollback failed: %v", err, rollbackErr)
+				}
+			}
 			return err
 		}
 		updated = sess
@@ -126,7 +133,7 @@ func (s *Service) attachTaskToSession(sessionID, taskID string) (session.State, 
 				return err
 			}
 		} else {
-			_ = s.emitEvents(ctx, []audit.Event{event})
+			s.emitEventsBestEffort(ctx, []audit.Event{event})
 		}
 		return nil
 	}
@@ -150,6 +157,13 @@ func (s *Service) attachTaskToSession(sessionID, taskID string) (session.State, 
 		return session.State{}, err
 	}
 	return updated, nil
+}
+
+func rollbackAttachedSession(store session.Store, before, persisted session.State) error {
+	rollback := before
+	rollback.Version = persisted.Version
+	_, err := persistSessionUpdate(store, rollback, "")
+	return err
 }
 
 func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []plan.StepSpec) (plan.Spec, error) {
@@ -198,7 +212,7 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 	if err != nil {
 		return plan.Spec{}, err
 	}
-	_ = s.emitEvents(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, "", map[string]any{
+	s.emitEventsBestEffort(ctx, []audit.Event{newAuditEventAt(s.nowMilli(), audit.EventPlanGenerated, sessionID, sess.TaskID, "", map[string]any{
 		"plan_id":       created.PlanID,
 		"revision":      created.Revision,
 		"change_reason": created.ChangeReason,

@@ -179,7 +179,7 @@ func claimableState(st State, mode ClaimMode, now int64) bool {
 		}
 		return st.Phase != PhaseComplete && st.Phase != PhaseFailed && st.Phase != PhaseAborted
 	case ClaimModeRecoverable:
-		return st.ExecutionState == ExecutionInFlight || st.ExecutionState == ExecutionInterrupted
+		return IsRecoverableState(st)
 	default:
 		return false
 	}

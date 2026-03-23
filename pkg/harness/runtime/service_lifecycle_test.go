@@ -224,6 +224,44 @@ func TestLifecycleEntryPointsBestEffortWithoutRunnerAndTransactionalWithRunner(t
 	})
 }
 
+func TestAttachTaskToSessionCompensatesSessionWriteOnNoRunnerTaskStoreFailure(t *testing.T) {
+	boom := errors.New("boom:task.update")
+	sessions := session.NewMemoryStore()
+	tasks := &nthFailingTaskUpdateStore{
+		Store:            task.NewMemoryStore(),
+		updateErr:        boom,
+		failOnUpdateCall: 1,
+	}
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+	})
+	rt.Runner = nil
+
+	sess := mustCreateSession(t, rt, "attach rollback", "session goal should survive failed attach")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "task goal"})
+
+	if _, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID); !errors.Is(err, boom) {
+		t.Fatalf("expected attach to surface task update failure, got %v", err)
+	}
+
+	persistedSession, err := rt.GetSession(sess.SessionID)
+	if err != nil {
+		t.Fatalf("get session after failed attach: %v", err)
+	}
+	if persistedSession.TaskID != "" || persistedSession.Goal != "session goal should survive failed attach" {
+		t.Fatalf("expected session attachment to be compensated, got %#v", persistedSession)
+	}
+
+	persistedTask, err := rt.GetTask(tsk.TaskID)
+	if err != nil {
+		t.Fatalf("get task after failed attach: %v", err)
+	}
+	if persistedTask.SessionID != "" || persistedTask.Status != task.StatusReceived {
+		t.Fatalf("expected task to remain unattached after failed attach, got %#v", persistedTask)
+	}
+}
+
 func TestControlPlaneEntryPointsEmitAttachLeaseAndRecoveryEvents(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
