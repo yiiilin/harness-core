@@ -6,6 +6,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
 
 const (
@@ -13,7 +14,7 @@ const (
 )
 
 func (s *Service) CreatePlanFromProgram(sessionID, changeReason string, program execution.Program) (plan.Spec, error) {
-	steps, err := stepsFromProgram(program)
+	steps, err := s.stepsFromProgram(context.Background(), sessionID, program)
 	if err != nil {
 		return plan.Spec{}, err
 	}
@@ -27,7 +28,7 @@ func (s *Service) RunProgram(ctx context.Context, sessionID string, program exec
 	return s.RunSession(ctx, sessionID)
 }
 
-func stepsFromProgram(program execution.Program) ([]plan.StepSpec, error) {
+func (s *Service) stepsFromProgram(ctx context.Context, sessionID string, program execution.Program) ([]plan.StepSpec, error) {
 	if len(program.Nodes) == 0 {
 		return nil, nil
 	}
@@ -83,7 +84,7 @@ func stepsFromProgram(program execution.Program) ([]plan.StepSpec, error) {
 
 		node := nodesByID[nodeID]
 		processedNodes++
-		compiled, err := expandProgramNodeSteps(program, node)
+		compiled, err := s.expandProgramNodeSteps(ctx, sessionID, program, node)
 		if err != nil {
 			return nil, err
 		}
@@ -106,8 +107,8 @@ func stepsFromProgram(program execution.Program) ([]plan.StepSpec, error) {
 	return steps, nil
 }
 
-func expandProgramNodeSteps(program execution.Program, node execution.ProgramNode) ([]plan.StepSpec, error) {
-	targets, err := targetsForProgramNode(node)
+func (s *Service) expandProgramNodeSteps(ctx context.Context, sessionID string, program execution.Program, node execution.ProgramNode) ([]plan.StepSpec, error) {
+	targets, err := s.resolvedTargetsForProgramNode(ctx, sessionID, program, node)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +130,38 @@ func expandProgramNodeSteps(program execution.Program, node execution.ProgramNod
 		out = append(out, step)
 	}
 	return out, nil
+}
+
+func (s *Service) resolvedTargetsForProgramNode(ctx context.Context, sessionID string, program execution.Program, node execution.ProgramNode) ([]execution.Target, error) {
+	if node.Targeting == nil {
+		return nil, nil
+	}
+	switch node.Targeting.Mode {
+	case execution.TargetSelectionFanoutAll:
+		if s.TargetResolver == nil {
+			return nil, ErrProgramTargetDiscoveryUnsupported
+		}
+		state, err := s.getSessionRecord(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		var spec task.Record
+		if state.TaskID != "" {
+			spec, err = s.getTaskRecord(ctx, state.TaskID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		targets, err := s.TargetResolver.ResolveTargets(ctx, state, spec, program, node)
+		if err != nil {
+			return nil, err
+		}
+		if len(targets) == 0 {
+			return nil, ErrProgramTargetDiscoveryUnsupported
+		}
+		return append([]execution.Target(nil), targets...), nil
+	}
+	return targetsForProgramNode(node)
 }
 
 func stepFromProgramNode(program execution.Program, node execution.ProgramNode, target *execution.Target, index, total int, aggregateID string) (plan.StepSpec, error) {

@@ -45,15 +45,23 @@ func (s *Service) blockedRuntimeProjection(ctx context.Context, blocked executio
 		Wait: execution.BlockedRuntimeWait{
 			Scope:      execution.BlockedRuntimeWaitStep,
 			StepID:     blocked.StepID,
+			ActionID:   blocked.ActionID,
+			Target:     blocked.Target,
 			WaitingFor: blocked.WaitingFor,
+			Metadata:   cloneBlockedRuntimeCondition(blocked.Condition).Metadata,
 		},
 		InteractiveRuntimes: execution.InteractiveRuntimesFromHandles(blocked.RuntimeHandles),
 		Metadata: map[string]any{
-			"cycle_id":    blocked.CycleID,
-			"approval_id": blocked.ApprovalID,
+			"cycle_id":           blocked.CycleID,
+			"approval_id":        blocked.ApprovalID,
+			"blocked_runtime_id": blocked.BlockedRuntimeID,
 		},
 	}
-	if target, ok := execution.TargetFromStep(blocked.Step); ok {
+	if blocked.Target.TargetID != "" {
+		view.Wait.Scope = execution.BlockedRuntimeWaitTarget
+	} else if blocked.ActionID != "" {
+		view.Wait.Scope = execution.BlockedRuntimeWaitAction
+	} else if target, ok := execution.TargetFromStep(blocked.Step); ok {
 		view.Wait.Scope = execution.BlockedRuntimeWaitTarget
 		view.Wait.Target = target
 	}

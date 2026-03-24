@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 
@@ -844,6 +845,207 @@ func TestCreatePlanFromProgramRejectsUnsupportedTargetDiscovery(t *testing.T) {
 	}
 }
 
+func TestCreatePlanFromProgramResolvesFanoutAllTargetsViaTargetResolver(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.target", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, targetAwareHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:          tools,
+		Verifiers:      verify.NewRegistry(),
+		Policy:         permission.DefaultEvaluator{},
+		TargetResolver: staticTargetResolver{targetsByNode: map[string][]execution.Target{"node_fanout": {{TargetID: "resolved-a", Kind: "host"}, {TargetID: "resolved-b", Kind: "host"}}}},
+	})
+
+	sess := mustCreateSession(t, rt, "program resolve targets", "resolve fanout_all targets")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "resolve fanout_all targets"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	created, err := rt.CreatePlanFromProgram(attached.SessionID, "", execution.Program{
+		ProgramID: "prog_resolved_fanout",
+		Nodes: []execution.ProgramNode{{
+			NodeID:    "node_fanout",
+			Action:    action.Spec{ToolName: "demo.target"},
+			Targeting: &execution.TargetSelection{Mode: execution.TargetSelectionFanoutAll},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create plan from program: %v", err)
+	}
+	if len(created.Steps) != 2 {
+		t.Fatalf("expected 2 resolved target steps, got %#v", created.Steps)
+	}
+	first, ok := execution.TargetFromStep(created.Steps[0])
+	if !ok || first.TargetID != "resolved-a" {
+		t.Fatalf("expected first resolved target, got %#v", created.Steps[0])
+	}
+	second, ok := execution.TargetFromStep(created.Steps[1])
+	if !ok || second.TargetID != "resolved-b" {
+		t.Fatalf("expected second resolved target, got %#v", created.Steps[1])
+	}
+}
+
+func TestRunProgramExecutesFanoutAllTargetsResolvedByTargetResolver(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.target", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, targetAwareHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:          tools,
+		Verifiers:      verify.NewRegistry(),
+		Policy:         permission.DefaultEvaluator{},
+		TargetResolver: staticTargetResolver{targetsByNode: map[string][]execution.Target{"node_fanout": {{TargetID: "resolved-a", Kind: "host"}, {TargetID: "resolved-b", Kind: "host"}}}},
+	})
+
+	sess := mustCreateSession(t, rt, "program run resolved targets", "run fanout_all targets")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run fanout_all targets"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_run_resolved_fanout",
+		Nodes: []execution.ProgramNode{{
+			NodeID:    "node_fanout",
+			Action:    action.Spec{ToolName: "demo.target"},
+			Targeting: &execution.TargetSelection{Mode: execution.TargetSelectionFanoutAll},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if len(out.Executions) != 2 {
+		t.Fatalf("expected 2 executions, got %#v", out.Executions)
+	}
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 2 {
+		t.Fatalf("expected 2 actions, got %#v", actions)
+	}
+	targets := map[string]bool{}
+	for _, item := range actions {
+		ref, ok := execution.TargetRefFromMetadata(item.Metadata)
+		if !ok {
+			t.Fatalf("expected target metadata on action, got %#v", item)
+		}
+		targets[ref.TargetID] = true
+	}
+	if !targets["resolved-a"] || !targets["resolved-b"] {
+		t.Fatalf("expected resolved target actions, got %#v", actions)
+	}
+}
+
+func TestRunProgramMaterializesInlineAttachmentToTempFile(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.read_file", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, fileReaderHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+	})
+
+	sess := mustCreateSession(t, rt, "program materialize inline attachment", "materialize inline attachment")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "materialize inline attachment"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_inline_attachment",
+		Nodes: []execution.ProgramNode{{
+			NodeID: "node_read",
+			Action: action.Spec{ToolName: "demo.read_file"},
+			InputBinds: []execution.ProgramInputBinding{{
+				Name: "path",
+				Kind: execution.ProgramInputBindingAttachment,
+				Attachment: &execution.AttachmentInput{
+					Kind:        execution.AttachmentInputText,
+					Text:        "hello-inline-attachment",
+					Materialize: execution.AttachmentMaterializeTempFile,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected 1 execution, got %#v", out.Executions)
+	}
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 1 {
+		t.Fatalf("expected 1 action, got %#v", actions)
+	}
+	if got, _ := actions[0].Result.Data["stdout"].(string); got != "hello-inline-attachment" {
+		t.Fatalf("expected materialized attachment payload, got %#v", actions[0].Result.Data)
+	}
+}
+
+func TestRunProgramMaterializesArtifactAttachmentToTempFile(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.read_file", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, fileReaderHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+	})
+
+	sess := mustCreateSession(t, rt, "program materialize artifact attachment", "materialize artifact attachment")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "materialize artifact attachment"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	artifact, err := rt.Artifacts.Create(execution.Artifact{
+		ArtifactID: "art_inline_payload",
+		SessionID:  attached.SessionID,
+		TaskID:     attached.TaskID,
+		Name:       "payload.txt",
+		Kind:       "text/plain",
+		Payload: map[string]any{
+			"text": "hello-artifact-attachment",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_artifact_attachment",
+		Nodes: []execution.ProgramNode{{
+			NodeID: "node_read",
+			Action: action.Spec{ToolName: "demo.read_file"},
+			InputBinds: []execution.ProgramInputBinding{{
+				Name: "path",
+				Kind: execution.ProgramInputBindingAttachment,
+				Attachment: &execution.AttachmentInput{
+					Kind:        execution.AttachmentInputArtifactRef,
+					ArtifactID:  artifact.ArtifactID,
+					Materialize: execution.AttachmentMaterializeTempFile,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected 1 execution, got %#v", out.Executions)
+	}
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 1 {
+		t.Fatalf("expected 1 action, got %#v", actions)
+	}
+	if got, _ := actions[0].Result.Data["stdout"].(string); got != "hello-artifact-attachment" {
+		t.Fatalf("expected materialized artifact payload, got %#v", actions[0].Result.Data)
+	}
+}
+
 func TestCreatePlanFromProgramRejectsDependencyCycles(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{})
 	sess := mustCreateSession(t, rt, "program cycle", "detect dependency cycle")
@@ -955,6 +1157,31 @@ func (artifactRefHandler) Invoke(_ context.Context, args map[string]any) (action
 		Data: map[string]any{
 			"artifact_id":   ref.ArtifactID,
 			"artifact_kind": ref.Kind,
+		},
+	}, nil
+}
+
+type staticTargetResolver struct {
+	targetsByNode map[string][]execution.Target
+}
+
+func (r staticTargetResolver) ResolveTargets(_ context.Context, _ session.State, _ task.Record, _ execution.Program, node execution.ProgramNode) ([]execution.Target, error) {
+	return append([]execution.Target(nil), r.targetsByNode[node.NodeID]...), nil
+}
+
+type fileReaderHandler struct{}
+
+func (fileReaderHandler) Invoke(_ context.Context, args map[string]any) (action.Result, error) {
+	path, _ := args["path"].(string)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return action.Result{OK: false, Error: &action.Error{Code: "READ_FAILED", Message: err.Error()}}, err
+	}
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"stdout": string(data),
+			"path":   path,
 		},
 	}, nil
 }

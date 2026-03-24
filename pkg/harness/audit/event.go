@@ -26,6 +26,10 @@ const (
 	EventRuntimeHandleUpdated     = "runtime_handle.updated"
 	EventRuntimeHandleClosed      = "runtime_handle.closed"
 	EventRuntimeHandleInvalidated = "runtime_handle.invalidated"
+	EventBlockedRuntimeCreated    = "blocked_runtime.created"
+	EventBlockedRuntimeResponded  = "blocked_runtime.responded"
+	EventBlockedRuntimeResumed    = "blocked_runtime.resumed"
+	EventBlockedRuntimeAborted    = "blocked_runtime.aborted"
 )
 
 type Event struct {

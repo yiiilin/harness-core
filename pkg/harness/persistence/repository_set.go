@@ -21,6 +21,7 @@ type RepositorySet struct {
 	Actions             execution.ActionStore
 	Verifications       execution.VerificationStore
 	Artifacts           execution.ArtifactStore
+	BlockedRuntimes     execution.BlockedRuntimeStore
 	RuntimeHandles      execution.RuntimeHandleStore
 	Approvals           approval.Store
 	CapabilitySnapshots capability.SnapshotStore

@@ -22,6 +22,7 @@ const (
 	ExecutionInFlight         ExecutionState = "in_flight"
 	ExecutionInterrupted      ExecutionState = "interrupted"
 	ExecutionAwaitingApproval ExecutionState = "awaiting_approval"
+	ExecutionBlocked          ExecutionState = "blocked"
 )
 
 const (

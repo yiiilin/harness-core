@@ -64,6 +64,13 @@ func restoreAttemptRecord(store execution.AttemptStore, before execution.Attempt
 	return store.Update(cloneAttemptRecord(before))
 }
 
+func restoreBlockedRuntimeRecord(store execution.BlockedRuntimeStore, before execution.BlockedRuntimeRecord) error {
+	if store == nil || before.BlockedRuntimeID == "" {
+		return nil
+	}
+	return store.Update(cloneBlockedRuntimeRecord(before))
+}
+
 func restoreTaskRecord(store task.Store, before task.Record) error {
 	if store == nil || before.TaskID == "" {
 		return nil

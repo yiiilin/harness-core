@@ -42,6 +42,9 @@ func (s *Service) resolveProgramBindingValue(ctx context.Context, sessionID stri
 		if binding.Attachment == nil {
 			return nil, fmt.Errorf("%w: missing attachment input for binding %q", ErrProgramBindingResolveFailed, binding.Name)
 		}
+		if binding.Attachment.Materialize != "" && binding.Attachment.Materialize != execution.AttachmentMaterializeNone {
+			return s.materializeProgramAttachment(ctx, sessionID, step, *binding.Attachment)
+		}
 		switch binding.Attachment.Kind {
 		case execution.AttachmentInputText:
 			return binding.Attachment.Text, nil
@@ -55,6 +58,45 @@ func (s *Service) resolveProgramBindingValue(ctx context.Context, sessionID stri
 	default:
 		return nil, fmt.Errorf("%w: binding kind %q", ErrProgramInputBindingUnsupported, binding.Kind)
 	}
+}
+
+func (s *Service) materializeProgramAttachment(ctx context.Context, sessionID string, step plan.StepSpec, input execution.AttachmentInput) (any, error) {
+	if input.Materialize != execution.AttachmentMaterializeTempFile {
+		return nil, fmt.Errorf("%w: attachment materialization %q", ErrProgramAttachmentUnsupported, input.Materialize)
+	}
+	var artifact *execution.Artifact
+	if input.Kind == execution.AttachmentInputArtifactRef {
+		record, err := s.findProgramAttachmentArtifact(ctx, sessionID, input.ArtifactID)
+		if err != nil {
+			return nil, err
+		}
+		artifact = &record
+	}
+	if s.AttachmentMaterializer == nil {
+		return nil, fmt.Errorf("%w: attachment materializer not configured", ErrProgramAttachmentUnsupported)
+	}
+	return s.AttachmentMaterializer.Materialize(ctx, AttachmentMaterializeRequest{
+		SessionID: sessionID,
+		Step:      step,
+		Input:     input,
+		Artifact:  artifact,
+	})
+}
+
+func (s *Service) findProgramAttachmentArtifact(ctx context.Context, sessionID, artifactID string) (execution.Artifact, error) {
+	if strings.TrimSpace(artifactID) == "" {
+		return execution.Artifact{}, fmt.Errorf("%w: missing attachment artifact id", ErrProgramBindingResolveFailed)
+	}
+	artifacts, err := s.listArtifactRecords(ctx, sessionID)
+	if err != nil {
+		return execution.Artifact{}, err
+	}
+	for _, record := range artifacts {
+		if record.ArtifactID == artifactID {
+			return record, nil
+		}
+	}
+	return execution.Artifact{}, fmt.Errorf("%w: artifact ref %q", ErrProgramBindingResolveFailed, artifactID)
 }
 
 func (s *Service) resolveProgramOutputRef(ctx context.Context, sessionID string, step plan.StepSpec, ref execution.OutputRef) (any, error) {

@@ -40,6 +40,9 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if state.Phase == session.PhaseComplete || state.Phase == session.PhaseFailed || state.Phase == session.PhaseAborted {
 		return StepRunOutput{}, ErrSessionTerminal
 	}
+	if state.ExecutionState == session.ExecutionBlocked {
+		return StepRunOutput{}, ErrSessionBlocked
+	}
 	if state.PendingApprovalID != "" && (activeApproval == nil || state.PendingApprovalID != activeApproval.ApprovalID) {
 		return StepRunOutput{}, ErrSessionAwaitingApproval
 	}
@@ -927,6 +930,9 @@ func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) pers
 	}
 	if repos.Artifacts == nil {
 		repos.Artifacts = s.Artifacts
+	}
+	if repos.BlockedRuntimes == nil {
+		repos.BlockedRuntimes = s.BlockedRuntimes
 	}
 	if repos.RuntimeHandles == nil {
 		repos.RuntimeHandles = s.RuntimeHandles

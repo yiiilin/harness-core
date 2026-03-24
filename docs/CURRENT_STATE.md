@@ -16,6 +16,7 @@ Use this together with:
 - `docs/STATUS.md`
 - `docs/API.md`
 - `docs/EMBEDDER_VNEXT.md`
+- `docs/EMBEDDER_VNEXT_REALITY_CHECK.md`
 - `docs/EMBEDDING.md`
 - `docs/VERSIONING.md`
 - `docs/CHANGE_POLICY.md`
@@ -32,6 +33,9 @@ It is no longer just a minimal runtime skeleton:
 - durable Postgres-backed embedding is public
 - replay/debug reads are public
 - reusable worker orchestration is public
+- resolver-backed `fanout_all` target discovery is public
+- temp-file attachment materialization is now real for native program execution
+- generic blocked-runtime lifecycle is now real for external, confirmation, and interactive waits
 - shell PTY execution is extensible enough for external platforms
 - service reads now stay aligned with runner-backed committed state
 - runtime budgets start from durable first-runtime activity rather than raw enqueue time
@@ -126,6 +130,8 @@ The design direction is now correct:
 - kernel-level contracts live in `pkg/harness/*`
 - capability variation lives in `modules/*`
 - transport exposure lives in `adapters/*`
+- target discovery and attachment materialization are now explicit kernel hooks
+- interactive I/O backends remain outside the kernel
 
 The shell module is the clearest proof point because PTY execution can now be replaced through `PTYBackend` without forcing a local `PTYManager`.
 
@@ -154,6 +160,9 @@ These areas are now in good shape and should be treated as current strengths:
 - replay/debug read model
 - control-plane audit coverage for attach / lease / recovery / runtime-handle control
 - runtime-handle persistence and lifecycle control
+- resolver-backed `fanout_all` target discovery
+- temp-file attachment materialization for native program execution
+- generic blocked-runtime records, lifecycle control, and projection reads
 - shell PTY execution extensibility
 - explicit stability guidance for embedders
 - dedicated release-gate tests for Tier 1 compatibility and durable restart/upgrade paths
@@ -164,9 +173,11 @@ The project no longer has a large kernel-boundary problem.
 
 The remaining gaps are now narrower and mostly about making the embedder surface cleaner and more replaceable.
 There is no longer an active tracked correctness checklist in this document for runner/read consistency, runtime-budget anchoring, worker renew cancellation, or control-plane audit visibility; those are now part of the current baseline.
+The active consolidated checklist now lives in `docs/plans/2026-03-24-master-kernel-gap-checklist.md`.
 
 For the next execution-model layer requested by embedders, see `docs/EMBEDDER_VNEXT.md`.
 That document is explicit about which items are supported today, partially supported today, or only planned vNext work.
+For a stricter code-reality assessment of what is genuinely wired today versus still only partial, see `docs/EMBEDDER_VNEXT_REALITY_CHECK.md`.
 
 ### 1. Worker helper outer-loop ergonomics are intentionally still minimal
 
@@ -207,6 +218,14 @@ The code now has better kernel/public boundaries than before, but protocol-facin
 - mapping kernel events/errors into transport contracts
 
 This is not a core-runtime problem. It is an adapter/documentation maturity problem.
+
+### 4. The largest remaining kernel gaps are now explicit redesign items
+
+The biggest remaining kernel work is no longer a collection of small correctness bugs.
+It is a short list of larger semantic gaps:
+
+- true concurrent multi-target scheduling with actual `MaxConcurrency` consumption
+- a deliberate decision on whether interactive control should ever move into core
 
 ## What Should Not Be Mistaken For Kernel Gaps
 

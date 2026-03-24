@@ -29,6 +29,7 @@ type TaskStatus = task.Status
 
 type SessionState = session.State
 type SessionPhase = session.Phase
+type SessionExecutionState = session.ExecutionState
 
 type PlanSpec = plan.Spec
 type PlanStatus = plan.Status
@@ -135,6 +136,9 @@ type StepRunOutput = hruntime.StepRunOutput
 type SessionRunOutput = hruntime.SessionRunOutput
 type AbortRequest = hruntime.AbortRequest
 type AbortOutput = hruntime.AbortOutput
+type BlockedRuntimeRequest = hruntime.BlockedRuntimeRequest
+type BlockedRuntimeResponse = hruntime.BlockedRuntimeResponse
+type BlockedRuntimeAbortRequest = hruntime.BlockedRuntimeAbortRequest
 type InteractiveRuntimeUpdate = hruntime.InteractiveRuntimeUpdate
 type RuntimeHandleUpdate = hruntime.RuntimeHandleUpdate
 type RuntimeHandleCloseRequest = hruntime.RuntimeHandleCloseRequest
@@ -143,6 +147,9 @@ type CompactionTrigger = hruntime.CompactionTrigger
 type CompactionPolicy = hruntime.CompactionPolicy
 type LoopBudgets = hruntime.LoopBudgets
 type Planner = hruntime.Planner
+type TargetResolver = hruntime.TargetResolver
+type AttachmentMaterializeRequest = hruntime.AttachmentMaterializeRequest
+type AttachmentMaterializer = hruntime.AttachmentMaterializer
 type EventSink = hruntime.EventSink
 type MetricsExporter = hruntime.MetricsExporter
 type TraceExporter = hruntime.TraceExporter
@@ -248,6 +255,12 @@ const (
 	ExecutionBlockedRuntimeWaitStep   = execution.BlockedRuntimeWaitStep
 	ExecutionBlockedRuntimeWaitAction = execution.BlockedRuntimeWaitAction
 	ExecutionBlockedRuntimeWaitTarget = execution.BlockedRuntimeWaitTarget
+
+	SessionExecutionIdle             = session.ExecutionIdle
+	SessionExecutionInFlight         = session.ExecutionInFlight
+	SessionExecutionInterrupted      = session.ExecutionInterrupted
+	SessionExecutionAwaitingApproval = session.ExecutionAwaitingApproval
+	SessionExecutionBlocked          = session.ExecutionBlocked
 
 	ExecutionBlockedRuntimeConditionApproval     = execution.BlockedRuntimeConditionApproval
 	ExecutionBlockedRuntimeConditionConfirmation = execution.BlockedRuntimeConditionConfirmation

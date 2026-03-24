@@ -37,6 +37,7 @@ Important implication:
 
 - `pkg/harness/builtins` looks like a `pkg/harness/*` package path, but it is **not** part of the root module's kernel-stability promise
 - module root, not directory prefix alone, defines the release boundary
+- companion-module `go.mod` files must reference real released versions that also have matching published companion tags
 
 For local repository verification:
 

@@ -51,10 +51,16 @@ func ClassifyError(err error) ErrorInfo {
 		return ErrorInfo{Kind: ErrorKindRuntimeHandle, Retryable: false}
 	case errors.Is(err, approval.ErrInvalidReply),
 		errors.Is(err, ErrInvalidLeaseTTL),
+		errors.Is(err, ErrInvalidBlockedRuntimeRequest),
+		errors.Is(err, ErrInvalidBlockedRuntimeResponse),
 		errors.Is(err, ErrDirectActionInvokeUnsupported):
 		return ErrorInfo{Kind: ErrorKindInvalid, Retryable: false}
 	case errors.Is(err, ErrSessionTerminal),
 		errors.Is(err, ErrSessionAwaitingApproval),
+		errors.Is(err, ErrSessionBlocked),
+		errors.Is(err, ErrBlockedRuntimeAlreadyActive),
+		errors.Is(err, ErrBlockedRuntimeNotActive),
+		errors.Is(err, ErrBlockedRuntimeNotPending),
 		errors.Is(err, ErrNoPendingApproval),
 		errors.Is(err, ErrApprovalNotResolved):
 		return ErrorInfo{Kind: ErrorKindState, Retryable: false}

@@ -206,6 +206,8 @@ Read consistency rule:
 - runtime interfaces:
   - planner
   - context assembler
+  - target resolver
+  - attachment materializer
   - event sink
   - metrics exporter
   - trace exporter
@@ -233,32 +235,39 @@ For the explicit current support matrix, see `docs/EMBEDDER_VNEXT.md`.
 
 ## Blocked Runtime Surface
 
-The current public blocked-runtime read surface is:
+The public blocked-runtime surface is now split into:
 
-- `GetBlockedRuntime(sessionID)`
-- `GetBlockedRuntimeByApproval(approvalID)`
-- `ListBlockedRuntimes()`
-- `GetBlockedRuntimeProjection(sessionID)`
-- `GetBlockedRuntimeProjectionByApproval(approvalID)`
-- `ListBlockedRuntimeProjections()`
+- current blocked-runtime reads:
+  - `GetBlockedRuntime(sessionID)`
+  - `GetBlockedRuntimeByApproval(approvalID)`
+  - `GetBlockedRuntimeByID(blockedRuntimeID)`
+  - `ListBlockedRuntimes()`
+  - `GetBlockedRuntimeProjection(sessionID)`
+  - `GetBlockedRuntimeProjectionByApproval(approvalID)`
+  - `ListBlockedRuntimeProjections()`
+- durable blocked-runtime record reads:
+  - `GetBlockedRuntimeRecord(blockedRuntimeID)`
+  - `ListBlockedRuntimeRecords(sessionID)`
+- generic blocked-runtime lifecycle control:
+  - `CreateBlockedRuntime(ctx, sessionID, request)`
+  - `RespondBlockedRuntime(ctx, blockedRuntimeID, response)`
+  - `ResumeBlockedRuntime(ctx, blockedRuntimeID)`
+  - `AbortBlockedRuntime(ctx, blockedRuntimeID, request)`
 
 Current scope:
 
-- approval-backed blocked runtimes only
-- durable lookup after restart by `session_id` or `approval_id`
-- waiting step identity comes from the approval record
-- cycle identity comes from the latest blocked attempt for that approval when present, otherwise from blocked-step metadata when present
+- approval-backed blocked runtimes remain readable by `session_id` and `approval_id`
+- generic blocked runtimes are now durable first-class records keyed by `blocked_runtime_id`
+- generic blocked runtimes drive a session-level blocked state that is non-runnable until resume or abort clears it
 - `ListBlockedRuntimes()` is ordered by `requested_at` ascending, with `blocked_runtime_id` as the tie-break
-- richer blocked-runtime projections currently derive:
-  - `ExecutionBlockedRuntimeWait` from the blocked step/action locus
+- richer blocked-runtime projections now derive:
+  - `ExecutionBlockedRuntimeWait` from the blocked step/action/target locus
   - `ExecutionTargetSlice` from the blocked cycle when target-scoped facts already exist
   - `ExecutionInteractiveRuntime` from runtime handles linked to the blocked cycle
-- `GetBlockedRuntimeByApproval(approvalID)` returns:
+- `GetBlockedRuntimeByApproval(approvalID)` still returns:
   - `approval.ErrApprovalNotFound` when the approval id does not exist
-  - `execution.ErrBlockedRuntimeNotFound` when the approval exists but is not the session's current pending blocked runtime
-
-This does **not** mean the kernel already has a generic blocked-runtime engine for arbitrary external conditions.
-That broader model remains planned vNext work.
+  - `execution.ErrBlockedRuntimeNotFound` when the approval exists but is not the session's current pending approval-backed blocked runtime
+- `ListBlockedRuntimeRecords(sessionID)` currently returns the generic blocked-runtime record history for that session; approval records remain available through the approval APIs
 
 ## Execution Target Contracts
 
@@ -308,7 +317,8 @@ Current scope:
 
 - they let embedders and runtime slices refer to prior structured output, text output, bytes output, artifacts, and attachment inputs using stable typed references
 - the runtime now resolves structured/text/bytes `OutputRef` values and artifact refs for native preplanned program execution
-- attachment-backed bindings remain a partial path; inline text/bytes inputs work, while broader attachment materialization semantics remain later work
+- the runtime now also supports `AttachmentInput.Materialize=temp_file` for inline text/bytes inputs and artifact-ref payloads
+- broader attachment materialization semantics remain later work
 
 This is a partial runtime slice, not the full generalized dataflow engine.
 
@@ -333,8 +343,9 @@ Current scope:
   - `execution.AttachProgram(step, program)` plus `CreatePlan(...)` for embedding a program into an otherwise normal plan
 - current runtime execution is intentionally minimal:
   - explicit target fan-out from `ExecutionProgramNode.Targeting.Targets` is supported
+  - resolver-backed `ExecutionTargetSelectionFanoutAll` is supported through `runtime.TargetResolver`
   - dependency-ordered execution through the existing plan/session loop
-  - literal, output-ref, and artifact-ref input bindings are supported for native program execution
+  - literal, output-ref, artifact-ref, and temp-file attachment bindings are supported for native program execution
   - explicit fan-out can now use:
     - per-target retries through `ExecutionProgramNode.OnFail`
     - partial-failure continuation through `ExecutionTargetSelection.OnPartialFailure=continue`
@@ -343,7 +354,7 @@ Current scope:
       - `step` for ordinary single-step verification
       - `target` for per-target fan-out verification
       - `aggregate` for explicit fan-out summary verification when the group resolves
-- broader attachment materialization semantics, `TargetSelectionFanoutAll`, and richer aggregate replay/projection remain planned later slices
+- broader attachment materialization semantics and richer aggregate replay/projection remain planned later slices
 
 This is a partial native runtime slice, not the full vNext tool-graph engine.
 
@@ -382,17 +393,17 @@ Current scope:
 
 - these contracts define the public value shape for target-scoped replay/projection and richer blocked-runtime views
 - target slices are now populated when execution facts carry stable target metadata, for example from explicit program fan-out execution
-- approval-backed blocked-runtime projections are now runtime-backed through:
+- blocked-runtime projections are now runtime-backed through:
   - `GetBlockedRuntimeProjection(...)`
   - `GetBlockedRuntimeProjectionByApproval(...)`
   - `ListBlockedRuntimeProjections()`
   - `pkg/harness/replay.SessionProjection.BlockedRuntimes`
-- richer blocked-runtime progression remains limited to the current approval-backed subset; there is still no generic blocked-runtime engine for arbitrary external conditions
+- approval-backed and generic blocked runtimes now both project through the same current blocked-runtime read surface
 
 This is a mixed state:
 - target-slice population is partially runtime-backed today
-- approval-backed blocked-runtime projection is runtime-backed today
-- broader generic blocked-runtime progression remains planned vNext work
+- blocked-runtime projection is runtime-backed today
+- interactive projection still remains a read/state layer, not a core I/O control plane
 
 ## Interactive Runtime Projection Contracts
 
@@ -456,11 +467,15 @@ The public facade now re-exports generic blocked-runtime contract types:
 
 Current scope:
 
-- these are public model-layer contracts only
-- they define a transport-neutral durable record shape beyond today's approval-backed blocked-runtime read subset
-- current runtime read APIs still return the approval-shaped `BlockedRuntime` projection and do not yet persist or return the generic record form
-
-The corresponding runtime engine and durable API surface remain planned vNext work.
+- they define the transport-neutral durable record and condition shape used by the runtime's generic blocked-runtime lifecycle
+- current runtime APIs now persist and return these records through:
+  - `CreateBlockedRuntime(...)`
+  - `RespondBlockedRuntime(...)`
+  - `ResumeBlockedRuntime(...)`
+  - `AbortBlockedRuntime(...)`
+  - `GetBlockedRuntimeRecord(...)`
+  - `ListBlockedRuntimeRecords(...)`
+- current blocked-runtime reads still return the richer `BlockedRuntime` projection view for both approval-backed and generic current waits
 
 ## Output / Artifact / Attachment Reference Contracts
 

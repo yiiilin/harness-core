@@ -47,6 +47,9 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 		if isTerminalPhase(state.Phase) {
 			return populateSessionRunAggregates(out), nil
 		}
+		if state.ExecutionState == session.ExecutionBlocked {
+			return populateSessionRunAggregates(out), nil
+		}
 		if state.PendingApprovalID != "" {
 			resumed, handled, err := s.resolvePendingApprovalForSession(ctx, sessionID, leaseID)
 			if err != nil {

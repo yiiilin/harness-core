@@ -260,25 +260,80 @@ func (s *Service) getBlockedRuntimeRecord(ctx context.Context, sessionID string)
 func (s *Service) getBlockedRuntimeByApprovalRecord(ctx context.Context, approvalID string) (execution.BlockedRuntime, error) {
 	var out execution.BlockedRuntime
 	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {
+		var err error
+		out, err = blockedRuntimeByApprovalInRepos(approvalID, repos)
+		return err
+	})
+	return out, err
+}
+
+func (s *Service) getBlockedRuntimeByIDRecord(ctx context.Context, blockedRuntimeID string) (execution.BlockedRuntime, error) {
+	var out execution.BlockedRuntime
+	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {
+		if repos.BlockedRuntimes != nil {
+			rec, err := blockedRuntimeRecordOrErr(repos.BlockedRuntimes, blockedRuntimeID)
+			switch {
+			case err == nil:
+				state, stateErr := repos.Sessions.Get(rec.SessionID)
+				if stateErr != nil {
+					return stateErr
+				}
+				out, err = blockedRuntimeFromStateAndGenericRecord(state, rec, repos)
+				return err
+			case errors.Is(err, execution.ErrBlockedRuntimeNotFound):
+			default:
+				return err
+			}
+		}
+		var err error
+		out, err = blockedRuntimeByApprovalInRepos(blockedRuntimeID, repos)
+		return err
+	})
+	return out, err
+}
+
+func (s *Service) getBlockedRuntimeStoredRecord(ctx context.Context, blockedRuntimeID string) (execution.BlockedRuntimeRecord, error) {
+	var out execution.BlockedRuntimeRecord
+	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {
+		rec, err := blockedRuntimeRecordOrErr(repos.BlockedRuntimes, blockedRuntimeID)
+		switch {
+		case err == nil:
+			out = cloneBlockedRuntimeRecord(rec)
+			return nil
+		case !errors.Is(err, execution.ErrBlockedRuntimeNotFound):
+			return err
+		}
 		if repos.Approvals == nil {
-			return approval.ErrApprovalNotFound
-		}
-		rec, err := repos.Approvals.Get(approvalID)
-		if err != nil {
-			return err
-		}
-		if repos.Sessions == nil {
-			return session.ErrSessionNotFound
-		}
-		state, err := repos.Sessions.Get(rec.SessionID)
-		if err != nil {
-			return err
-		}
-		if state.PendingApprovalID != approvalID {
 			return execution.ErrBlockedRuntimeNotFound
 		}
-		out, err = blockedRuntimeFromStateAndApproval(state, rec, repos)
-		return err
+		approvalRec, err := repos.Approvals.Get(blockedRuntimeID)
+		if err != nil {
+			if errors.Is(err, approval.ErrApprovalNotFound) {
+				return execution.ErrBlockedRuntimeNotFound
+			}
+			return err
+		}
+		out = blockedRuntimeRecordFromApproval(approvalRec)
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) listBlockedRuntimeStoredRecords(ctx context.Context, sessionID string) ([]execution.BlockedRuntimeRecord, error) {
+	var out []execution.BlockedRuntimeRecord
+	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {
+		if repos.BlockedRuntimes == nil {
+			return nil
+		}
+		items, err := repos.BlockedRuntimes.List(sessionID)
+		if err != nil {
+			return err
+		}
+		out = make([]execution.BlockedRuntimeRecord, 0, len(items))
+		for _, item := range items {
+			out = append(out, cloneBlockedRuntimeRecord(item))
+		}
+		return nil
 	})
 	return out, err
 }
@@ -295,7 +350,7 @@ func (s *Service) listBlockedRuntimeRecords(ctx context.Context) ([]execution.Bl
 		}
 		out = make([]execution.BlockedRuntime, 0, len(sessions))
 		for _, state := range sessions {
-			if state.PendingApprovalID == "" {
+			if state.PendingApprovalID == "" && currentBlockedRuntimeID(state) == "" {
 				continue
 			}
 			item, err := blockedRuntimeFromStateAndRepos(state, repos)
@@ -320,15 +375,44 @@ func (s *Service) listBlockedRuntimeRecords(ctx context.Context) ([]execution.Bl
 }
 
 func blockedRuntimeFromStateAndRepos(state session.State, repos persistence.RepositorySet) (execution.BlockedRuntime, error) {
-	if state.PendingApprovalID == "" {
+	if state.PendingApprovalID != "" {
+		if repos.Approvals == nil {
+			return execution.BlockedRuntime{}, approval.ErrApprovalNotFound
+		}
+		rec, err := repos.Approvals.Get(state.PendingApprovalID)
+		if err != nil {
+			return execution.BlockedRuntime{}, err
+		}
+		return blockedRuntimeFromStateAndApproval(state, rec, repos)
+	}
+	blockedRuntimeID := currentBlockedRuntimeID(state)
+	if blockedRuntimeID == "" {
 		return execution.BlockedRuntime{}, execution.ErrBlockedRuntimeNotFound
 	}
+	rec, err := blockedRuntimeRecordOrErr(repos.BlockedRuntimes, blockedRuntimeID)
+	if err != nil {
+		return execution.BlockedRuntime{}, err
+	}
+	return blockedRuntimeFromStateAndGenericRecord(state, rec, repos)
+}
+
+func blockedRuntimeByApprovalInRepos(approvalID string, repos persistence.RepositorySet) (execution.BlockedRuntime, error) {
 	if repos.Approvals == nil {
 		return execution.BlockedRuntime{}, approval.ErrApprovalNotFound
 	}
-	rec, err := repos.Approvals.Get(state.PendingApprovalID)
+	rec, err := repos.Approvals.Get(approvalID)
 	if err != nil {
 		return execution.BlockedRuntime{}, err
+	}
+	if repos.Sessions == nil {
+		return execution.BlockedRuntime{}, session.ErrSessionNotFound
+	}
+	state, err := repos.Sessions.Get(rec.SessionID)
+	if err != nil {
+		return execution.BlockedRuntime{}, err
+	}
+	if state.PendingApprovalID != approvalID {
+		return execution.BlockedRuntime{}, execution.ErrBlockedRuntimeNotFound
 	}
 	return blockedRuntimeFromStateAndApproval(state, rec, repos)
 }
@@ -364,8 +448,52 @@ func blockedRuntimeFromStateAndApproval(state session.State, rec approval.Record
 		ApprovalID:       rec.ApprovalID,
 		AttemptID:        attemptID,
 		CycleID:          cycleID,
-		Step:             rec.Step,
-		Approval:         rec,
+		Condition: execution.BlockedRuntimeCondition{
+			Kind:        execution.BlockedRuntimeConditionApproval,
+			ReferenceID: rec.ApprovalID,
+			WaitingFor:  "approval",
+			Metadata:    cloneAnyMap(rec.Metadata),
+		},
+		Metadata:       cloneAnyMap(rec.Metadata),
+		Step:           rec.Step,
+		Approval:       rec,
+		RuntimeHandles: handles,
+		RequestedAt:    rec.RequestedAt,
+		UpdatedAt:      rec.UpdatedAt,
+	}, nil
+}
+
+func blockedRuntimeFromStateAndGenericRecord(state session.State, rec execution.BlockedRuntimeRecord, repos persistence.RepositorySet) (execution.BlockedRuntime, error) {
+	if currentBlockedRuntimeID(state) == "" || currentBlockedRuntimeID(state) != rec.BlockedRuntimeID || state.ExecutionState != session.ExecutionBlocked || rec.SessionID != "" && rec.SessionID != state.SessionID {
+		return execution.BlockedRuntime{}, execution.ErrBlockedRuntimeNotFound
+	}
+	return blockedRuntimeFromGenericRecord(state, rec, repos)
+}
+
+func blockedRuntimeFromGenericRecord(state session.State, rec execution.BlockedRuntimeRecord, repos persistence.RepositorySet) (execution.BlockedRuntime, error) {
+	step, _, err := latestPlanStepByID(repos.Plans, state.SessionID, "", rec.Subject.StepID)
+	if err != nil {
+		return execution.BlockedRuntime{}, err
+	}
+	handles, err := blockedRuntimeHandlesForCycle(repos.RuntimeHandles, state.SessionID, rec.Subject.CycleID)
+	if err != nil {
+		return execution.BlockedRuntime{}, err
+	}
+	return execution.BlockedRuntime{
+		BlockedRuntimeID: rec.BlockedRuntimeID,
+		Kind:             rec.Kind,
+		Status:           rec.Status,
+		WaitingFor:       rec.Condition.WaitingFor,
+		SessionID:        state.SessionID,
+		TaskID:           firstNonEmptyString(state.TaskID, rec.TaskID),
+		StepID:           rec.Subject.StepID,
+		ActionID:         rec.Subject.ActionID,
+		AttemptID:        rec.Subject.AttemptID,
+		CycleID:          rec.Subject.CycleID,
+		Target:           rec.Subject.Target,
+		Condition:        cloneBlockedRuntimeCondition(rec.Condition),
+		Metadata:         cloneAnyMap(rec.Metadata),
+		Step:             step,
 		RuntimeHandles:   handles,
 		RequestedAt:      rec.RequestedAt,
 		UpdatedAt:        rec.UpdatedAt,
@@ -396,6 +524,64 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func cloneBlockedRuntimeRecord(in execution.BlockedRuntimeRecord) execution.BlockedRuntimeRecord {
+	out := in
+	out.Subject = cloneBlockedRuntimeSubject(in.Subject)
+	out.Condition = cloneBlockedRuntimeCondition(in.Condition)
+	out.Metadata = cloneAnyMap(in.Metadata)
+	return out
+}
+
+func cloneBlockedRuntimeCondition(in execution.BlockedRuntimeCondition) execution.BlockedRuntimeCondition {
+	out := in
+	out.Metadata = cloneAnyMap(in.Metadata)
+	return out
+}
+
+func blockedRuntimeRecordFromApproval(rec approval.Record) execution.BlockedRuntimeRecord {
+	return execution.BlockedRuntimeRecord{
+		BlockedRuntimeID: rec.ApprovalID,
+		Kind:             execution.BlockedRuntimeApproval,
+		Status:           blockedRuntimeStatusFromApproval(rec.Status),
+		SessionID:        rec.SessionID,
+		TaskID:           rec.TaskID,
+		Subject: execution.BlockedRuntimeSubject{
+			StepID: rec.StepID,
+		},
+		Condition: execution.BlockedRuntimeCondition{
+			Kind:        execution.BlockedRuntimeConditionApproval,
+			ReferenceID: rec.ApprovalID,
+			WaitingFor:  "approval",
+			Metadata:    cloneAnyMap(rec.Metadata),
+		},
+		Metadata:    cloneAnyMap(rec.Metadata),
+		RequestedAt: rec.RequestedAt,
+		UpdatedAt:   rec.UpdatedAt,
+		ResolvedAt:  maxInt64(rec.RespondedAt, rec.ConsumedAt),
+	}
+}
+
+func blockedRuntimeStatusFromApproval(status approval.Status) execution.BlockedRuntimeStatus {
+	switch status {
+	case approval.StatusApproved, approval.StatusConsumed:
+		return execution.BlockedRuntimeApproved
+	case approval.StatusRejected:
+		return execution.BlockedRuntimeRejected
+	default:
+		return execution.BlockedRuntimePending
+	}
+}
+
+func maxInt64(values ...int64) int64 {
+	var out int64
+	for _, value := range values {
+		if value > out {
+			out = value
+		}
+	}
+	return out
 }
 
 func (s *Service) getPlanningRecord(ctx context.Context, id string) (planning.Record, error) {

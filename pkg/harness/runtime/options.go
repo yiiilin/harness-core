@@ -17,38 +17,41 @@ import (
 )
 
 type Options struct {
-	Sessions            session.Store
-	Tasks               task.Store
-	Plans               plan.Store
-	Approvals           approval.Store
-	Attempts            execution.AttemptStore
-	Actions             execution.ActionStore
-	Verifications       execution.VerificationStore
-	Artifacts           execution.ArtifactStore
-	RuntimeHandles      execution.RuntimeHandleStore
-	CapabilitySnapshots capability.SnapshotStore
-	PlanningRecords     planning.Store
-	CapabilityFreezer   capability.Freezer
-	ResumePolicy        approval.ResumePolicy
-	Tools               *tool.Registry
-	CapabilityResolver  capability.Resolver
-	Verifiers           *verify.Registry
-	Audit               audit.Store
-	Runner              persistence.Runner
-	Policy              permission.Evaluator
-	ContextAssembler    ContextAssembler
-	ContextSummaries    ContextSummaryStore
-	Compactor           Compactor
-	CompactionPolicy    CompactionPolicy
-	LoopBudgets         LoopBudgets
-	Planner             Planner
-	EventSink           EventSink
-	Clock               Clock
-	Metrics             Metrics
-	MetricsExporter     MetricsExporter
-	TraceExporter       TraceExporter
-	MetricsRecorder     *observability.MemoryRecorder
-	StorageMode         string
+	Sessions               session.Store
+	Tasks                  task.Store
+	Plans                  plan.Store
+	Approvals              approval.Store
+	Attempts               execution.AttemptStore
+	Actions                execution.ActionStore
+	Verifications          execution.VerificationStore
+	Artifacts              execution.ArtifactStore
+	BlockedRuntimes        execution.BlockedRuntimeStore
+	RuntimeHandles         execution.RuntimeHandleStore
+	CapabilitySnapshots    capability.SnapshotStore
+	PlanningRecords        planning.Store
+	CapabilityFreezer      capability.Freezer
+	ResumePolicy           approval.ResumePolicy
+	Tools                  *tool.Registry
+	CapabilityResolver     capability.Resolver
+	Verifiers              *verify.Registry
+	Audit                  audit.Store
+	Runner                 persistence.Runner
+	Policy                 permission.Evaluator
+	ContextAssembler       ContextAssembler
+	ContextSummaries       ContextSummaryStore
+	Compactor              Compactor
+	CompactionPolicy       CompactionPolicy
+	LoopBudgets            LoopBudgets
+	Planner                Planner
+	TargetResolver         TargetResolver
+	AttachmentMaterializer AttachmentMaterializer
+	EventSink              EventSink
+	Clock                  Clock
+	Metrics                Metrics
+	MetricsExporter        MetricsExporter
+	TraceExporter          TraceExporter
+	MetricsRecorder        *observability.MemoryRecorder
+	StorageMode            string
 }
 
 func WithDefaults(opts Options) Options {
@@ -75,6 +78,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Artifacts == nil {
 		opts.Artifacts = execution.NewMemoryArtifactStore()
+	}
+	if opts.BlockedRuntimes == nil {
+		opts.BlockedRuntimes = execution.NewMemoryBlockedRuntimeStore()
 	}
 	if opts.RuntimeHandles == nil {
 		opts.RuntimeHandles = execution.NewMemoryRuntimeHandleStore()
@@ -128,6 +134,7 @@ func WithDefaults(opts Options) Options {
 			Actions:             opts.Actions,
 			Verifications:       opts.Verifications,
 			Artifacts:           opts.Artifacts,
+			BlockedRuntimes:     opts.BlockedRuntimes,
 			RuntimeHandles:      opts.RuntimeHandles,
 			Approvals:           opts.Approvals,
 			CapabilitySnapshots: opts.CapabilitySnapshots,
@@ -155,6 +162,9 @@ func WithDefaults(opts Options) Options {
 	}
 	if opts.Planner == nil {
 		opts.Planner = NoopPlanner{}
+	}
+	if opts.AttachmentMaterializer == nil {
+		opts.AttachmentMaterializer = LocalTempFileMaterializer{}
 	}
 	if opts.Clock == nil {
 		opts.Clock = systemClock{}

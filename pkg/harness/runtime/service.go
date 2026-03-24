@@ -33,75 +33,81 @@ type Info struct {
 }
 
 type Service struct {
-	Sessions            session.Store
-	Tasks               task.Store
-	Plans               plan.Store
-	Approvals           approval.Store
-	Attempts            execution.AttemptStore
-	Actions             execution.ActionStore
-	Verifications       execution.VerificationStore
-	Artifacts           execution.ArtifactStore
-	RuntimeHandles      execution.RuntimeHandleStore
-	CapabilitySnapshots capability.SnapshotStore
-	PlanningRecords     planning.Store
-	CapabilityFreezer   capability.Freezer
-	ResumePolicy        approval.ResumePolicy
-	Tools               *tool.Registry
-	CapabilityResolver  capability.Resolver
-	Verifiers           *verify.Registry
-	Audit               audit.Store
-	Runner              persistence.Runner
-	Policy              permission.Evaluator
-	ContextAssembler    ContextAssembler
-	ContextSummaries    ContextSummaryStore
-	Compactor           Compactor
-	CompactionPolicy    CompactionPolicy
-	LoopBudgets         LoopBudgets
-	Planner             Planner
-	EventSink           EventSink
-	Clock               Clock
-	Metrics             Metrics
-	MetricsExporter     MetricsExporter
-	TraceExporter       TraceExporter
-	MetricsRecorder     *observability.MemoryRecorder
-	StorageMode         string
+	Sessions               session.Store
+	Tasks                  task.Store
+	Plans                  plan.Store
+	Approvals              approval.Store
+	Attempts               execution.AttemptStore
+	Actions                execution.ActionStore
+	Verifications          execution.VerificationStore
+	Artifacts              execution.ArtifactStore
+	BlockedRuntimes        execution.BlockedRuntimeStore
+	RuntimeHandles         execution.RuntimeHandleStore
+	CapabilitySnapshots    capability.SnapshotStore
+	PlanningRecords        planning.Store
+	CapabilityFreezer      capability.Freezer
+	ResumePolicy           approval.ResumePolicy
+	Tools                  *tool.Registry
+	CapabilityResolver     capability.Resolver
+	Verifiers              *verify.Registry
+	Audit                  audit.Store
+	Runner                 persistence.Runner
+	Policy                 permission.Evaluator
+	ContextAssembler       ContextAssembler
+	ContextSummaries       ContextSummaryStore
+	Compactor              Compactor
+	CompactionPolicy       CompactionPolicy
+	LoopBudgets            LoopBudgets
+	Planner                Planner
+	TargetResolver         TargetResolver
+	AttachmentMaterializer AttachmentMaterializer
+	EventSink              EventSink
+	Clock                  Clock
+	Metrics                Metrics
+	MetricsExporter        MetricsExporter
+	TraceExporter          TraceExporter
+	MetricsRecorder        *observability.MemoryRecorder
+	StorageMode            string
 }
 
 func New(opts Options) *Service {
 	opts = WithDefaults(opts)
 	return &Service{
-		Sessions:            opts.Sessions,
-		Tasks:               opts.Tasks,
-		Plans:               opts.Plans,
-		Approvals:           opts.Approvals,
-		Attempts:            opts.Attempts,
-		Actions:             opts.Actions,
-		Verifications:       opts.Verifications,
-		Artifacts:           opts.Artifacts,
-		RuntimeHandles:      opts.RuntimeHandles,
-		CapabilitySnapshots: opts.CapabilitySnapshots,
-		PlanningRecords:     opts.PlanningRecords,
-		CapabilityFreezer:   opts.CapabilityFreezer,
-		ResumePolicy:        opts.ResumePolicy,
-		Tools:               opts.Tools,
-		CapabilityResolver:  opts.CapabilityResolver,
-		Verifiers:           opts.Verifiers,
-		Audit:               opts.Audit,
-		Runner:              opts.Runner,
-		Policy:              opts.Policy,
-		ContextAssembler:    opts.ContextAssembler,
-		ContextSummaries:    opts.ContextSummaries,
-		Compactor:           opts.Compactor,
-		CompactionPolicy:    opts.CompactionPolicy,
-		LoopBudgets:         opts.LoopBudgets,
-		Planner:             opts.Planner,
-		EventSink:           opts.EventSink,
-		Clock:               opts.Clock,
-		Metrics:             metricsOrNoop(opts.Metrics),
-		MetricsExporter:     opts.MetricsExporter,
-		TraceExporter:       opts.TraceExporter,
-		MetricsRecorder:     opts.MetricsRecorder,
-		StorageMode:         opts.StorageMode,
+		Sessions:               opts.Sessions,
+		Tasks:                  opts.Tasks,
+		Plans:                  opts.Plans,
+		Approvals:              opts.Approvals,
+		Attempts:               opts.Attempts,
+		Actions:                opts.Actions,
+		Verifications:          opts.Verifications,
+		Artifacts:              opts.Artifacts,
+		BlockedRuntimes:        opts.BlockedRuntimes,
+		RuntimeHandles:         opts.RuntimeHandles,
+		CapabilitySnapshots:    opts.CapabilitySnapshots,
+		PlanningRecords:        opts.PlanningRecords,
+		CapabilityFreezer:      opts.CapabilityFreezer,
+		ResumePolicy:           opts.ResumePolicy,
+		Tools:                  opts.Tools,
+		CapabilityResolver:     opts.CapabilityResolver,
+		Verifiers:              opts.Verifiers,
+		Audit:                  opts.Audit,
+		Runner:                 opts.Runner,
+		Policy:                 opts.Policy,
+		ContextAssembler:       opts.ContextAssembler,
+		ContextSummaries:       opts.ContextSummaries,
+		Compactor:              opts.Compactor,
+		CompactionPolicy:       opts.CompactionPolicy,
+		LoopBudgets:            opts.LoopBudgets,
+		Planner:                opts.Planner,
+		TargetResolver:         opts.TargetResolver,
+		AttachmentMaterializer: opts.AttachmentMaterializer,
+		EventSink:              opts.EventSink,
+		Clock:                  opts.Clock,
+		Metrics:                metricsOrNoop(opts.Metrics),
+		MetricsExporter:        opts.MetricsExporter,
+		TraceExporter:          opts.TraceExporter,
+		MetricsRecorder:        opts.MetricsRecorder,
+		StorageMode:            opts.StorageMode,
 	}
 }
 
@@ -215,6 +221,14 @@ func (s *Service) ListArtifacts(sessionID string) ([]execution.Artifact, error) 
 	return s.listArtifactRecords(context.Background(), sessionID)
 }
 
+func (s *Service) GetBlockedRuntimeRecord(id string) (execution.BlockedRuntimeRecord, error) {
+	return s.getBlockedRuntimeStoredRecord(context.Background(), id)
+}
+
+func (s *Service) ListBlockedRuntimeRecords(sessionID string) ([]execution.BlockedRuntimeRecord, error) {
+	return s.listBlockedRuntimeStoredRecords(context.Background(), sessionID)
+}
+
 func (s *Service) GetRuntimeHandle(id string) (execution.RuntimeHandle, error) {
 	return s.getRuntimeHandleRecord(context.Background(), id)
 }
@@ -268,6 +282,10 @@ func (s *Service) GetBlockedRuntime(sessionID string) (execution.BlockedRuntime,
 
 func (s *Service) GetBlockedRuntimeByApproval(approvalID string) (execution.BlockedRuntime, error) {
 	return s.getBlockedRuntimeByApprovalRecord(context.Background(), approvalID)
+}
+
+func (s *Service) GetBlockedRuntimeByID(blockedRuntimeID string) (execution.BlockedRuntime, error) {
+	return s.getBlockedRuntimeByIDRecord(context.Background(), blockedRuntimeID)
 }
 
 func (s *Service) ListBlockedRuntimes() ([]execution.BlockedRuntime, error) {

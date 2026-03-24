@@ -5,6 +5,7 @@
 `harness-core` is a **pre-1.0 execution kernel for harness engineering**.
 
 For a fuller maintainers' assessment of current strengths, remaining pure-kernel gaps, and next priorities, see `docs/CURRENT_STATE.md`.
+For a stricter code-level embedder-vNext implementation matrix, see `docs/EMBEDDER_VNEXT_REALITY_CHECK.md`.
 For explicit `v1.0.0` release gates, see `docs/V1_RELEASE_CHECKLIST.md`.
 For post-`v1` compatibility rules on the stable path, see `docs/CHANGE_POLICY.md`.
 
@@ -28,6 +29,9 @@ It already has:
 - a public schema-aware `pkg/harness/postgres.Config` bootstrap surface
 - a public `pkg/harness/worker` helper for claim/renew/run-or-recover/release loops
 - a public `pkg/harness/replay` helper for execution-cycle/audit replay projections
+- a public `runtime.TargetResolver` hook for resolver-backed `fanout_all` execution
+- a public `runtime.AttachmentMaterializer` hook plus default temp-file materialization
+- a public generic blocked-runtime lifecycle with durable blocked-runtime records
 - a dedicated `./release` test package for Tier 1 compatibility and durable upgrade/restart gates
 - public migration status / pending / drift helpers on `pkg/harness/postgres`
 - a public `pkg/harness` embedding facade
@@ -52,6 +56,8 @@ That pass closed the remaining correctness-oriented kernel gaps that were still 
 
 This does not mean `v1` is ready today.
 The remaining blockers are now primarily release-discipline items from `docs/V1_RELEASE_CHECKLIST.md`, not an open pure-kernel correctness checklist.
+The active consolidated follow-up checklist now lives in `docs/plans/2026-03-24-master-kernel-gap-checklist.md`.
+At the execution-model layer, the generic blocked-runtime lifecycle is now part of the baseline; the largest remaining redesign item is true concurrent multi-target scheduling.
 
 For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
 The recommended public path is `pkg/harness/postgres`, especially `OpenServiceWithConfig(...)` plus `postgres.Config`; the WebSocket adapter remains a reference transport layer.
@@ -70,6 +76,7 @@ The following are intentionally outside `harness-core`:
 
 Those belong in adapters, modules, or an embedding platform.
 The same currently applies to opaque continuation blobs for platform-specific loop resume state.
+Interactive I/O backends such as PTY view/write/attach also remain outside the kernel; the kernel owns runtime-handle state and replay facts, not backend-specific control planes.
 
 ## Best use today
 

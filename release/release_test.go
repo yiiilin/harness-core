@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,6 +138,9 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ harness.RuntimeHandleUpdate
 	var _ harness.RuntimeHandleCloseRequest
 	var _ harness.RuntimeHandleInvalidateRequest
+	var _ harness.TargetResolver
+	var _ harness.AttachmentMaterializeRequest
+	var _ harness.AttachmentMaterializer
 }
 
 func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
@@ -172,6 +176,52 @@ func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
 	}
 }
 
+func TestCompanionModulesReferenceTaggedRepoLocalVersions(t *testing.T) {
+	t.Parallel()
+
+	tags := gitTagSet(t)
+	files := []string{
+		"pkg/harness/builtins/go.mod",
+		"modules/go.mod",
+		"adapters/go.mod",
+		"cmd/harness-core/go.mod",
+	}
+	tagForModule := map[string]func(string) string{
+		"github.com/yiiilin/harness-core":                      func(version string) string { return version },
+		"github.com/yiiilin/harness-core/pkg/harness/builtins": func(version string) string { return "pkg/harness/builtins/" + version },
+		"github.com/yiiilin/harness-core/modules":              func(version string) string { return "modules/" + version },
+		"github.com/yiiilin/harness-core/adapters":             func(version string) string { return "adapters/" + version },
+		"github.com/yiiilin/harness-core/cmd/harness-core":     func(version string) string { return "cmd/harness-core/" + version },
+	}
+
+	for _, rel := range files {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join("..", filepath.Clean(rel))
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", rel, err)
+			}
+			for _, line := range strings.Split(string(data), "\n") {
+				fields := strings.Fields(strings.TrimSpace(line))
+				if len(fields) < 2 {
+					continue
+				}
+				tagResolver, ok := tagForModule[fields[0]]
+				if !ok {
+					continue
+				}
+				expected := tagResolver(fields[1])
+				if !tags[expected] {
+					t.Fatalf("%s references %s %s but local tag %q is missing", rel, fields[0], fields[1], expected)
+				}
+			}
+		})
+	}
+}
+
 func containsReplaceDirective(goMod string) bool {
 	for _, line := range strings.Split(goMod, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "replace ") {
@@ -179,6 +229,25 @@ func containsReplaceDirective(goMod string) bool {
 		}
 	}
 	return false
+}
+
+func gitTagSet(t *testing.T) map[string]bool {
+	t.Helper()
+
+	cmd := exec.Command("git", "tag", "--list")
+	cmd.Dir = filepath.Join("..")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("list git tags: %v", err)
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		tag := strings.TrimSpace(line)
+		if tag != "" {
+			out[tag] = true
+		}
+	}
+	return out
 }
 
 func TestTier1InMemoryWorkerApprovalReplayFlow(t *testing.T) {

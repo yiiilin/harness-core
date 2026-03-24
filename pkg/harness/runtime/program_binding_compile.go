@@ -14,6 +14,10 @@ func applyCompiledProgramBindings(args map[string]any, bindings []execution.Prog
 			if binding.Attachment == nil {
 				return nil, ErrProgramAttachmentUnsupported
 			}
+			if binding.Attachment.Materialize != "" && binding.Attachment.Materialize != execution.AttachmentMaterializeNone {
+				unresolved = append(unresolved, binding)
+				continue
+			}
 			switch binding.Attachment.Kind {
 			case execution.AttachmentInputText:
 				args[binding.Name] = binding.Attachment.Text

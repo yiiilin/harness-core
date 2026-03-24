@@ -110,6 +110,7 @@ Exit criteria:
   - `make test-release`
 - release notes can point to those packages as the supported stable path
 - public docs state the default local `Runner` behavior and the explicit opt-in path for no-runner best-effort mode
+- companion-module manifests and tags are checked so published nested modules do not point at untagged repo-local versions
 
 ### 3. Lock the durable Postgres upgrade contract
 

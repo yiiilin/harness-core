@@ -5,6 +5,7 @@ import (
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/observability"
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
@@ -22,6 +23,27 @@ type ContextAssembler interface {
 // Planner decides the next step or plan revision based on the current session state.
 type Planner interface {
 	PlanNext(ctx context.Context, state session.State, spec task.Spec, assembled ContextPackage) (plan.StepSpec, error)
+}
+
+// TargetResolver discovers concrete execution targets for transport-neutral
+// multi-target program nodes such as fanout_all.
+type TargetResolver interface {
+	ResolveTargets(ctx context.Context, state session.State, spec task.Record, program execution.Program, node execution.ProgramNode) ([]execution.Target, error)
+}
+
+// AttachmentMaterializeRequest describes a transport-neutral attachment
+// materialization request for program input bindings.
+type AttachmentMaterializeRequest struct {
+	SessionID string                    `json:"session_id,omitempty"`
+	Step      plan.StepSpec             `json:"step"`
+	Input     execution.AttachmentInput `json:"input"`
+	Artifact  *execution.Artifact       `json:"artifact,omitempty"`
+}
+
+// AttachmentMaterializer turns typed attachment inputs into concrete runtime
+// values such as temp-file paths.
+type AttachmentMaterializer interface {
+	Materialize(ctx context.Context, request AttachmentMaterializeRequest) (any, error)
 }
 
 // ToolInvoker executes a tool action.

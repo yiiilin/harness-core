@@ -27,21 +27,25 @@ const (
 )
 
 type BlockedRuntime struct {
-	BlockedRuntimeID string               `json:"blocked_runtime_id"`
-	Kind             BlockedRuntimeKind   `json:"kind"`
-	Status           BlockedRuntimeStatus `json:"status"`
-	WaitingFor       string               `json:"waiting_for"`
-	SessionID        string               `json:"session_id"`
-	TaskID           string               `json:"task_id,omitempty"`
-	StepID           string               `json:"step_id,omitempty"`
-	ApprovalID       string               `json:"approval_id,omitempty"`
-	AttemptID        string               `json:"attempt_id,omitempty"`
-	CycleID          string               `json:"cycle_id,omitempty"`
-	Step             plan.StepSpec        `json:"step"`
-	Approval         approval.Record      `json:"approval"`
-	RuntimeHandles   []RuntimeHandle      `json:"runtime_handles,omitempty"`
-	RequestedAt      int64                `json:"requested_at"`
-	UpdatedAt        int64                `json:"updated_at,omitempty"`
+	BlockedRuntimeID string                  `json:"blocked_runtime_id"`
+	Kind             BlockedRuntimeKind      `json:"kind"`
+	Status           BlockedRuntimeStatus    `json:"status"`
+	WaitingFor       string                  `json:"waiting_for"`
+	SessionID        string                  `json:"session_id"`
+	TaskID           string                  `json:"task_id,omitempty"`
+	StepID           string                  `json:"step_id,omitempty"`
+	ActionID         string                  `json:"action_id,omitempty"`
+	ApprovalID       string                  `json:"approval_id,omitempty"`
+	AttemptID        string                  `json:"attempt_id,omitempty"`
+	CycleID          string                  `json:"cycle_id,omitempty"`
+	Target           TargetRef               `json:"target,omitempty"`
+	Condition        BlockedRuntimeCondition `json:"condition,omitempty"`
+	Metadata         map[string]any          `json:"metadata,omitempty"`
+	Step             plan.StepSpec           `json:"step"`
+	Approval         approval.Record         `json:"approval"`
+	RuntimeHandles   []RuntimeHandle         `json:"runtime_handles,omitempty"`
+	RequestedAt      int64                   `json:"requested_at"`
+	UpdatedAt        int64                   `json:"updated_at,omitempty"`
 }
 
 type BlockedRuntimeConditionKind string

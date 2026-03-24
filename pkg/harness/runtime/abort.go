@@ -52,6 +52,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	aborted.ExecutionState = session.ExecutionIdle
 	aborted.InFlightStepID = ""
 	aborted.PendingApprovalID = ""
+	aborted = setCurrentBlockedRuntime(aborted, "")
 	aborted.LeaseID = ""
 	aborted.LeaseClaimedAt = 0
 	aborted.LeaseExpiresAt = 0
@@ -87,13 +88,19 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	}
 
 	var updatedTask *task.Record
-	persist := func(sessStore session.Store, taskStore task.Store, planStore plan.Store, approvalStore approval.Store, attemptStore execution.AttemptStore, handleStore execution.RuntimeHandleStore) error {
+	persist := func(sessStore session.Store, taskStore task.Store, planStore plan.Store, approvalStore approval.Store, blockedRuntimeStore execution.BlockedRuntimeStore, attemptStore execution.AttemptStore, handleStore execution.RuntimeHandleStore) error {
 		if current.PendingApprovalID != "" {
 			approvalEvents, err := abortPendingApprovalInStore(approvalStore, planStore, attemptStore, current.SessionID, current.PendingApprovalID, now)
 			if err != nil {
 				return err
 			}
 			events = append(events, approvalEvents...)
+		} else if blockedRuntimeID := currentBlockedRuntimeID(current); blockedRuntimeID != "" {
+			blockedRuntimeEvents, err := abortCurrentBlockedRuntimeInStore(blockedRuntimeStore, current.SessionID, blockedRuntimeID, reason, now)
+			if err != nil {
+				return err
+			}
+			events = append(events, blockedRuntimeEvents...)
 		} else {
 			if err := abortActiveStepInLatestPlanStore(planStore, current.SessionID, currentPlanID, stepID, now); err != nil {
 				return err
@@ -132,7 +139,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			if err := persist(repoSet.Sessions, repoSet.Tasks, repoSet.Plans, repoSet.Approvals, repoSet.Attempts, repoSet.RuntimeHandles); err != nil {
+			if err := persist(repoSet.Sessions, repoSet.Tasks, repoSet.Plans, repoSet.Approvals, repoSet.BlockedRuntimes, repoSet.Attempts, repoSet.RuntimeHandles); err != nil {
 				return err
 			}
 			return s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), events)
@@ -146,6 +153,8 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	var (
 		originalApproval    approval.Record
 		hadOriginalApproval bool
+		originalBlocked     execution.BlockedRuntimeRecord
+		hadOriginalBlocked  bool
 		originalAttempt     execution.Attempt
 		hadOriginalAttempt  bool
 		originalPlanStep    plan.StepSpec
@@ -173,6 +182,13 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		}
 		originalPlanStep = cloneStepSpec(originalApproval.Step)
 		hadOriginalPlanStep = originalPlanStep.StepID != ""
+	} else if blockedRuntimeID := currentBlockedRuntimeID(current); blockedRuntimeID != "" {
+		originalBlocked, err = blockedRuntimeRecordOrErr(s.BlockedRuntimes, blockedRuntimeID)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		originalBlocked = cloneBlockedRuntimeRecord(originalBlocked)
+		hadOriginalBlocked = true
 	} else {
 		originalPlanStep, hadOriginalPlanStep, err = latestPlanStepByID(s.Plans, current.SessionID, currentPlanID, stepID)
 		if err != nil {
@@ -192,6 +208,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	}
 
 	approvalChanged := false
+	blockedChanged := false
 	attemptChanged := false
 	planChanged := false
 	taskChanged := false
@@ -205,6 +222,13 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		attemptChanged = hadOriginalAttempt
 		planChanged = hadOriginalPlanStep
 		events = append(events, approvalEvents...)
+	} else if blockedRuntimeID := currentBlockedRuntimeID(current); blockedRuntimeID != "" {
+		blockedRuntimeEvents, err := abortCurrentBlockedRuntimeInStore(s.BlockedRuntimes, current.SessionID, blockedRuntimeID, reason, now)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		blockedChanged = hadOriginalBlocked
+		events = append(events, blockedRuntimeEvents...)
 	} else {
 		if err := abortActiveStepInLatestPlanStore(s.Plans, current.SessionID, currentPlanID, stepID, now); err != nil {
 			return AbortOutput{}, err
@@ -214,7 +238,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 
 	taskRec, err := updateTaskForTerminalInStore(s.Tasks, aborted)
 	if err != nil {
-		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalBlocked, hadOriginalBlocked && blockedChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
 		return AbortOutput{}, joinRollbackError(err, rollbackErr)
 	}
 	updatedTask = taskRec
@@ -236,7 +260,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 
 	handles, err := reconcileActiveRuntimeHandlesInStore(s.RuntimeHandles, current.SessionID, "session aborted", now)
 	if err != nil {
-		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalBlocked, hadOriginalBlocked && blockedChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
 		return AbortOutput{}, joinRollbackError(err, rollbackErr)
 	}
 	if len(handles) > 0 {
@@ -245,7 +269,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	}
 
 	if err := s.Sessions.Update(aborted); err != nil {
-		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalBlocked, hadOriginalBlocked && blockedChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
 		return AbortOutput{}, joinRollbackError(err, rollbackErr)
 	}
 	s.emitEventsBestEffortWithSink(ctx, s.EventSink, events)
@@ -253,7 +277,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 	return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 }
 
-func rollbackNoRunnerAbortState(s *Service, sessionID string, originalApproval approval.Record, restoreApproval bool, originalAttempt execution.Attempt, restoreAttempt bool, originalPlanStep plan.StepSpec, restorePlan bool, originalTask task.Record, restoreTask bool, originalHandles []execution.RuntimeHandle, restoreHandles bool) error {
+func rollbackNoRunnerAbortState(s *Service, sessionID string, originalApproval approval.Record, restoreApproval bool, originalBlocked execution.BlockedRuntimeRecord, restoreBlocked bool, originalAttempt execution.Attempt, restoreAttempt bool, originalPlanStep plan.StepSpec, restorePlan bool, originalTask task.Record, restoreTask bool, originalHandles []execution.RuntimeHandle, restoreHandles bool) error {
 	rollbackErr := error(nil)
 	if restoreHandles {
 		rollbackErr = restoreRuntimeHandles(s.RuntimeHandles, originalHandles)
@@ -267,10 +291,39 @@ func rollbackNoRunnerAbortState(s *Service, sessionID string, originalApproval a
 	if restoreAttempt {
 		rollbackErr = joinRollbackError(rollbackErr, restoreAttemptRecord(s.Attempts, originalAttempt))
 	}
+	if restoreBlocked {
+		rollbackErr = joinRollbackError(rollbackErr, restoreBlockedRuntimeRecord(s.BlockedRuntimes, originalBlocked))
+	}
 	if restoreApproval {
 		rollbackErr = joinRollbackError(rollbackErr, restoreApprovalRecord(s.Approvals, originalApproval))
 	}
 	return rollbackErr
+}
+
+func abortCurrentBlockedRuntimeInStore(store execution.BlockedRuntimeStore, sessionID, blockedRuntimeID, reason string, now int64) ([]audit.Event, error) {
+	rec, err := blockedRuntimeRecordOrErr(store, blockedRuntimeID)
+	if err != nil {
+		return nil, err
+	}
+	if rec.SessionID != "" && rec.SessionID != sessionID {
+		return nil, execution.ErrBlockedRuntimeNotFound
+	}
+	if rec.Status == execution.BlockedRuntimeAborted {
+		return nil, nil
+	}
+	rec.Status = execution.BlockedRuntimeAborted
+	rec.UpdatedAt = now
+	rec.ResolvedAt = now
+	rec.Metadata = mergeBlockedRuntimeTerminalMetadata(rec.Metadata, reason, nil, execution.BlockedRuntimeAborted)
+	if err := store.Update(rec); err != nil {
+		return nil, err
+	}
+	return []audit.Event{
+		blockedRuntimeAuditEvent(now, audit.EventBlockedRuntimeAborted, rec, rec.TaskID, map[string]any{
+			"status": string(rec.Status),
+			"reason": reason,
+		}),
+	}, nil
 }
 
 func latestPlanStepByID(store plan.Store, sessionID, planID, stepID string) (plan.StepSpec, bool, error) {

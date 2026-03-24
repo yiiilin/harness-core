@@ -36,6 +36,8 @@ Examples:
 - `ContextAssembler`
 - `Compactor`
 - `Planner`
+- `TargetResolver`
+- `AttachmentMaterializer`
 - `CapabilityResolver`
 - `EventSink`
 - metrics hook
@@ -153,6 +155,7 @@ without polluting `harness-core` with shell-specific policy logic.
 The same pattern is used by `examples/platform-reference`:
 
 - the kernel owns session claim / lease and runtime-handle lifecycle
+- the kernel may own transport-neutral target discovery and attachment materialization hooks
 - the shell module owns PTY start/read/write/close/attach/detach behavior plus PTY-specific verifiers
 - the platform layer reconciles PTY shutdown back into `CloseRuntimeHandle(...)`
 

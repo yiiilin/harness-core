@@ -35,24 +35,24 @@ These terms do **not** imply product semantics such as:
 | --- | --- | --- |
 | Single-target step execution | Supported | Current kernel baseline: `StepSpec -> action -> optional verify`. |
 | Durable approval pause/resume | Supported | Approval-backed blocked state is durable and restart-safe. |
-| Approval-backed blocked-runtime lookup/projection | Supported | Public reads exist for `session_id` / `approval_id` lookup and blocked-runtime listing. This is the current subset, not a generic blocking engine. |
-| Execution target public contracts | Partial | Typed execution-target contracts are public and the runtime now consumes explicit declared targets for minimal program fan-out. Generalized target discovery and broader multi-target step semantics remain unimplemented. |
-| Attachment / artifact input public contracts | Supported as model layer | Typed attachment-input contracts are public, but the runtime does not yet consume them as kernel-native input semantics. |
-| Output / artifact / attachment reference contracts | Partial | Typed refs are public and the runtime now resolves structured/text/bytes output refs plus artifact refs for native program execution. Broader attachment materialization and generalized dataflow remain unimplemented. |
+| Approval-backed blocked-runtime lookup/projection | Supported | Public reads exist for `session_id` / `approval_id` lookup, blocked-runtime listing, and blocked-runtime projection. |
+| Execution target public contracts | Partial | Typed execution-target contracts are public and the runtime now consumes explicit declared targets plus resolver-backed `fanout_all` targets for native program fan-out. Broader multi-target step semantics remain unimplemented. |
+| Attachment / artifact input public contracts | Partial | Typed attachment-input contracts are public and the runtime now consumes inline text/bytes plus artifact-ref temp-file materialization for native program execution. Broader attachment lifecycle semantics remain unimplemented. |
+| Output / artifact / attachment reference contracts | Partial | Typed refs are public and the runtime now resolves structured/text/bytes output refs, artifact refs, and temp-file attachment materialization for native program execution. Broader generalized dataflow remains unimplemented. |
 | Preplanned execution-program / tool-graph contracts | Supported | Typed program/node/input-binding contracts are public and the runtime now exposes minimal single-target program execution entry points. |
-| Target-slice / richer blocked-runtime projection contracts | Partial | Typed projection contracts are public; target slices are runtime-backed, and approval-backed blocked-runtime projections are now populated through public projection reads plus replay. Generic blocked-runtime progression remains unimplemented. |
-| Generic blocked-runtime contract types | Supported as model layer | Typed durable blocked-runtime record/condition contracts are public, but runtime APIs still expose only the approval-backed subset. |
+| Target-slice / richer blocked-runtime projection contracts | Partial | Typed projection contracts are public; target slices are runtime-backed, and blocked-runtime projections are now populated for both approval-backed and generic current blocked runtimes. Broader multi-target scheduler semantics remain unimplemented. |
+| Generic blocked-runtime contract types | Supported | Typed durable blocked-runtime record/condition contracts are public and now back a generic blocked-runtime lifecycle API. |
 | Durable interactive runtime handles | Partial | Runtime handles, typed interactive projections, and interactive-state updates are public now. Actual reopen/view/write/close backends remain embedder or module concerns. |
 | PTY backend replacement | Supported in companion module | `modules/shell` exposes `PTYBackend` and `PTYInspector`; this is companion-module surface, not kernel core. |
 | Replay/debug execution cycles | Supported | `pkg/harness/replay` projects execution cycles plus audit events. |
 | Capability unsupported reason codes | Supported | Public capability matching can return stable unsupported reason codes. |
-| Native multi-target fan-out scheduler | Partial | Explicit program fan-out across declared targets is supported through native program execution. Explicit `on_partial_failure=continue`, per-target retries, and aggregate result summaries are now supported for this path. `fanout_all` discovery, concurrency controls, and broader multi-target step execution remain unimplemented. |
-| Native preplanned non-shell tool graph | Partial | `CreatePlanFromProgram(...)`, `RunProgram(...)`, `ListAggregateResults(...)`, and `execution.AttachProgram(...)` execute dependency-ordered programs with explicit target fan-out, per-target retry/continue semantics, structured/artifact dataflow, and aggregate result derivation. Broader attachment bindings and generalized graph semantics remain unimplemented. |
-| Stable step-to-step output / artifact refs | Partial | Structured/text/bytes output refs and artifact refs now resolve natively for program execution. Generalized attachment/dataflow semantics outside that path remain unimplemented. |
-| First-class blocked runtime beyond approval-shaped pause | Planned vNext | Not implemented yet. |
+| Native multi-target fan-out scheduler | Partial | Explicit program fan-out across declared targets and resolver-backed `fanout_all` targets is supported through native program execution. Explicit `on_partial_failure=continue`, per-target retries, and aggregate result summaries are now supported for this path. Concurrency controls and broader multi-target step execution remain unimplemented. |
+| Native preplanned non-shell tool graph | Partial | `CreatePlanFromProgram(...)`, `RunProgram(...)`, `ListAggregateResults(...)`, and `execution.AttachProgram(...)` execute dependency-ordered programs with explicit or resolver-backed target fan-out, per-target retry/continue semantics, structured/artifact dataflow, and temp-file attachment materialization. Broader graph semantics remain unimplemented. |
+| Stable step-to-step output / artifact refs | Partial | Structured/text/bytes output refs, artifact refs, and temp-file attachment materialization now resolve natively for program execution. Generalized attachment/dataflow semantics outside that path remain unimplemented. |
+| First-class blocked runtime beyond approval-shaped pause | Supported | The runtime now exposes generic blocked-runtime create/respond/resume/abort APIs plus durable record lookup by `blocked_runtime_id`. Approval-backed policy pause/resume remains a dedicated path. |
 | Unified verification across graph / fan-out / interactive | Partial | `ExecutionProgramNode.VerifyScope` now supports step/target/aggregate verification across native program execution. Interactive-specific verification scope remains unimplemented. |
 | Kernel-native attachment / artifact input model | Planned vNext | Not implemented yet. |
-| Target-sliced replay / projection views | Partial | Replay now groups target-scoped facts into target slices, derives interactive runtimes from runtime handles, and includes approval-backed blocked-runtime projections. Generic blocked-runtime progression remains unimplemented. |
+| Target-sliced replay / projection views | Partial | Replay now groups target-scoped facts into target slices, derives interactive runtimes from runtime handles, and includes blocked-runtime projections. True concurrent multi-target scheduling remains unimplemented. |
 
 ## Public Capability Match Surface
 
@@ -77,22 +77,32 @@ Current matching semantics:
 - feature-level reasons are requirement-driven and metadata-driven
 - current modules do not automatically claim support for vNext features unless they advertise the corresponding support metadata explicitly
 
-Current blocked-runtime subset semantics:
+Current blocked-runtime semantics:
 
-- lookup is restart-safe by `session_id` and `approval_id`
-- listing is stably ordered by `requested_at` ascending with `blocked_runtime_id` tie-break
-- richer approval-backed projection reads are now available through:
+- approval-backed blocked runtimes remain restart-safe by `session_id` and `approval_id`
+- generic blocked runtimes are durable by `blocked_runtime_id`
+- current blocked-runtime listing is stably ordered by `requested_at` ascending with `blocked_runtime_id` tie-break
+- public generic lifecycle APIs now exist:
+  - `CreateBlockedRuntime(...)`
+  - `RespondBlockedRuntime(...)`
+  - `ResumeBlockedRuntime(...)`
+  - `AbortBlockedRuntime(...)`
+  - `GetBlockedRuntimeRecord(...)`
+  - `ListBlockedRuntimeRecords(...)`
+- richer current blocked-runtime projection reads are now available through:
   - `GetBlockedRuntimeProjection(...)`
   - `GetBlockedRuntimeProjectionByApproval(...)`
   - `ListBlockedRuntimeProjections()`
   - `pkg/harness/replay.SessionProjection.BlockedRuntimes`
-- this is a projection over approval-backed blocked state, not a new generic blocked-runtime state machine
+- generic blocked runtimes hold the session in a non-runnable blocked state until resume or abort clears it
+- approval-backed policy pause/resume remains its own dedicated governance path
 
 Current output/artifact/attachment reference semantics:
 
 - `ExecutionArtifactRef` and `ExecutionAttachmentRef` are stable typed references for persisted artifacts and typed inputs
 - `ExecutionOutputRef` can point at prior structured/text/bytes output plus artifact/attachment-backed values
 - the runtime now resolves structured/text/bytes output refs and artifact refs for native program execution
+- `AttachmentInput.Materialize=temp_file` now materializes inline text/bytes and artifact-ref payloads for native program execution
 - broader attachment-backed materialization semantics remain planned vNext work
 
 Current preplanned program/tool-graph semantics:
@@ -103,8 +113,9 @@ Current preplanned program/tool-graph semantics:
 - the runtime now exposes `CreatePlanFromProgram(...)`, `RunProgram(...)`, and `execution.AttachProgram(step, program)` for plan-embedded compilation
 - current native execution is intentionally minimal:
   - explicit target fan-out from declared `Targeting.Targets`
+  - resolver-backed `TargetSelectionFanoutAll` target discovery through `runtime.TargetResolver`
   - dependency-ordered execution through the existing plan/session loop
-  - literal bindings plus structured/text/bytes output refs and artifact refs
+  - literal bindings plus structured/text/bytes output refs, artifact refs, and temp-file attachment materialization
   - per-target retries through `ProgramNode.OnFail`
   - partial-failure continuation through `TargetSelection.OnPartialFailure=continue`
   - aggregate result summaries through `SessionRunOutput.Aggregates` and `ListAggregateResults(...)`
@@ -112,7 +123,7 @@ Current preplanned program/tool-graph semantics:
     - `step` for ordinary single-step execution
     - `target` for per-target fan-out verification
     - `aggregate` for explicit fan-out summary verification when the group resolves
-- broader attachment bindings, interactive verification scopes, and broader multi-target policy semantics remain planned vNext work
+- broader attachment lifecycle, interactive verification scopes, and broader multi-target policy semantics remain planned vNext work
 
 Current target-slice / blocked-runtime projection semantics:
 
@@ -120,8 +131,7 @@ Current target-slice / blocked-runtime projection semantics:
 - `ExecutionBlockedRuntimeProjection` and `ExecutionBlockedRuntimeWait` are the public value shapes for richer blocked-runtime views
 - `pkg/harness/replay.SessionProjection` and `pkg/harness/replay.ExecutionCycleProjection` populate target slices when execution facts carry stable target metadata
 - `pkg/harness/replay.ExecutionCycleProjection` now also derives `InteractiveRuntimes` from persisted runtime handles
-- approval-backed blocked-runtime projection fields are now populated through the public projection reads and replay helper
-- broader generic blocked-runtime progression facts still do not exist
+- blocked-runtime projection fields are now populated through the public projection reads and replay helper for both approval-backed and generic current blocked runtimes
 
 Current interactive runtime semantics:
 
@@ -133,6 +143,7 @@ Current interactive runtime semantics:
   - `UpdateClaimedInteractiveRuntime(...)`
 - this lets embedders persist reopen/view/write/close projection state in a transport-neutral way
 - actual interactive control APIs remain outside the kernel and stay in companion modules or embedding layers
+- this boundary is intentional: the kernel owns runtime-handle state and replay facts, while PTY or other interactive I/O backends remain module/embedder concerns
 
 Current native fan-out semantics:
 
@@ -146,15 +157,16 @@ Current native fan-out semantics:
   - each target step still respects retry budgets independently
   - exhausted failed targets no longer block the rest of the explicit fan-out group
   - the logical fan-out group still fails when every target exhausts as failed
-- `TargetSelectionFanoutAll` remains unsupported because target discovery strategy stays outside the kernel
+- `TargetSelectionFanoutAll` now resolves through the embedder-supplied `runtime.TargetResolver`
+- the kernel still does not own target discovery strategy itself; the embedder provides that policy through the resolver hook
 - aggregate verification is now supported for explicit program fan-out groups through `ProgramNode.VerifyScope=aggregate`
 
 Current generic blocked-runtime contract semantics:
 
-- `ExecutionBlockedRuntimeRecord` is the public durable record shape for future non-approval-only blocked-runtime persistence
+- `ExecutionBlockedRuntimeRecord` is the public durable record shape for non-approval generic blocked-runtime persistence
 - `ExecutionBlockedRuntimeSubject` identifies the waiting step/action/target locus without assuming approval-specific fields
 - `ExecutionBlockedRuntimeCondition` and `ExecutionBlockedRuntimeConditionKind` describe the external condition in a transport-neutral way
-- current runtime APIs still expose only the approval-backed `BlockedRuntime` subset; these generic types are not yet populated by runtime writes
+- current runtime APIs now persist and return these generic records, while current blocked-runtime reads project them into the richer `BlockedRuntime` view
 
 ## Kernel Boundary For These Requests
 

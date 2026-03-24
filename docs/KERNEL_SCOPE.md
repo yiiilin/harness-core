@@ -57,6 +57,8 @@ The following concerns belong in the kernel:
 - durable execution facts such as attempts, actions, verifications, artifacts, and runtime handles
 - recovery semantics and restart-safe state reconstruction
 - capability resolution and replay-stable capability snapshots
+- transport-neutral target resolution hooks for executable target fan-out
+- transport-neutral attachment materialization hooks when runtime semantics depend on them
 - context assembly / compaction hooks when they affect runtime behavior globally
 - transport-neutral control-plane primitives required for correct execution
 - typed extension points that change runtime semantics globally
@@ -185,6 +187,8 @@ These are valid kernel additions if implemented cleanly:
 - abort / cancel semantics for execution control
 - runtime handle lifecycle management
 - plan-level capability freeze for replay stability
+- target-resolution hooks that let embedders supply concrete execution targets without product semantics
+- attachment-materialization hooks that keep input semantics transport-neutral
 - richer event / metrics exporter hooks that remain vendor-neutral
 
 ---
