@@ -159,15 +159,7 @@ func WithDefaults(opts Options) Options {
 	if opts.Clock == nil {
 		opts.Clock = systemClock{}
 	}
-	if opts.EventSink == nil {
-		opts.EventSink = AuditStoreSink{Store: opts.Audit}
-	} else if opts.Audit != nil {
-		if aware, ok := opts.EventSink.(auditStoreAwareSink); ok {
-			opts.EventSink = aware.WithAuditStore(opts.Audit)
-		} else {
-			opts.EventSink = FanoutEventSink{Sinks: []EventSink{opts.EventSink, AuditStoreSink{Store: opts.Audit}}}
-		}
-	}
+	opts.EventSink = bindEventSinkToAuditStore(opts.EventSink, opts.Audit)
 	if opts.MetricsRecorder == nil {
 		opts.MetricsRecorder = observability.NewMemoryRecorder()
 	}

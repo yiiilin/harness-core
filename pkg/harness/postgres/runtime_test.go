@@ -289,6 +289,34 @@ func TestBuildOptionsPreservesCallerEventSink(t *testing.T) {
 	}
 }
 
+func TestBuildOptionsPreservesCallerFanoutEventSinkAuditDurability(t *testing.T) {
+	pg := postgrestest.Start(t)
+	db, err := hpostgres.OpenDB(context.Background(), pg.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	custom := &recordingEventSink{}
+	durable := hpostgres.BuildOptions(db, hruntime.Options{
+		EventSink: hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{custom}},
+	})
+
+	fanout, ok := durable.EventSink.(hruntime.FanoutEventSink)
+	if !ok {
+		t.Fatalf("expected caller fanout sink to remain a fanout, got %T", durable.EventSink)
+	}
+	if len(fanout.Sinks) != 2 {
+		t.Fatalf("expected fanout to include custom sink and audit sink, got %#v", fanout.Sinks)
+	}
+	if fanout.Sinks[0] != custom {
+		t.Fatalf("expected first sink to stay the caller child sink, got %#v", fanout.Sinks)
+	}
+	if _, ok := fanout.Sinks[1].(hruntime.AuditStoreSink); !ok {
+		t.Fatalf("expected appended audit sink for caller fanout, got %T", fanout.Sinks[1])
+	}
+}
+
 func TestOpenServiceProvidesDurableService(t *testing.T) {
 	pg := postgrestest.Start(t)
 	var opts hruntime.Options

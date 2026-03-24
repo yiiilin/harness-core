@@ -25,6 +25,7 @@ This example is intentionally outside the kernel and demonstrates platform-side 
   - `pty_stream_contains`
 - Runtime-handle lifecycle reconciliation:
   - The platform explicitly closes PTY process state via PTY manager.
+  - It persists typed interactive runtime observation through `UpdateInteractiveRuntime`.
   - Then it calls `CloseRuntimeHandle` in harness runtime to keep persisted handle state aligned with real process lifecycle.
 
 ## Run
@@ -56,6 +57,7 @@ The important behaviors are:
 - verifier checks succeed against the live PTY session
 - detach stops the bridged output while the PTY remains alive
 - the runtime handle is explicitly closed after the PTY shuts down
+- the typed interactive runtime projection records the final closed observation
 
 ## Why `CloseRuntimeHandle` Instead of `InvalidateRuntimeHandle`
 

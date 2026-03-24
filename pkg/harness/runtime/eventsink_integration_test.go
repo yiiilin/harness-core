@@ -180,6 +180,109 @@ func TestRunStepBestEffortEventEmissionWithoutRunnerStillPersistsAuditSequence(t
 	)
 }
 
+func TestWithEventSinkPreservesAuditDurabilityWithoutRunner(t *testing.T) {
+	rt, sess, step := newHappyRuntime(t)
+	rt.Runner = nil
+	sink := &recordingEventSink{}
+	rt.WithEventSink(sink)
+
+	if _, err := rt.RunStep(context.Background(), sess.SessionID, step); err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if len(sink.events) == 0 {
+		t.Fatalf("expected replacement sink to receive runtime events")
+	}
+
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	assertOrderedEventTypes(t, events,
+		audit.EventStepStarted,
+		audit.EventToolCalled,
+		audit.EventToolCompleted,
+		audit.EventVerifyCompleted,
+		audit.EventStateChanged,
+	)
+}
+
+func TestWithEventSinkPreservesAuditDurabilityWithPartialRunnerRepositories(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.echo", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &countingHandler{})
+
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	audits := audit.NewMemoryStore()
+	sink := &recordingEventSink{}
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Audit:    audits,
+		Tools:    tools,
+		Runner: sinkRunner{repos: persistence.RepositorySet{
+			Sessions: sessions,
+			Tasks:    tasks,
+			Plans:    plans,
+		}},
+		Policy: permission.DefaultEvaluator{},
+	}).WithEventSink(sink)
+
+	sess := mustCreateSession(t, rt, "partial runner sink", "replacement sink must keep service audit durability")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run a step through a partial runner"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "single step", []plan.StepSpec{{
+		StepID: "step_partial_runner_sink",
+		Title:  "emit through replacement sink",
+		Action: action.Spec{ToolName: "demo.echo", Args: map[string]any{"message": "hello"}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	if _, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0]); err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if len(sink.events) == 0 {
+		t.Fatalf("expected replacement sink to receive tx-path runtime events")
+	}
+
+	events := mustListAuditEvents(t, rt, attached.SessionID)
+	assertOrderedEventTypes(t, events,
+		audit.EventStepStarted,
+		audit.EventToolCalled,
+		audit.EventToolCompleted,
+		audit.EventVerifyCompleted,
+		audit.EventStateChanged,
+	)
+}
+
+func TestWithEventSinkPreservesAuditDurabilityForFanoutWithoutAuditChild(t *testing.T) {
+	rt, sess, step := newHappyRuntime(t)
+	rt.Runner = nil
+	sink := &recordingEventSink{}
+	rt.WithEventSink(hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{sink}})
+
+	if _, err := rt.RunStep(context.Background(), sess.SessionID, step); err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if len(sink.events) == 0 {
+		t.Fatalf("expected fanout child sink to receive runtime events")
+	}
+
+	events := mustListAuditEvents(t, rt, sess.SessionID)
+	assertOrderedEventTypes(t, events,
+		audit.EventStepStarted,
+		audit.EventToolCalled,
+		audit.EventToolCompleted,
+		audit.EventVerifyCompleted,
+		audit.EventStateChanged,
+	)
+}
+
 func TestRunStepPersistsExecutionFactsWithPartialRunnerRepositories(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "demo.handle", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, runtimeHandleHandler{})

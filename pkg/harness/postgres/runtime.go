@@ -224,15 +224,7 @@ func BuildOptions(db *sql.DB, opts hruntime.Options) hruntime.Options {
 			},
 		},
 	}
-	if opts.EventSink == nil {
-		opts.EventSink = hruntime.AuditStoreSink{Store: opts.Audit}
-	} else if aware, ok := opts.EventSink.(interface {
-		WithAuditStore(store audit.Store) hruntime.EventSink
-	}); ok {
-		opts.EventSink = aware.WithAuditStore(opts.Audit)
-	} else if opts.Audit != nil {
-		opts.EventSink = hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{opts.EventSink, hruntime.AuditStoreSink{Store: opts.Audit}}}
-	}
+	opts.EventSink = bindEventSink(opts.EventSink, opts.Audit)
 	opts.StorageMode = "postgres"
 	return opts
 }
@@ -251,6 +243,24 @@ func OpenServiceWithConfig(ctx context.Context, cfg Config, opts hruntime.Option
 		return nil, nil, err
 	}
 	return hruntime.New(BuildOptions(db, opts)), db, nil
+}
+
+func bindEventSink(sink hruntime.EventSink, store audit.Store) hruntime.EventSink {
+	if sink == nil {
+		if store == nil {
+			return nil
+		}
+		return hruntime.AuditStoreSink{Store: store}
+	}
+	if store == nil {
+		return sink
+	}
+	if aware, ok := sink.(interface {
+		WithAuditStore(store audit.Store) hruntime.EventSink
+	}); ok {
+		return aware.WithAuditStore(store)
+	}
+	return hruntime.FanoutEventSink{Sinks: []hruntime.EventSink{sink, hruntime.AuditStoreSink{Store: store}}}
 }
 
 func applyMigrationsInStore(ctx context.Context, db SchemaApplier, lock bool) error {

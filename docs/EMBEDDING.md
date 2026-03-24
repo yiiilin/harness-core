@@ -64,6 +64,9 @@ Important boundary:
 - the CLI env loader in `internal/config` is only reference-layer wiring
 - adapter config should stay transport-only and should not absorb DSN/schema/storage settings
 
+For broader execution-model requests such as execution targets, blocked runtimes beyond approval-only pause, and native tool-graph/dataflow semantics, see `docs/EMBEDDER_VNEXT.md`.
+That document distinguishes what is supported today from what remains planned vNext work.
+
 ## Pattern 1: LLM-Backed Planner
 
 The kernel intentionally does not include provider-specific model clients.
@@ -126,6 +129,19 @@ Recommended flow:
 Kernel owns approval state machine correctness.
 Your platform owns human workflow, notification, and UI experience.
 
+Current blocked-runtime read surface for this approval-backed model:
+
+- `GetBlockedRuntime(sessionID)`
+- `GetBlockedRuntimeByApproval(approvalID)`
+- `ListBlockedRuntimes()`
+
+Use these when your platform needs a restart-safe read model for currently blocked approval work without scraping session + approval + attempt records manually.
+Current ordering/lookup contract:
+
+- `ListBlockedRuntimes()` is sorted by `requested_at` ascending, tie-break `blocked_runtime_id`
+- unknown approval ids still return `approval.ErrApprovalNotFound`
+- known approval ids that are no longer the session's current pending blocked runtime return `execution.ErrBlockedRuntimeNotFound`
+
 ## Pattern 4: Remote PTY Executor
 
 Use shell module options with explicit PTY backend:
@@ -179,11 +195,44 @@ Use an async platform API style:
 Projection path:
 - read kernel facts and cycles from runtime APIs
 - optionally use `pkg/harness/replay` to build ordered cycle/event views
+- use blocked-runtime projection reads and interactive-runtime reads when you need a transport-neutral current-state view
 - present product-specific JSON/UI models outside kernel packages
 
 If you reuse a repository-shipped adapter:
 - pass adapter-owned config types directly, for example `websocket.Config`
 - keep env loading, durable bootstrap choice, and product-specific wiring in your platform layer or CLI wrapper
+
+## Pattern 7: Preplanned Program Execution
+
+For a transport-neutral preplanned tool graph, use the public program contracts plus the new runtime entry points:
+
+```go
+created, err := rt.CreatePlanFromProgram(sessionID, "external-program", program)
+out, err := rt.RunProgram(ctx, sessionID, program)
+aggregates, err := rt.ListAggregateResults(sessionID)
+
+step := execution.AttachProgram(plan.StepSpec{
+    StepID: "step_program",
+    Title:  "external program",
+}, program)
+created, err := rt.CreatePlan(sessionID, "external-program", []plan.StepSpec{step})
+```
+
+Current semantics are intentionally narrow:
+
+- dependency-ordered execution through the existing durable plan/session loop
+- literal bindings plus structured/text/bytes output refs and artifact refs
+- explicit target fan-out from `ExecutionProgramNode.Targeting.Targets` is supported
+- execution still reuses the existing durable plan/session loop, so approvals, retries, audits, and execution facts remain consistent with normal step execution
+- runtime injects the current target under `ExecutionTargetArgKey` and persists stable target metadata for replay/debug grouping
+- explicit fan-out can now additionally use:
+  - `ExecutionProgramNode.OnFail` for per-target retry policy
+  - `ExecutionTargetSelection.OnPartialFailure=continue` to tolerate partial target failure while still failing when every target exhausts as failed
+  - `RunProgram(...).Aggregates` or `ListAggregateResults(sessionID)` for the current aggregate result view
+  - `ExecutionProgramNode.VerifyScope`
+    - `target` for per-target fan-out verification
+    - `aggregate` for explicit fan-out summary verification when the group resolves
+- target discovery (`fanout_all`), broader attachment bindings/materialization, and richer aggregate replay/projection are not implemented yet
 
 ## Replay and Debug Projection
 
@@ -191,6 +240,8 @@ Prefer this read chain:
 - `ListExecutionCycles(session_id)`
 - `GetExecutionCycle(session_id, cycle_id)` when needed
 - `ListAuditEvents(session_id)`
+- `GetBlockedRuntimeProjection(...)` / `ListBlockedRuntimeProjections()` when you need current approval-backed blocked views
+- `GetInteractiveRuntime(...)` / `ListInteractiveRuntimes(...)` when you need typed interactive current-state projection
 - `pkg/harness/replay` projection helpers for stable ordering and grouping
 
 The audit stream now includes both step-execution and control-plane events.
@@ -201,6 +252,35 @@ Important control-plane examples:
 - `runtime_handle.updated` / `runtime_handle.closed` / `runtime_handle.invalidated`
 
 Do not query internal tables directly from embedding code.
+
+## Current VNext Boundary
+
+Before building against newer embedder terminology, check `docs/EMBEDDER_VNEXT.md`.
+
+Short version:
+
+- `execution target`, `target-scoped action`, and `blocked runtime` are accepted terms
+- typed execution-target contracts are public model-layer surface now
+- typed attachment / artifact input contracts are public model-layer surface now
+- typed output / artifact / attachment reference contracts are public model-layer surface now
+- structured/text/bytes output refs and artifact refs are runtime-backed today for native program execution
+- typed preplanned execution-program / tool-graph contracts are public model-layer surface now
+- typed target-slice / richer blocked-runtime projection contracts are public model-layer surface now
+- typed interactive runtime projection contracts are public model-layer surface now
+- typed generic blocked-runtime durable contracts are public model-layer surface now
+- single-target governed step execution is supported today
+- minimal native preplanned program execution is supported today through `CreatePlanFromProgram(...)` and `RunProgram(...)`
+- explicit multi-target program fan-out is partially supported today through `ExecutionProgramNode.Targeting.Targets`
+- approval-backed blocked runtime is supported today
+- approval-backed blocked-runtime lookup/projection is supported today through:
+  - `GetBlockedRuntime(...)`
+  - `GetBlockedRuntimeByApproval(...)`
+  - `ListBlockedRuntimes()`
+  - `GetBlockedRuntimeProjection(...)`
+  - `GetBlockedRuntimeProjectionByApproval(...)`
+  - `ListBlockedRuntimeProjections()`
+- typed interactive runtime projection/update is supported today through `GetInteractiveRuntime(...)`, `ListInteractiveRuntimes(...)`, and `UpdateInteractiveRuntime(...)`
+- target discovery-based fan-out, broader attachment/dataflow semantics, and richer blocked-runtime models are not implemented yet
 
 ## Boundary Checklist
 

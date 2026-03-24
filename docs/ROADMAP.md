@@ -45,6 +45,9 @@ Resolved during this phase:
 - approval / resume is now a real kernel state machine with durable storage
 - execution facts, capability snapshots, and planner-context compaction hooks now exist in core contracts
 
+Execution-model vNext requests from embedders are now tracked separately in `docs/EMBEDDER_VNEXT.md` and `docs/plans/2026-03-23-embedder-vnext-adaptation-execution.md`.
+Those requests are intentionally split into Wave 1 public-surface work and later kernel-next execution-model work, so the current roadmap does not over-claim native fan-out/tool-graph support before it exists.
+
 ---
 
 ## Recommended execution waves

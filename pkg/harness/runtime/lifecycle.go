@@ -172,6 +172,10 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 	if err != nil {
 		return plan.Spec{}, err
 	}
+	normalizedSteps, err := normalizePlanStepsForStorage(steps)
+	if err != nil {
+		return plan.Spec{}, err
+	}
 
 	var created plan.Spec
 	create := func(planStore plan.Store, sink EventSink) error {
@@ -179,7 +183,7 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 			return err
 		}
 		var err error
-		created, err = planStore.Create(sessionID, changeReason, steps)
+		created, err = planStore.Create(sessionID, changeReason, normalizedSteps)
 		if err != nil {
 			return err
 		}
@@ -202,13 +206,13 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 			}
 			return create(store, s.eventSinkForRepos(repos))
 		})
-		return created, err
+		return annotatePlanIdentity(created), err
 	}
 
 	if err := ensurePlanRevisionBudgetInStore(s.Plans, sessionID, s.LoopBudgets); err != nil {
 		return plan.Spec{}, err
 	}
-	created, err = s.Plans.Create(sessionID, changeReason, steps)
+	created, err = s.Plans.Create(sessionID, changeReason, normalizedSteps)
 	if err != nil {
 		return plan.Spec{}, err
 	}
@@ -218,7 +222,7 @@ func (s *Service) createPlanWithAudit(sessionID, changeReason string, steps []pl
 		"change_reason": created.ChangeReason,
 		"step_count":    len(created.Steps),
 	})})
-	return created, nil
+	return annotatePlanIdentity(created), nil
 }
 
 func (s *Service) listRelatedAuditEvents(sessionID string) ([]audit.Event, error) {

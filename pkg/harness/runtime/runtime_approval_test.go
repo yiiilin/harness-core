@@ -660,6 +660,72 @@ func TestReplyAlwaysDoesNotReuseApprovalAcrossDifferentArgsOrVersion(t *testing.
 	}
 }
 
+func TestApprovalResolutionKeepsWritingToOriginPlanRevisionWhenNewerRevisionExists(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Tools:     tools,
+		Verifiers: verifiers,
+		Audit:     audits,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "approval revision binding", "approval responses must mutate the originating plan revision")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "keep revision-bound approval state"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	first, err := rt.CreatePlan(attached.SessionID, "revision 1", []plan.StepSpec{{
+		StepID: "step_shared",
+		Title:  "revision 1 gated step",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo rev1", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create first plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), attached.SessionID, first.Steps[0])
+	if err != nil {
+		t.Fatalf("run first revision step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+
+	second, err := rt.CreatePlan(attached.SessionID, "revision 2", []plan.StepSpec{{
+		StepID: "step_shared",
+		Title:  "revision 2 replacement step",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo rev2", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create second plan: %v", err)
+	}
+
+	if _, _, err := rt.RespondApproval(initial.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.ReplyReject}); err != nil {
+		t.Fatalf("respond approval reject: %v", err)
+	}
+
+	storedFirst := mustPlanByRevision(t, rt, attached.SessionID, first.Revision)
+	storedSecond := mustPlanByRevision(t, rt, attached.SessionID, second.Revision)
+	if storedFirst.Steps[0].Status != plan.StepFailed {
+		t.Fatalf("expected originating revision to be failed, got %#v", storedFirst)
+	}
+	if storedSecond.Steps[0].Status != plan.StepPending {
+		t.Fatalf("expected newer revision to remain untouched, got %#v", storedSecond)
+	}
+}
+
 func TestRejectApprovalFinalizesBlockedAttempt(t *testing.T) {
 	sessions := session.NewMemoryStore()
 	tasks := task.NewMemoryStore()

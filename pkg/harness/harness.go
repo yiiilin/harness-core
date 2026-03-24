@@ -50,6 +50,10 @@ type ApprovalStatus = approval.Status
 
 type CapabilitySnapshot = capability.Snapshot
 type CapabilityResolution = capability.Resolution
+type CapabilityMatchResult = capability.MatchResult
+type CapabilityUnsupportedReason = capability.UnsupportedReason
+type CapabilityUnsupportedReasonCode = capability.UnsupportedReasonCode
+type CapabilitySupportRequirements = capability.SupportRequirements
 
 type ExecutionAttempt = execution.Attempt
 type ExecutionAttemptStatus = execution.AttemptStatus
@@ -59,7 +63,45 @@ type ExecutionVerificationRecord = execution.VerificationRecord
 type ExecutionVerificationStatus = execution.VerificationStatus
 type ExecutionArtifact = execution.Artifact
 type ExecutionRuntimeHandle = execution.RuntimeHandle
+type ExecutionInteractiveCapabilities = execution.InteractiveCapabilities
+type ExecutionInteractiveSnapshot = execution.InteractiveSnapshot
+type ExecutionInteractiveObservation = execution.InteractiveObservation
+type ExecutionInteractiveOperation = execution.InteractiveOperation
+type ExecutionInteractiveOperationKind = execution.InteractiveOperationKind
+type ExecutionInteractiveRuntime = execution.InteractiveRuntime
 type ExecutionCycle = execution.ExecutionCycle
+type ExecutionBlockedRuntime = execution.BlockedRuntime
+type ExecutionBlockedRuntimeKind = execution.BlockedRuntimeKind
+type ExecutionBlockedRuntimeStatus = execution.BlockedRuntimeStatus
+type ExecutionTarget = execution.Target
+type ExecutionTargetRef = execution.TargetRef
+type ExecutionTargetSelection = execution.TargetSelection
+type ExecutionTargetSelectionMode = execution.TargetSelectionMode
+type ExecutionTargetFailureStrategy = execution.TargetFailureStrategy
+type ExecutionAggregateScope = execution.AggregateScope
+type ExecutionAggregateStatus = execution.AggregateStatus
+type ExecutionAggregateTargetResult = execution.AggregateTargetResult
+type ExecutionAggregateResult = execution.AggregateResult
+type ExecutionAttachmentInput = execution.AttachmentInput
+type ExecutionAttachmentInputKind = execution.AttachmentInputKind
+type ExecutionAttachmentMaterialization = execution.AttachmentMaterialization
+type ExecutionArtifactRef = execution.ArtifactRef
+type ExecutionAttachmentRef = execution.AttachmentRef
+type ExecutionOutputRef = execution.OutputRef
+type ExecutionOutputRefKind = execution.OutputRefKind
+type ExecutionProgram = execution.Program
+type ExecutionProgramNode = execution.ProgramNode
+type ExecutionProgramInputBinding = execution.ProgramInputBinding
+type ExecutionProgramInputBindingKind = execution.ProgramInputBindingKind
+type ExecutionVerificationScope = execution.VerificationScope
+type ExecutionTargetSlice = execution.TargetSlice
+type ExecutionBlockedRuntimeProjection = execution.BlockedRuntimeProjection
+type ExecutionBlockedRuntimeWait = execution.BlockedRuntimeWait
+type ExecutionBlockedRuntimeWaitScope = execution.BlockedRuntimeWaitScope
+type ExecutionBlockedRuntimeRecord = execution.BlockedRuntimeRecord
+type ExecutionBlockedRuntimeSubject = execution.BlockedRuntimeSubject
+type ExecutionBlockedRuntimeCondition = execution.BlockedRuntimeCondition
+type ExecutionBlockedRuntimeConditionKind = execution.BlockedRuntimeConditionKind
 
 type ReplaySessionReader = replay.SessionReader
 type ReplayCycleReader = replay.CycleReader
@@ -93,6 +135,7 @@ type StepRunOutput = hruntime.StepRunOutput
 type SessionRunOutput = hruntime.SessionRunOutput
 type AbortRequest = hruntime.AbortRequest
 type AbortOutput = hruntime.AbortOutput
+type InteractiveRuntimeUpdate = hruntime.InteractiveRuntimeUpdate
 type RuntimeHandleUpdate = hruntime.RuntimeHandleUpdate
 type RuntimeHandleCloseRequest = hruntime.RuntimeHandleCloseRequest
 type RuntimeHandleInvalidateRequest = hruntime.RuntimeHandleInvalidateRequest
@@ -118,6 +161,98 @@ const (
 	CompactionTriggerPlan    = hruntime.CompactionTriggerPlan
 	CompactionTriggerExecute = hruntime.CompactionTriggerExecute
 	CompactionTriggerRecover = hruntime.CompactionTriggerRecover
+
+	CapabilityReasonNotFound            = capability.ReasonCapabilityNotFound
+	CapabilityReasonDisabled            = capability.ReasonCapabilityDisabled
+	CapabilityReasonVersionNotFound     = capability.ReasonCapabilityVersionNotFound
+	CapabilityReasonViewNotFound        = capability.ReasonCapabilityViewNotFound
+	CapabilityReasonViewDrift           = capability.ReasonCapabilityViewDrift
+	CapabilityReasonMultiTargetFanout   = capability.ReasonMultiTargetFanoutUnsupported
+	CapabilityReasonPreplannedToolGraph = capability.ReasonPreplannedToolGraphUnsupported
+	CapabilityReasonInteractiveReopen   = capability.ReasonInteractiveReopenUnsupported
+	CapabilityReasonArtifactInput       = capability.ReasonArtifactInputUnsupported
+
+	ExecutionBlockedRuntimeApproval     = execution.BlockedRuntimeApproval
+	ExecutionBlockedRuntimeConfirmation = execution.BlockedRuntimeConfirmation
+	ExecutionBlockedRuntimeExternal     = execution.BlockedRuntimeExternal
+	ExecutionBlockedRuntimeInteractive  = execution.BlockedRuntimeInteractive
+	ExecutionBlockedRuntimePending      = execution.BlockedRuntimePending
+	ExecutionBlockedRuntimeApproved     = execution.BlockedRuntimeApproved
+	ExecutionBlockedRuntimeRejected     = execution.BlockedRuntimeRejected
+	ExecutionBlockedRuntimeConfirmed    = execution.BlockedRuntimeConfirmed
+	ExecutionBlockedRuntimeResumed      = execution.BlockedRuntimeResumed
+	ExecutionBlockedRuntimeAborted      = execution.BlockedRuntimeAborted
+
+	ExecutionTargetSelectionSingle         = execution.TargetSelectionSingle
+	ExecutionTargetSelectionFanoutExplicit = execution.TargetSelectionFanoutExplicit
+	ExecutionTargetSelectionFanoutAll      = execution.TargetSelectionFanoutAll
+	ExecutionTargetFailureAbort            = execution.TargetFailureAbort
+	ExecutionTargetFailureContinue         = execution.TargetFailureContinue
+	ExecutionAggregateScopeTargetFanout    = execution.AggregateScopeTargetFanout
+	ExecutionAggregateStatusPending        = execution.AggregateStatusPending
+	ExecutionAggregateStatusCompleted      = execution.AggregateStatusCompleted
+	ExecutionAggregateStatusPartialFailed  = execution.AggregateStatusPartialFailed
+	ExecutionAggregateStatusFailed         = execution.AggregateStatusFailed
+	ExecutionTargetArgKey                  = execution.TargetArgKey
+	ExecutionTargetMetadataKeyID           = execution.TargetMetadataKeyID
+	ExecutionTargetMetadataKeyKind         = execution.TargetMetadataKeyKind
+	ExecutionTargetMetadataKeyName         = execution.TargetMetadataKeyName
+	ExecutionTargetMetadataKeyIndex        = execution.TargetMetadataKeyIndex
+	ExecutionTargetMetadataKeyCount        = execution.TargetMetadataKeyCount
+	ExecutionAggregateMetadataKeyID        = execution.AggregateMetadataKeyID
+	ExecutionAggregateMetadataKeyScope     = execution.AggregateMetadataKeyScope
+	ExecutionAggregateMetadataKeyStrategy  = execution.AggregateMetadataKeyStrategy
+	ExecutionAggregateMetadataKeyExpected  = execution.AggregateMetadataKeyExpected
+	ExecutionAggregateMetadataKeyTitle     = execution.AggregateMetadataKeyTitle
+
+	ExecutionInteractiveMetadataKeyEnabled             = execution.InteractiveMetadataKeyEnabled
+	ExecutionInteractiveMetadataKeySupportsReopen      = execution.InteractiveMetadataKeySupportsReopen
+	ExecutionInteractiveMetadataKeySupportsView        = execution.InteractiveMetadataKeySupportsView
+	ExecutionInteractiveMetadataKeySupportsWrite       = execution.InteractiveMetadataKeySupportsWrite
+	ExecutionInteractiveMetadataKeySupportsClose       = execution.InteractiveMetadataKeySupportsClose
+	ExecutionInteractiveMetadataKeyNextOffset          = execution.InteractiveMetadataKeyNextOffset
+	ExecutionInteractiveMetadataKeyClosed              = execution.InteractiveMetadataKeyClosed
+	ExecutionInteractiveMetadataKeyExitCode            = execution.InteractiveMetadataKeyExitCode
+	ExecutionInteractiveMetadataKeyStatus              = execution.InteractiveMetadataKeyStatus
+	ExecutionInteractiveMetadataKeyStatusReason        = execution.InteractiveMetadataKeyStatusReason
+	ExecutionInteractiveMetadataKeySnapshotArtifactID  = execution.InteractiveMetadataKeySnapshotArtifactID
+	ExecutionInteractiveMetadataKeyLastOperationKind   = execution.InteractiveMetadataKeyLastOperationKind
+	ExecutionInteractiveMetadataKeyLastOperationAt     = execution.InteractiveMetadataKeyLastOperationAt
+	ExecutionInteractiveMetadataKeyLastOperationOffset = execution.InteractiveMetadataKeyLastOperationOffset
+	ExecutionInteractiveMetadataKeyLastOperationBytes  = execution.InteractiveMetadataKeyLastOperationBytes
+
+	ExecutionInteractiveOperationReopen = execution.InteractiveOperationReopen
+	ExecutionInteractiveOperationView   = execution.InteractiveOperationView
+	ExecutionInteractiveOperationWrite  = execution.InteractiveOperationWrite
+	ExecutionInteractiveOperationClose  = execution.InteractiveOperationClose
+
+	ExecutionAttachmentInputText           = execution.AttachmentInputText
+	ExecutionAttachmentInputBytes          = execution.AttachmentInputBytes
+	ExecutionAttachmentInputArtifactRef    = execution.AttachmentInputArtifactRef
+	ExecutionAttachmentMaterializeNone     = execution.AttachmentMaterializeNone
+	ExecutionAttachmentMaterializeTempFile = execution.AttachmentMaterializeTempFile
+
+	ExecutionOutputRefStructured = execution.OutputRefStructured
+	ExecutionOutputRefText       = execution.OutputRefText
+	ExecutionOutputRefBytes      = execution.OutputRefBytes
+	ExecutionOutputRefArtifact   = execution.OutputRefArtifact
+	ExecutionOutputRefAttachment = execution.OutputRefAttachment
+
+	ExecutionProgramInputBindingLiteral    = execution.ProgramInputBindingLiteral
+	ExecutionProgramInputBindingOutputRef  = execution.ProgramInputBindingOutputRef
+	ExecutionProgramInputBindingAttachment = execution.ProgramInputBindingAttachment
+	ExecutionVerificationScopeStep         = execution.VerificationScopeStep
+	ExecutionVerificationScopeTarget       = execution.VerificationScopeTarget
+	ExecutionVerificationScopeAggregate    = execution.VerificationScopeAggregate
+
+	ExecutionBlockedRuntimeWaitStep   = execution.BlockedRuntimeWaitStep
+	ExecutionBlockedRuntimeWaitAction = execution.BlockedRuntimeWaitAction
+	ExecutionBlockedRuntimeWaitTarget = execution.BlockedRuntimeWaitTarget
+
+	ExecutionBlockedRuntimeConditionApproval     = execution.BlockedRuntimeConditionApproval
+	ExecutionBlockedRuntimeConditionConfirmation = execution.BlockedRuntimeConditionConfirmation
+	ExecutionBlockedRuntimeConditionExternal     = execution.BlockedRuntimeConditionExternal
+	ExecutionBlockedRuntimeConditionInteractive  = execution.BlockedRuntimeConditionInteractive
 )
 
 // New constructs a runtime service with defaults applied.

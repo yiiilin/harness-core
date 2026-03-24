@@ -135,7 +135,15 @@ func (s *MemoryAttemptStore) List(sessionID string) ([]Attempt, error) {
 			out = append(out, item)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].StartedAt != out[j].StartedAt {
+			return out[i].StartedAt < out[j].StartedAt
+		}
+		if out[i].StepID != out[j].StepID {
+			return out[i].StepID < out[j].StepID
+		}
+		return out[i].AttemptID < out[j].AttemptID
+	})
 	return out, nil
 }
 
@@ -181,7 +189,15 @@ func (s *MemoryActionStore) List(sessionID string) ([]ActionRecord, error) {
 			out = append(out, item)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].StartedAt != out[j].StartedAt {
+			return out[i].StartedAt < out[j].StartedAt
+		}
+		if out[i].StepID != out[j].StepID {
+			return out[i].StepID < out[j].StepID
+		}
+		return out[i].ActionID < out[j].ActionID
+	})
 	return out, nil
 }
 
@@ -227,7 +243,15 @@ func (s *MemoryVerificationStore) List(sessionID string) ([]VerificationRecord, 
 			out = append(out, item)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].StartedAt != out[j].StartedAt {
+			return out[i].StartedAt < out[j].StartedAt
+		}
+		if out[i].StepID != out[j].StepID {
+			return out[i].StepID < out[j].StepID
+		}
+		return out[i].VerificationID < out[j].VerificationID
+	})
 	return out, nil
 }
 

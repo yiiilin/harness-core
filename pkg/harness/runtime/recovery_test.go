@@ -35,6 +35,20 @@ func (s *nthFailingSessionUpdateStore) Update(next session.State) error {
 	return s.Store.Update(next)
 }
 
+type messageHandler struct{}
+
+func (messageHandler) Invoke(_ context.Context, args map[string]any) (action.Result, error) {
+	message, _ := args["message"].(string)
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"status":    "completed",
+			"exit_code": 0,
+			"stdout":    message,
+		},
+	}, nil
+}
+
 func TestRecoveryReadPathAcrossRuntimeReinit(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
@@ -101,6 +115,98 @@ func TestListRecoverableSessionsIncludesNormalizedRecoveryStateAfterRestart(t *t
 	items := mustListRecoverableSessions(t, rt2)
 	if len(items) != 1 || items[0].SessionID != attached.SessionID {
 		t.Fatalf("expected normalized recovery session to stay listed as recoverable, got %#v", items)
+	}
+}
+
+func TestRecoverSessionUsesOriginPlanRevisionWhenNewerRevisionExists(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+
+	tools.Register(
+		tool.Definition{ToolName: "demo.echo", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		messageHandler{},
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+	verifiers.Register(
+		verify.Definition{Kind: "output_contains", Description: "Verify output contains substring."},
+		verify.OutputContainsChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions:  sessions,
+		Tasks:     tasks,
+		Plans:     plans,
+		Tools:     tools,
+		Verifiers: verifiers,
+		Audit:     audits,
+	})
+
+	sess := mustCreateSession(t, rt, "recovery revision binding", "recovery must resume the originally pinned plan revision")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "resume old plan revision after replan"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	first, err := rt.CreatePlan(attached.SessionID, "revision 1", []plan.StepSpec{{
+		StepID: "step_shared",
+		Title:  "revision 1 recovery step",
+		Action: action.Spec{ToolName: "demo.echo", Args: map[string]any{"message": "old"}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			{Kind: "output_contains", Args: map[string]any{"text": "old"}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create first plan: %v", err)
+	}
+
+	if _, err := rt.MarkSessionInFlight(context.Background(), attached.SessionID, first.Steps[0].StepID); err != nil {
+		t.Fatalf("mark session in-flight: %v", err)
+	}
+	if _, err := rt.MarkSessionInterrupted(context.Background(), attached.SessionID); err != nil {
+		t.Fatalf("mark session interrupted: %v", err)
+	}
+
+	second, err := rt.CreatePlan(attached.SessionID, "revision 2", []plan.StepSpec{{
+		StepID: "step_shared",
+		Title:  "revision 2 replacement step",
+		Action: action.Spec{ToolName: "demo.echo", Args: map[string]any{"message": "new"}},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "exit_code", Args: map[string]any{"allowed": []any{0}}},
+			{Kind: "output_contains", Args: map[string]any{"text": "new"}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create second plan: %v", err)
+	}
+
+	out, err := rt.RecoverSession(context.Background(), attached.SessionID)
+	if err != nil {
+		t.Fatalf("recover session: %v", err)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected one recovered execution, got %#v", out)
+	}
+	stdout, _ := out.Executions[0].Execution.Action.Data["stdout"].(string)
+	if stdout != "old" {
+		t.Fatalf("expected recovery to execute the original plan revision, got output %q from %#v", stdout, out.Executions[0].Execution.Action.Data)
+	}
+
+	storedFirst := mustPlanByRevision(t, rt, attached.SessionID, first.Revision)
+	storedSecond := mustPlanByRevision(t, rt, attached.SessionID, second.Revision)
+	if storedFirst.Steps[0].Status != plan.StepCompleted {
+		t.Fatalf("expected originating recovery revision to complete, got %#v", storedFirst)
+	}
+	if storedSecond.Steps[0].Status != plan.StepPending {
+		t.Fatalf("expected newer revision to remain pending, got %#v", storedSecond)
 	}
 }
 

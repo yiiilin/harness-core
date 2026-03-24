@@ -31,17 +31,19 @@ type OnFailSpec struct {
 }
 
 type StepSpec struct {
-	StepID     string         `json:"step_id"`
-	Title      string         `json:"title"`
-	Action     action.Spec    `json:"action"`
-	Verify     verify.Spec    `json:"verify"`
-	OnFail     OnFailSpec     `json:"on_fail,omitempty"`
-	Status     StepStatus     `json:"status"`
-	Attempt    int            `json:"attempt,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	StartedAt  int64          `json:"started_at,omitempty"`
-	FinishedAt int64          `json:"finished_at,omitempty"`
+	PlanID       string         `json:"plan_id,omitempty"`
+	PlanRevision int            `json:"plan_revision,omitempty"`
+	StepID       string         `json:"step_id"`
+	Title        string         `json:"title"`
+	Action       action.Spec    `json:"action"`
+	Verify       verify.Spec    `json:"verify"`
+	OnFail       OnFailSpec     `json:"on_fail,omitempty"`
+	Status       StepStatus     `json:"status"`
+	Attempt      int            `json:"attempt,omitempty"`
+	Reason       string         `json:"reason,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	StartedAt    int64          `json:"started_at,omitempty"`
+	FinishedAt   int64          `json:"finished_at,omitempty"`
 }
 
 type Spec struct {

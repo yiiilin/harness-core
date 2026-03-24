@@ -88,7 +88,7 @@ FROM attempts
 		query += "WHERE session_id = $1\n"
 		args = append(args, sessionID)
 	}
-	query += "ORDER BY started_at ASC"
+	query += "ORDER BY started_at ASC, COALESCE(step_id, '') ASC, attempt_id ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,7 @@ FROM action_records
 		query += "WHERE session_id = $1\n"
 		args = append(args, sessionID)
 	}
-	query += "ORDER BY started_at ASC"
+	query += "ORDER BY started_at ASC, COALESCE(step_id, '') ASC, action_id ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ FROM verification_records
 		query += "WHERE session_id = $1\n"
 		args = append(args, sessionID)
 	}
-	query += "ORDER BY started_at ASC"
+	query += "ORDER BY started_at ASC, COALESCE(step_id, '') ASC, verification_id ASC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

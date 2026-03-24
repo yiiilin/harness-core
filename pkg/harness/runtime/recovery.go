@@ -7,6 +7,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
+	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
 
@@ -27,12 +28,19 @@ func (s *Service) markSessionInFlight(ctx context.Context, sessionID, leaseID, s
 	if err := ensureRuntimeBudget(state, s.LoopBudgets, now); err != nil {
 		return session.State{}, err
 	}
+	stepRef, hasStepRef, err := s.stepRefForSession(ctx, state, stepID)
+	if err != nil {
+		return session.State{}, err
+	}
 	return s.updateRecoveryState(ctx, sessionID, leaseID, "in_flight", func(st session.State) session.State {
 		if st.RuntimeStartedAt == 0 {
 			st.RuntimeStartedAt = now
 		}
 		st.ExecutionState = session.ExecutionInFlight
 		st.InFlightStepID = stepID
+		if hasStepRef {
+			st = setSessionPlanRef(st, stepRef)
+		}
 		st.LastHeartbeatAt = now
 		return st
 	})
@@ -145,6 +153,28 @@ func requireSessionLease(st session.State, leaseID string, now int64) error {
 		return session.ErrSessionLeaseNotHeld
 	}
 	return nil
+}
+
+func (s *Service) stepRefForSession(ctx context.Context, st session.State, stepID string) (plan.StepSpec, bool, error) {
+	if stepID == "" {
+		return plan.StepSpec{}, false, nil
+	}
+	if pinnedPlan, ok, err := s.pinnedPlanForSession(ctx, st); err != nil {
+		return plan.StepSpec{}, false, err
+	} else if ok {
+		if step, found := findPlanStepByID(pinnedPlan, stepID); found {
+			return step, true, nil
+		}
+	}
+	latest, ok, err := s.latestPlanForSession(ctx, st.SessionID)
+	if err != nil || !ok {
+		return plan.StepSpec{}, false, err
+	}
+	step, found := findPlanStepByID(latest, stepID)
+	if !found {
+		return plan.StepSpec{}, false, nil
+	}
+	return step, true, nil
 }
 
 func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID string) (session.State, error) {

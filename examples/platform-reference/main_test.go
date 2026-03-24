@@ -46,6 +46,12 @@ func TestRunReferenceDemo(t *testing.T) {
 	if result.ClosedRuntimeHandle.Status != execution.RuntimeHandleClosed {
 		t.Fatalf("expected runtime handle to be closed after PTY shutdown, got %#v", result.ClosedRuntimeHandle)
 	}
+	if result.InteractiveRuntime.Handle.HandleID != result.PersistedRuntimeHandle.HandleID {
+		t.Fatalf("expected typed interactive runtime projection for persisted handle, got %#v", result.InteractiveRuntime)
+	}
+	if !result.InteractiveRuntime.Observation.Closed || result.InteractiveRuntime.LastOperation.Kind != execution.InteractiveOperationClose {
+		t.Fatalf("expected interactive runtime to record closed state, got %#v", result.InteractiveRuntime)
+	}
 	if !strings.Contains(result.StreamRead.Data, "after-detach") {
 		t.Fatalf("expected direct PTY read to confirm the session stayed alive after detach, got %#v", result.StreamRead)
 	}

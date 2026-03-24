@@ -15,11 +15,3 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/yiiilin/harness-core/modules v0.1.0 // indirect
 )
-
-replace github.com/yiiilin/harness-core => ../..
-
-replace github.com/yiiilin/harness-core/adapters => ../../adapters
-
-replace github.com/yiiilin/harness-core/modules => ../../modules
-
-replace github.com/yiiilin/harness-core/pkg/harness/builtins => ../../pkg/harness/builtins

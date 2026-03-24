@@ -12,6 +12,10 @@ type SessionReader interface {
 	ListAuditEvents(sessionID string) ([]audit.Event, error)
 }
 
+type BlockedRuntimeProjectionReader interface {
+	ListBlockedRuntimeProjections() ([]execution.BlockedRuntimeProjection, error)
+}
+
 // CycleReader is the optional public read surface used to hydrate a listed
 // execution cycle via GetExecutionCycle when available.
 type CycleReader interface {
@@ -30,20 +34,24 @@ type ExecutionFactReader interface {
 type Reader struct {
 	sessionReader SessionReader
 	cycleReader   CycleReader
+	blockedReader BlockedRuntimeProjectionReader
 }
 
 // SessionProjection groups execution cycles with ordered audit events for one
 // session-oriented replay/debug view.
 type SessionProjection struct {
-	SessionID       string                     `json:"session_id"`
-	Cycles          []ExecutionCycleProjection `json:"cycles,omitempty"`
-	Events          []audit.Event              `json:"events,omitempty"`
-	UnmatchedEvents []audit.Event              `json:"unmatched_events,omitempty"`
+	SessionID       string                               `json:"session_id"`
+	Cycles          []ExecutionCycleProjection           `json:"cycles,omitempty"`
+	BlockedRuntimes []execution.BlockedRuntimeProjection `json:"blocked_runtimes,omitempty"`
+	Events          []audit.Event                        `json:"events,omitempty"`
+	UnmatchedEvents []audit.Event                        `json:"unmatched_events,omitempty"`
 }
 
 // ExecutionCycleProjection pairs an execution cycle with its related ordered
 // audit events.
 type ExecutionCycleProjection struct {
-	Cycle  execution.ExecutionCycle `json:"cycle"`
-	Events []audit.Event            `json:"events,omitempty"`
+	Cycle               execution.ExecutionCycle       `json:"cycle"`
+	TargetSlices        []execution.TargetSlice        `json:"target_slices,omitempty"`
+	InteractiveRuntimes []execution.InteractiveRuntime `json:"interactive_runtimes,omitempty"`
+	Events              []audit.Event                  `json:"events,omitempty"`
 }

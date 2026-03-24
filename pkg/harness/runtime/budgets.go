@@ -57,6 +57,8 @@ func normalizedOnFailStrategy(step plan.StepSpec) string {
 	switch step.OnFail.Strategy {
 	case "", "retry":
 		return "retry"
+	case "continue":
+		return "continue"
 	case "abort":
 		return "abort"
 	case "replan":
@@ -83,6 +85,11 @@ func nextTransitionAfterVerification(state session.State, step plan.StepSpec, de
 			return TransitionDecision{From: state.Phase, To: TransitionPrepare, StepID: step.StepID, Reason: "verification failed, reinspect allowed"}
 		}
 		return TransitionDecision{From: state.Phase, To: TransitionFailed, StepID: step.StepID, Reason: "verification failed and retry budget exhausted"}
+	case "continue":
+		if step.Attempt < allowedAttempts(step, budgets) {
+			return TransitionDecision{From: state.Phase, To: TransitionRecover, StepID: step.StepID, Reason: "verification failed, continue retry allowed"}
+		}
+		return TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "verification failed, continuing after retry exhaustion"}
 	default:
 		if step.Attempt < allowedAttempts(step, budgets) {
 			return TransitionDecision{From: state.Phase, To: TransitionRecover, StepID: step.StepID, Reason: "verification failed, retry allowed"}

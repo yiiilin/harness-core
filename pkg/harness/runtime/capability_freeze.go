@@ -100,6 +100,10 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 	if err != nil {
 		return plan.Spec{}, err
 	}
+	normalizedSteps, err := normalizePlanStepsForStorageWithCapabilityView(steps, view)
+	if err != nil {
+		return plan.Spec{}, err
+	}
 
 	var created plan.Spec
 	create := func(planStore plan.Store, snapshotStore capability.SnapshotStore, planningStore planning.Store, sink EventSink) error {
@@ -107,7 +111,7 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 			return err
 		}
 		var err error
-		created, err = planStore.Create(sessionID, changeReason, steps)
+		created, err = planStore.Create(sessionID, changeReason, normalizedSteps)
 		if err != nil {
 			return err
 		}
@@ -150,7 +154,7 @@ func (s *Service) createPlanWithCapabilityView(ctx context.Context, sessionID, c
 	if err := ensurePlanRevisionBudgetInStore(s.Plans, sessionID, s.LoopBudgets); err != nil {
 		return plan.Spec{}, err
 	}
-	created, err = s.Plans.Create(sessionID, changeReason, steps)
+	created, err = s.Plans.Create(sessionID, changeReason, normalizedSteps)
 	if err != nil {
 		return plan.Spec{}, err
 	}

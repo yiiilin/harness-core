@@ -41,12 +41,14 @@ func (s FanoutEventSink) Emit(ctx context.Context, event audit.Event) error {
 
 func (s FanoutEventSink) WithAuditStore(store audit.Store) EventSink {
 	rebound := make([]EventSink, 0, len(s.Sinks))
+	hasAuditAwareChild := false
 	for _, sink := range s.Sinks {
 		if sink == nil {
 			continue
 		}
 		if aware, ok := sink.(auditStoreAwareSink); ok {
 			rebound = append(rebound, aware.WithAuditStore(store))
+			hasAuditAwareChild = true
 			continue
 		}
 		rebound = append(rebound, sink)
@@ -54,9 +56,28 @@ func (s FanoutEventSink) WithAuditStore(store audit.Store) EventSink {
 	if len(rebound) == 0 {
 		return AuditStoreSink{Store: store}
 	}
+	if store != nil && !hasAuditAwareChild {
+		rebound = append(rebound, AuditStoreSink{Store: store})
+	}
 	return FanoutEventSink{Sinks: rebound}
 }
 
 type auditStoreAwareSink interface {
 	WithAuditStore(store audit.Store) EventSink
+}
+
+func bindEventSinkToAuditStore(sink EventSink, store audit.Store) EventSink {
+	if sink == nil {
+		if store == nil {
+			return nil
+		}
+		return AuditStoreSink{Store: store}
+	}
+	if store == nil {
+		return sink
+	}
+	if aware, ok := sink.(auditStoreAwareSink); ok {
+		return aware.WithAuditStore(store)
+	}
+	return FanoutEventSink{Sinks: []EventSink{sink, AuditStoreSink{Store: store}}}
 }

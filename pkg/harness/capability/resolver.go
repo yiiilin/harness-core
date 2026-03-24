@@ -12,6 +12,31 @@ type RegistryResolver struct {
 	Registry *tool.Registry
 }
 
+func (r RegistryResolver) Match(ctx context.Context, req Request) (MatchResult, error) {
+	resolution, err := r.Resolve(ctx, req)
+	if err != nil {
+		reason, ok := UnsupportedReasonFromError(err, req)
+		if ok {
+			return MatchResult{
+				Supported: false,
+				Reasons:   []UnsupportedReason{reason},
+			}, nil
+		}
+		return MatchResult{}, err
+	}
+	reasons := UnsupportedReasonsForDefinition(resolution.Definition, req.Requirements)
+	if len(reasons) > 0 {
+		return MatchResult{
+			Supported: false,
+			Reasons:   reasons,
+		}, nil
+	}
+	return MatchResult{
+		Supported:  true,
+		Resolution: &resolution,
+	}, nil
+}
+
 func (r RegistryResolver) Resolve(_ context.Context, req Request) (Resolution, error) {
 	if r.Registry == nil {
 		return Resolution{}, ErrCapabilityNotFound

@@ -58,6 +58,8 @@ func TestFacadeReexportsKernelRuntimeControlTypes(t *testing.T) {
 	var _ harness.WorkerResult
 	var _ harness.ReplaySessionProjection
 	var _ harness.ReplayExecutionCycleProjection
+	var _ harness.ExecutionAggregateResult
+	var _ harness.ExecutionAggregateTargetResult
 }
 
 func TestFacadeExposesClaimAwareKernelEntryPoints(t *testing.T) {

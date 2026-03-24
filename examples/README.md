@@ -18,9 +18,12 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - `planner-replan`
   - A focused planner/replan example.
   - Shows plan revisions, planner-generated steps, and executing a new plan after the first step completes.
+- `program-graph`
+  - A focused preplanned execution-program example.
+  - Shows output refs, artifact refs, explicit target fan-out, aggregate verification, and replay target slices through the public kernel API.
 - `platform-reference`
   - A small platform-side orchestration example around the kernel.
-  - Shows claims, lease renewals, claimed execution, PTY attach/detach, verifiers, and runtime-handle reconciliation.
+  - Shows claims, lease renewals, claimed execution, PTY attach/detach, verifiers, typed interactive runtime projection, and runtime-handle reconciliation.
 - `platform-embedding`
   - A small existing-platform embedding example built only on public packages.
   - Shows accepted-first run intake, external run ID mapping, worker-helper orchestration, external approval response, remote PTY wiring, and replay projection without local PTY verifiers.
@@ -42,6 +45,7 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - Start with `minimal-agent` if you want to understand the bare kernel surface.
 - Move to `planner-context` and `planner-replan` if you are implementing custom planning logic.
 - Use `workflow-scenarios` if you want to watch a few concrete tasks move through the workflow before reading lower-level tests.
+- Use `program-graph` if you are wiring a preplanned tool graph directly into the kernel.
 - Use `platform-reference` if you are building a platform-side worker around PTY or interactive shell execution.
 - Use `postgres-embedded` and `postgres-workers` if you need durable runtime state or multi-instance coordination.
 - Use `go-client` if you are integrating through the shipped WebSocket adapter rather than embedding the kernel directly.

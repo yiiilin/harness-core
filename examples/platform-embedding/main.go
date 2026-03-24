@@ -331,8 +331,16 @@ func (b *remotePTYBackend) Execute(_ context.Context, req shellexec.Request) (ac
 				Kind:     "pty",
 				Status:   execution.RuntimeHandleActive,
 				Metadata: map[string]any{
-					"provider":        "remote-pty",
-					"external_run_id": externalRunID,
+					"provider":                                     "remote-pty",
+					"external_run_id":                              externalRunID,
+					execution.InteractiveMetadataKeyEnabled:        true,
+					execution.InteractiveMetadataKeySupportsReopen: true,
+					execution.InteractiveMetadataKeySupportsView:   true,
+					execution.InteractiveMetadataKeySupportsWrite:  true,
+					execution.InteractiveMetadataKeySupportsClose:  true,
+					execution.InteractiveMetadataKeyStatus:         "active",
+					execution.InteractiveMetadataKeyStatusReason:   "remote pty active",
+					execution.InteractiveMetadataKeyNextOffset:     int64(0),
 				},
 			},
 			"shell_stream": map[string]any{

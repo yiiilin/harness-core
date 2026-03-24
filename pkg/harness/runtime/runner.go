@@ -15,6 +15,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
+	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
 type StepRunOutput struct {
@@ -35,11 +36,17 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if err != nil {
 		return StepRunOutput{}, err
 	}
+	persistedStateBeforeStep := state
 	if state.Phase == session.PhaseComplete || state.Phase == session.PhaseFailed || state.Phase == session.PhaseAborted {
 		return StepRunOutput{}, ErrSessionTerminal
 	}
 	if state.PendingApprovalID != "" && (activeApproval == nil || state.PendingApprovalID != activeApproval.ApprovalID) {
 		return StepRunOutput{}, ErrSessionAwaitingApproval
+	}
+	step = annotateStepFromSession(state, step)
+	state = setSessionPlanRef(state, step)
+	if _, hasProgram := execution.ProgramFromStep(step); hasProgram {
+		return StepRunOutput{}, ErrProgramStepNotCompiled
 	}
 	now := s.nowMilli()
 	if err := ensureRuntimeBudget(state, s.LoopBudgets, now); err != nil {
@@ -50,6 +57,10 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	}
 	if backoffActive(step, now) {
 		return StepRunOutput{}, ErrStepBackoffActive
+	}
+	step, err = s.resolveProgramBindings(ctx, sessionID, step)
+	if err != nil {
+		return StepRunOutput{}, err
 	}
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
@@ -87,6 +98,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	attemptRecord.TaskID = state.TaskID
 	attemptRecord.StepID = step.StepID
 	attemptRecord.CycleID = ensureExecutionCycleID(&step, attemptRecord.CycleID)
+	applyExecutionFactMetadata(&attemptRecord.Metadata, step.Metadata)
 	var actionRecord *execution.ActionRecord
 	var verificationRecord *execution.VerificationRecord
 	artifactRecords := []execution.Artifact{}
@@ -142,6 +154,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 
 	if decision.Action == permission.Ask && forcedDecision == nil {
 		requestScope := s.buildApprovalReuseScope(ctx, state, step, decision)
+		originalStep := step
 		step.Status = plan.StepBlocked
 		state.ExecutionState = session.ExecutionAwaitingApproval
 		state.PendingApprovalID = ""
@@ -183,7 +196,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				events[len(events)-1].ApprovalID = rec.ApprovalID
 				events[len(events)-1].CycleID = attemptRecord.CycleID
 				events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
+				pl, err := updateLatestPlanStepInStoreWithBudgets(repoSet.Plans, sessionID, step, s.LoopBudgets)
 				if err != nil {
 					return err
 				}
@@ -222,21 +235,40 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			events[len(events)-1].ApprovalID = rec.ApprovalID
 			events[len(events)-1].CycleID = attemptRecord.CycleID
 			events[len(events)-1].Payload["approval_id"] = rec.ApprovalID
-			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+			planPersisted := false
+			sessionPersisted := false
+			var persistedPendingState session.State
+			updatedPlan, err = updateLatestPlanStepInStoreWithBudgets(s.Plans, sessionID, step, s.LoopBudgets)
 			if err != nil {
-				return StepRunOutput{}, err
+				rollbackErr := terminalizeApprovalForRollback(s.Approvals, rec, "approval_request_persistence_failed", s.nowMilli())
+				return StepRunOutput{}, joinRollbackError(err, rollbackErr)
 			}
+			planPersisted = true
 			updatedTask, err = updateTaskForTerminalInStore(s.Tasks, state)
 			if err != nil {
-				return StepRunOutput{}, err
+				rollbackErr := restorePlanStepState(s.Plans, sessionID, originalStep)
+				rollbackErr = joinRollbackError(rollbackErr, terminalizeApprovalForRollback(s.Approvals, rec, "approval_request_persistence_failed", s.nowMilli()))
+				return StepRunOutput{}, joinRollbackError(err, rollbackErr)
 			}
 			updatedState, err := persistSessionUpdate(s.Sessions, state, leaseID)
 			if err != nil {
-				return StepRunOutput{}, err
+				rollbackErr := restorePlanStepState(s.Plans, sessionID, originalStep)
+				rollbackErr = joinRollbackError(rollbackErr, terminalizeApprovalForRollback(s.Approvals, rec, "approval_request_persistence_failed", s.nowMilli()))
+				return StepRunOutput{}, joinRollbackError(err, rollbackErr)
 			}
 			state = updatedState
+			sessionPersisted = true
+			persistedPendingState = updatedState
 			if err := s.persistExecutionFacts(attemptRecord, false, nil, nil, nil); err != nil {
-				return StepRunOutput{}, err
+				rollbackErr := error(nil)
+				if sessionPersisted {
+					rollbackErr = rollbackSessionState(s.Sessions, persistedStateBeforeStep, persistedPendingState, leaseID)
+				}
+				if planPersisted {
+					rollbackErr = joinRollbackError(rollbackErr, restorePlanStepState(s.Plans, sessionID, originalStep))
+				}
+				rollbackErr = joinRollbackError(rollbackErr, terminalizeApprovalForRollback(s.Approvals, rec, "approval_request_persistence_failed", s.nowMilli()))
+				return StepRunOutput{}, joinRollbackError(err, rollbackErr)
 			}
 		}
 		if pendingApproval != nil {
@@ -291,7 +323,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		if s.Runner != nil {
 			if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 				repoSet := s.repositoriesWithFallback(repos)
-				pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
+				pl, err := updateLatestPlanStepInStoreWithBudgets(repoSet.Plans, sessionID, step, s.LoopBudgets)
 				if err != nil {
 					return err
 				}
@@ -317,7 +349,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				return StepRunOutput{}, err
 			}
 		} else {
-			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+			updatedPlan, err = updateLatestPlanStepInStoreWithBudgets(s.Plans, sessionID, step, s.LoopBudgets)
 			if err != nil {
 				return StepRunOutput{}, err
 			}
@@ -330,9 +362,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				return StepRunOutput{}, err
 			}
 			state = updatedState
-			if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, nil, nil, nil); err != nil {
-				return StepRunOutput{}, err
-			}
+			_ = s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, nil, nil, nil)
 		}
 		if s.Runner == nil {
 			s.emitEventsBestEffort(ctx, events)
@@ -360,6 +390,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		CausationID: attemptRecord.AttemptID,
 		StartedAt:   s.nowMilli(),
 	}
+	applyExecutionFactMetadata(&actionRecord.Metadata, step.Metadata)
 	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, state, step)
 	if resolution != nil {
 		snapshot := resolution.Snapshot
@@ -420,12 +451,30 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 				"meta":  actResult.Meta,
 				"error": actResult.Error,
 			},
+			Metadata:  executionFactMetadata(step.Metadata),
 			CreatedAt: s.nowMilli(),
 		})
 	}
 	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord, s.nowMilli())
+	applyExecutionFactMetadataToHandles(runtimeHandles, step.Metadata)
 
 	state.Phase = session.PhaseVerify
+	verifyScope := programVerifyScopeFromStep(step)
+	verifySpec := step.Verify
+	verifyInput := actResult
+	rawActionSuccess := actErr == nil && actResult.OK
+	aggregateVerifyReady := false
+	if aggregateSpec, aggregateResult, ready, err := s.aggregateVerifyInputForStep(ctx, sessionID, step, rawActionSuccess); err != nil {
+		return StepRunOutput{}, err
+	} else if aggregateSpec != nil {
+		if ready {
+			verifySpec = *aggregateSpec
+			verifyInput = aggregateResult
+			aggregateVerifyReady = true
+		} else {
+			verifySpec = verify.Spec{}
+		}
+	}
 	verificationRecord = &execution.VerificationRecord{
 		VerificationID: "ver_" + uuid.NewString(),
 		AttemptID:      attemptRecord.AttemptID,
@@ -436,10 +485,28 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		CycleID:        attemptRecord.CycleID,
 		TraceID:        attemptRecord.TraceID,
 		CausationID:    actionRecord.ActionID,
-		Spec:           step.Verify,
+		Spec:           verifySpec,
 		StartedAt:      s.nowMilli(),
 	}
-	verifyResult, verifyErr := s.EvaluateVerify(ctx, step.Verify, actResult, state)
+	applyExecutionFactMetadata(&verificationRecord.Metadata, step.Metadata)
+	if verificationRecord.Metadata == nil {
+		verificationRecord.Metadata = map[string]any{}
+	}
+	verificationRecord.Metadata[verificationScopeMetadataKey] = string(verifyScope)
+	verifyResult, verifyErr := s.EvaluateVerify(ctx, verifySpec, verifyInput, state)
+	if verifyScope == execution.VerificationScopeAggregate {
+		if !aggregateVerifyReady {
+			if rawActionSuccess {
+				verifyResult = verify.Result{Success: true, Reason: "aggregate pending"}
+				verifyErr = nil
+			} else {
+				verifyResult.Success = false
+				if verifyResult.Reason == "" {
+					verifyResult.Reason = actionErrorMessage(actResult)
+				}
+			}
+		}
+	}
 	execResult.Verify = verifyResult
 	verificationRecord.Result = verifyResult
 	verificationRecord.FinishedAt = s.nowMilli()
@@ -447,29 +514,23 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	appendEvent(audit.EventVerifyCompleted, step.StepID, map[string]any{"success": verifyResult.Success, "reason": verifyResult.Reason}, actionRecord.ActionID, actionRecord.ActionID)
 	events[verifyEventIndex].VerificationID = verificationRecord.VerificationID
 	verified := verifyErr == nil && verifyResult.Success
+	if verifyScope == execution.VerificationScopeAggregate && aggregateVerifyReady && !rawActionSuccess {
+		verified = false
+		if verificationRecord.Result.Success {
+			verificationRecord.Result.Success = false
+		}
+		if verificationRecord.Result.Reason == "" {
+			verificationRecord.Result.Reason = actionErrorMessage(actResult)
+		}
+		verifyResult = verificationRecord.Result
+		execResult.Verify = verifyResult
+		events[verifyEventIndex].Payload["success"] = false
+		events[verifyEventIndex].Payload["reason"] = verifyResult.Reason
+	}
 	if verified {
 		verificationRecord.Status = execution.VerificationCompleted
 	} else {
 		verificationRecord.Status = execution.VerificationFailed
-	}
-
-	next := nextTransitionAfterVerification(state, step, decision, verified, s.LoopBudgets)
-	if verified {
-		hasRemaining, err := s.latestPlanHasRemainingSteps(ctx, sessionID, step.StepID)
-		if err != nil {
-			return StepRunOutput{}, err
-		}
-		if hasRemaining {
-			next = TransitionDecision{From: state.Phase, To: TransitionPlan, StepID: step.StepID, Reason: "step completed, continue plan"}
-		}
-	}
-	transitions = append(transitions, next)
-	appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason}, "", attemptRecord.AttemptID)
-	state = ApplyTransition(state, next)
-	state.ExecutionState = session.ExecutionIdle
-	state.InFlightStepID = ""
-	if activeApproval != nil && state.PendingApprovalID == activeApproval.ApprovalID {
-		state.PendingApprovalID = ""
 	}
 
 	if verified {
@@ -477,6 +538,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	} else {
 		step.Status = plan.StepFailed
 		state.RetryCount++
+	}
+	next := nextTransitionAfterVerification(state, step, decision, verified, s.LoopBudgets)
+	next, err = s.reconcileTransitionWithPlan(ctx, sessionID, state, step, verified, next)
+	if err != nil {
+		return StepRunOutput{}, err
 	}
 	applyStepRetryBackoff(&step, next, s.nowMilli())
 	step.FinishedAt = s.nowMilli()
@@ -494,6 +560,14 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			attemptRecord.Metadata = map[string]any{}
 		}
 		attemptRecord.Metadata["approval_reply"] = string(activeApproval.Reply)
+	}
+	transitions = append(transitions, next)
+	appendEvent(audit.EventStateChanged, step.StepID, map[string]any{"from": state.Phase, "to": next.To, "reason": next.Reason}, "", attemptRecord.AttemptID)
+	state = ApplyTransition(state, next)
+	state.ExecutionState = session.ExecutionIdle
+	state.InFlightStepID = ""
+	if activeApproval != nil && state.PendingApprovalID == activeApproval.ApprovalID {
+		state.PendingApprovalID = ""
 	}
 
 	var updatedPlan *plan.Spec
@@ -514,7 +588,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	if s.Runner != nil {
 		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 			repoSet := s.repositoriesWithFallback(repos)
-			pl, err := updateLatestPlanStepInStore(repoSet.Plans, sessionID, step)
+			pl, err := updateLatestPlanStepInStoreWithBudgets(repoSet.Plans, sessionID, step, s.LoopBudgets)
 			if err != nil {
 				return err
 			}
@@ -552,7 +626,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			return StepRunOutput{}, err
 		}
 	} else {
-		updatedPlan, err = updateLatestPlanStepInStore(s.Plans, sessionID, step)
+		updatedPlan, err = updateLatestPlanStepInStoreWithBudgets(s.Plans, sessionID, step, s.LoopBudgets)
 		if err != nil {
 			return StepRunOutput{}, err
 		}
@@ -565,20 +639,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			return StepRunOutput{}, err
 		}
 		state = updatedState
-		if err := s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords); err != nil {
-			return StepRunOutput{}, err
-		}
-		if err := s.persistCapabilitySnapshot(capabilitySnapshot); err != nil {
-			return StepRunOutput{}, err
-		}
-		if err := s.persistRuntimeHandles(runtimeHandles); err != nil {
-			return StepRunOutput{}, err
-		}
+		_ = s.persistExecutionFacts(attemptRecord, reuseBlockedAttempt, actionRecord, verificationRecord, artifactRecords)
+		_ = s.persistCapabilitySnapshot(capabilitySnapshot)
+		_ = s.persistRuntimeHandles(runtimeHandles)
 		if finalizedApproval != nil && s.Approvals != nil {
 			finalizedApproval.Version++
-			if err := s.Approvals.Update(*finalizedApproval); err != nil {
-				return StepRunOutput{}, err
-			}
+			_ = s.Approvals.Update(*finalizedApproval)
 		}
 	}
 	if s.Runner == nil {
@@ -605,43 +671,36 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 }
 
 func updateLatestPlanStepInStore(store plan.Store, sessionID string, step plan.StepSpec) (*plan.Spec, error) {
-	latest, ok, err := store.LatestBySession(sessionID)
+	return updateLatestPlanStepInStoreWithBudgets(store, sessionID, step, DefaultLoopBudgets())
+}
+
+func updateLatestPlanStepInStoreWithBudgets(store plan.Store, sessionID string, step plan.StepSpec, budgets LoopBudgets) (*plan.Spec, error) {
+	target, ok, err := planForStepInStore(store, sessionID, step)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, nil
 	}
+	step = annotateStepIdentity(step, target.PlanID, target.Revision)
 	changed := false
-	for i := range latest.Steps {
-		if latest.Steps[i].StepID == step.StepID {
-			latest.Steps[i] = step
+	for i := range target.Steps {
+		if target.Steps[i].StepID == step.StepID {
+			target.Steps[i] = step
 			changed = true
 			break
 		}
 	}
 	if !changed {
-		return &latest, nil
+		annotated := annotatePlanIdentity(target)
+		return &annotated, nil
 	}
-	if step.Status == plan.StepCompleted {
-		allDone := true
-		for _, st := range latest.Steps {
-			if st.Status != plan.StepCompleted {
-				allDone = false
-				break
-			}
-		}
-		if allDone {
-			latest.Status = plan.StatusCompleted
-		}
-	}
-	if step.Status == plan.StepFailed {
-		latest.Status = plan.StatusActive
-	}
-	if err := store.Update(latest); err != nil {
+	target.Status = planStatusForSpec(target, budgets)
+	if err := store.Update(target); err != nil {
 		return nil, err
 	}
-	return &latest, nil
+	annotated := annotatePlanIdentity(target)
+	return &annotated, nil
 }
 
 func updateTaskForTerminalInStore(store task.Store, state session.State) (*task.Record, error) {

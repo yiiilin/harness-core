@@ -42,6 +42,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		reason = "abort requested"
 	}
 	stepID := abortStateStepID(current)
+	currentPlanID, _, _ := planRefFromSession(current)
 	aborted := ApplyTransition(current, TransitionDecision{
 		From:   current.Phase,
 		To:     TransitionAborted,
@@ -94,7 +95,7 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 			}
 			events = append(events, approvalEvents...)
 		} else {
-			if err := abortActiveStepInLatestPlanStore(planStore, current.SessionID, stepID, now); err != nil {
+			if err := abortActiveStepInLatestPlanStore(planStore, current.SessionID, currentPlanID, stepID, now); err != nil {
 				return err
 			}
 		}
@@ -142,12 +143,168 @@ func (s *Service) AbortSession(ctx context.Context, sessionID string, request Ab
 		return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
 	}
 
-	if err := persist(s.Sessions, s.Tasks, s.Plans, s.Approvals, s.Attempts, s.RuntimeHandles); err != nil {
+	var (
+		originalApproval    approval.Record
+		hadOriginalApproval bool
+		originalAttempt     execution.Attempt
+		hadOriginalAttempt  bool
+		originalPlanStep    plan.StepSpec
+		hadOriginalPlanStep bool
+		originalTask        task.Record
+		hadOriginalTask     bool
+		originalHandles     []execution.RuntimeHandle
+	)
+	if current.PendingApprovalID != "" {
+		if s.Approvals == nil {
+			return AbortOutput{}, approval.ErrApprovalNotFound
+		}
+		originalApproval, err = s.Approvals.Get(current.PendingApprovalID)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		originalApproval = cloneApprovalRecord(originalApproval)
+		hadOriginalApproval = true
+		originalAttempt, hadOriginalAttempt, err = findLatestBlockedAttemptInStore(s.Attempts, current.SessionID, current.PendingApprovalID)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		if hadOriginalAttempt {
+			originalAttempt = cloneAttemptRecord(originalAttempt)
+		}
+		originalPlanStep = cloneStepSpec(originalApproval.Step)
+		hadOriginalPlanStep = originalPlanStep.StepID != ""
+	} else {
+		originalPlanStep, hadOriginalPlanStep, err = latestPlanStepByID(s.Plans, current.SessionID, currentPlanID, stepID)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+	}
+	if current.TaskID != "" && s.Tasks != nil {
+		originalTask, err = s.Tasks.Get(current.TaskID)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		hadOriginalTask = true
+	}
+	originalHandles, err = snapshotActiveRuntimeHandles(s.RuntimeHandles, current.SessionID)
+	if err != nil {
 		return AbortOutput{}, err
+	}
+
+	approvalChanged := false
+	attemptChanged := false
+	planChanged := false
+	taskChanged := false
+	handlesChanged := false
+	if current.PendingApprovalID != "" {
+		approvalEvents, err := abortPendingApprovalInStore(s.Approvals, s.Plans, s.Attempts, current.SessionID, current.PendingApprovalID, now)
+		if err != nil {
+			return AbortOutput{}, err
+		}
+		approvalChanged = hadOriginalApproval
+		attemptChanged = hadOriginalAttempt
+		planChanged = hadOriginalPlanStep
+		events = append(events, approvalEvents...)
+	} else {
+		if err := abortActiveStepInLatestPlanStore(s.Plans, current.SessionID, currentPlanID, stepID, now); err != nil {
+			return AbortOutput{}, err
+		}
+		planChanged = hadOriginalPlanStep
+	}
+
+	taskRec, err := updateTaskForTerminalInStore(s.Tasks, aborted)
+	if err != nil {
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		return AbortOutput{}, joinRollbackError(err, rollbackErr)
+	}
+	updatedTask = taskRec
+	if updatedTask != nil {
+		taskChanged = hadOriginalTask
+		events = append(events, audit.Event{
+			EventID:   "evt_" + uuid.NewString(),
+			Type:      audit.EventTaskAborted,
+			SessionID: aborted.SessionID,
+			TaskID:    updatedTask.TaskID,
+			StepID:    aborted.CurrentStepID,
+			Payload: map[string]any{
+				"task_id": updatedTask.TaskID,
+				"status":  updatedTask.Status,
+			},
+			CreatedAt: now,
+		})
+	}
+
+	handles, err := reconcileActiveRuntimeHandlesInStore(s.RuntimeHandles, current.SessionID, "session aborted", now)
+	if err != nil {
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		return AbortOutput{}, joinRollbackError(err, rollbackErr)
+	}
+	if len(handles) > 0 {
+		handlesChanged = len(originalHandles) > 0
+		events = append(events, runtimeHandleAuditEvents(now, audit.EventRuntimeHandleInvalidated, handles)...)
+	}
+
+	if err := s.Sessions.Update(aborted); err != nil {
+		rollbackErr := rollbackNoRunnerAbortState(s, current.SessionID, originalApproval, hadOriginalApproval && approvalChanged, originalAttempt, hadOriginalAttempt && attemptChanged, originalPlanStep, planChanged, originalTask, hadOriginalTask && taskChanged, originalHandles, handlesChanged)
+		return AbortOutput{}, joinRollbackError(err, rollbackErr)
 	}
 	s.emitEventsBestEffortWithSink(ctx, s.EventSink, events)
 	s.exportAbortObservability(ctx, aborted, request, now, s.nowMilli())
 	return AbortOutput{Session: aborted, UpdatedTask: updatedTask, Events: events}, nil
+}
+
+func rollbackNoRunnerAbortState(s *Service, sessionID string, originalApproval approval.Record, restoreApproval bool, originalAttempt execution.Attempt, restoreAttempt bool, originalPlanStep plan.StepSpec, restorePlan bool, originalTask task.Record, restoreTask bool, originalHandles []execution.RuntimeHandle, restoreHandles bool) error {
+	rollbackErr := error(nil)
+	if restoreHandles {
+		rollbackErr = restoreRuntimeHandles(s.RuntimeHandles, originalHandles)
+	}
+	if restoreTask {
+		rollbackErr = joinRollbackError(rollbackErr, restoreTaskRecord(s.Tasks, originalTask))
+	}
+	if restorePlan {
+		rollbackErr = joinRollbackError(rollbackErr, restorePlanStepState(s.Plans, sessionID, originalPlanStep))
+	}
+	if restoreAttempt {
+		rollbackErr = joinRollbackError(rollbackErr, restoreAttemptRecord(s.Attempts, originalAttempt))
+	}
+	if restoreApproval {
+		rollbackErr = joinRollbackError(rollbackErr, restoreApprovalRecord(s.Approvals, originalApproval))
+	}
+	return rollbackErr
+}
+
+func latestPlanStepByID(store plan.Store, sessionID, planID, stepID string) (plan.StepSpec, bool, error) {
+	if store == nil || sessionID == "" || stepID == "" {
+		return plan.StepSpec{}, false, nil
+	}
+	target, ok, err := planForStepInStore(store, sessionID, plan.StepSpec{PlanID: planID, StepID: stepID})
+	if err != nil || !ok {
+		return plan.StepSpec{}, false, err
+	}
+	for _, step := range target.Steps {
+		if step.StepID == stepID {
+			return cloneStepSpec(step), true, nil
+		}
+	}
+	return plan.StepSpec{}, false, nil
+}
+
+func snapshotActiveRuntimeHandles(store execution.RuntimeHandleStore, sessionID string) ([]execution.RuntimeHandle, error) {
+	if store == nil || sessionID == "" {
+		return nil, nil
+	}
+	handles, err := store.List(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]execution.RuntimeHandle, 0)
+	for _, handle := range handles {
+		if !isRuntimeHandleActive(handle) {
+			continue
+		}
+		out = append(out, handle)
+	}
+	return out, nil
 }
 
 func abortPendingApprovalInStore(approvalStore approval.Store, planStore plan.Store, attemptStore execution.AttemptStore, sessionID, approvalID string, now int64) ([]audit.Event, error) {
@@ -240,11 +397,11 @@ func finalizeBlockedAttemptForAbortInStore(store execution.AttemptStore, session
 	return store.Update(attempt)
 }
 
-func abortActiveStepInLatestPlanStore(store plan.Store, sessionID, stepID string, now int64) error {
+func abortActiveStepInLatestPlanStore(store plan.Store, sessionID, planID, stepID string, now int64) error {
 	if store == nil || sessionID == "" || stepID == "" {
 		return nil
 	}
-	latest, ok, err := store.LatestBySession(sessionID)
+	latest, ok, err := planForStepInStore(store, sessionID, plan.StepSpec{PlanID: planID, StepID: stepID})
 	if err != nil || !ok {
 		return err
 	}

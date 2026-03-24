@@ -128,7 +128,7 @@ func (s *Service) WithPlanner(planner Planner) *Service {
 
 func (s *Service) WithEventSink(sink EventSink) *Service {
 	if sink != nil {
-		s.EventSink = sink
+		s.EventSink = bindEventSinkToAuditStore(sink, s.Audit)
 	}
 	return s
 }
@@ -227,6 +227,17 @@ func (s *Service) ListCapabilitySnapshots(sessionID string) ([]capability.Snapsh
 	return s.listCapabilitySnapshotRecords(context.Background(), sessionID)
 }
 
+func (s *Service) ListAggregateResults(sessionID string) ([]execution.AggregateResult, error) {
+	latest, ok, err := s.latestPlanForSession(context.Background(), sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return execution.AggregateResultsFromPlan(latest), nil
+}
+
 func (s *Service) GetPlanningRecord(id string) (planning.Record, error) {
 	return s.getPlanningRecord(context.Background(), id)
 }
@@ -251,6 +262,18 @@ func (s *Service) ListAuditEvents(sessionID string) ([]audit.Event, error) {
 	return s.listRelatedAuditEvents(sessionID)
 }
 
+func (s *Service) GetBlockedRuntime(sessionID string) (execution.BlockedRuntime, error) {
+	return s.getBlockedRuntimeRecord(context.Background(), sessionID)
+}
+
+func (s *Service) GetBlockedRuntimeByApproval(approvalID string) (execution.BlockedRuntime, error) {
+	return s.getBlockedRuntimeByApprovalRecord(context.Background(), approvalID)
+}
+
+func (s *Service) ListBlockedRuntimes() ([]execution.BlockedRuntime, error) {
+	return s.listBlockedRuntimeRecords(context.Background())
+}
+
 func (s *Service) MetricsSnapshot() observability.Snapshot {
 	return SnapshotMetrics(s.MetricsRecorder)
 }
@@ -272,6 +295,34 @@ func (s *Service) ResolveCapability(ctx context.Context, req capability.Request)
 		return capability.Resolution{}, capability.ErrCapabilityNotFound
 	}
 	return s.CapabilityResolver.Resolve(ctx, req)
+}
+
+func (s *Service) MatchCapability(ctx context.Context, req capability.Request) (capability.MatchResult, error) {
+	if matcher, ok := s.CapabilityResolver.(capability.Matcher); ok {
+		return matcher.Match(ctx, req)
+	}
+	resolution, err := s.ResolveCapability(ctx, req)
+	if err != nil {
+		reason, ok := capability.UnsupportedReasonFromError(err, req)
+		if ok {
+			return capability.MatchResult{
+				Supported: false,
+				Reasons:   []capability.UnsupportedReason{reason},
+			}, nil
+		}
+		return capability.MatchResult{}, err
+	}
+	reasons := capability.UnsupportedReasonsForDefinition(resolution.Definition, req.Requirements)
+	if len(reasons) > 0 {
+		return capability.MatchResult{
+			Supported: false,
+			Reasons:   reasons,
+		}, nil
+	}
+	return capability.MatchResult{
+		Supported:  true,
+		Resolution: &resolution,
+	}, nil
 }
 
 func (s *Service) InvokeAction(ctx context.Context, spec action.Spec) (action.Result, error) {

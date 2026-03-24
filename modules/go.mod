@@ -7,5 +7,3 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/yiiilin/harness-core v1.0.1
 )
-
-replace github.com/yiiilin/harness-core => ../

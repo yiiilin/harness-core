@@ -15,6 +15,7 @@ Use this together with:
 
 - `docs/STATUS.md`
 - `docs/API.md`
+- `docs/EMBEDDER_VNEXT.md`
 - `docs/EMBEDDING.md`
 - `docs/VERSIONING.md`
 - `docs/CHANGE_POLICY.md`
@@ -163,6 +164,9 @@ The project no longer has a large kernel-boundary problem.
 
 The remaining gaps are now narrower and mostly about making the embedder surface cleaner and more replaceable.
 There is no longer an active tracked correctness checklist in this document for runner/read consistency, runtime-budget anchoring, worker renew cancellation, or control-plane audit visibility; those are now part of the current baseline.
+
+For the next execution-model layer requested by embedders, see `docs/EMBEDDER_VNEXT.md`.
+That document is explicit about which items are supported today, partially supported today, or only planned vNext work.
 
 ### 1. Worker helper outer-loop ergonomics are intentionally still minimal
 

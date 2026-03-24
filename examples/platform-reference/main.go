@@ -44,6 +44,7 @@ type DemoResult struct {
 	Worker                    WorkerRunResult
 	PersistedRuntimeHandle    execution.RuntimeHandle
 	ClosedRuntimeHandle       execution.RuntimeHandle
+	InteractiveRuntime        harness.ExecutionInteractiveRuntime
 	ActiveVerify              verify.Result
 	StreamVerify              verify.Result
 	AttachOutput              string
@@ -166,6 +167,24 @@ func RunReferenceDemo(ctx context.Context) (DemoResult, error) {
 	if err != nil {
 		return DemoResult{}, err
 	}
+	mergedRead := mergeReadResults(read, closedRead)
+	exitCode := mergedRead.ExitCode
+	if _, err := rt.UpdateInteractiveRuntime(ctx, persistedHandle.HandleID, harness.InteractiveRuntimeUpdate{
+		Observation: &harness.ExecutionInteractiveObservation{
+			NextOffset:   mergedRead.NextOffset,
+			Closed:       mergedRead.Closed,
+			ExitCode:     &exitCode,
+			Status:       mergedRead.Status,
+			StatusReason: mergedRead.StatusReason,
+		},
+		LastOperation: &harness.ExecutionInteractiveOperation{
+			Kind:   harness.ExecutionInteractiveOperationClose,
+			At:     time.Now().UnixMilli(),
+			Offset: mergedRead.NextOffset,
+		},
+	}); err != nil {
+		return DemoResult{}, err
+	}
 
 	closedHandle, err := rt.CloseRuntimeHandle(ctx, persistedHandle.HandleID, harness.RuntimeHandleCloseRequest{
 		Reason: "platform example shutdown",
@@ -176,16 +195,21 @@ func RunReferenceDemo(ctx context.Context) (DemoResult, error) {
 	if err != nil {
 		return DemoResult{}, err
 	}
+	interactiveRuntime, err := rt.GetInteractiveRuntime(persistedHandle.HandleID)
+	if err != nil {
+		return DemoResult{}, err
+	}
 
 	return DemoResult{
 		Worker:                    runResult,
 		PersistedRuntimeHandle:    persistedHandle,
 		ClosedRuntimeHandle:       closedHandle,
+		InteractiveRuntime:        interactiveRuntime,
 		ActiveVerify:              activeVerify,
 		StreamVerify:              streamVerify,
 		AttachOutput:              beforeDetach,
 		AttachDetached:            attachDetached,
-		StreamRead:                mergeReadResults(read, closedRead),
+		StreamRead:                mergedRead,
 		InteractiveHandleReleased: runResult.Released.LeaseID == "" && runResult.Released.LeaseExpiresAt == 0,
 	}, nil
 }

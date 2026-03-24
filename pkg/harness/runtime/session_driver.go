@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 )
@@ -14,9 +15,10 @@ const (
 )
 
 type SessionRunOutput struct {
-	Session    session.State   `json:"session"`
-	Plan       *plan.Spec      `json:"plan,omitempty"`
-	Executions []StepRunOutput `json:"executions,omitempty"`
+	Session    session.State               `json:"session"`
+	Plan       *plan.Spec                  `json:"plan,omitempty"`
+	Aggregates []execution.AggregateResult `json:"aggregates,omitempty"`
+	Executions []StepRunOutput             `json:"executions,omitempty"`
 }
 
 type sessionStepSelection struct {
@@ -43,7 +45,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 		}
 
 		if isTerminalPhase(state.Phase) {
-			return out, nil
+			return populateSessionRunAggregates(out), nil
 		}
 		if state.PendingApprovalID != "" {
 			resumed, handled, err := s.resolvePendingApprovalForSession(ctx, sessionID, leaseID)
@@ -52,7 +54,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 			}
 			if handled {
 				if resumed == nil {
-					return out, nil
+					return populateSessionRunAggregates(out), nil
 				}
 				out.Executions = append(out.Executions, *resumed)
 				out.Session = resumed.Session
@@ -61,7 +63,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 				}
 				s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
 				if isTerminalPhase(resumed.Session.Phase) || resumed.Session.PendingApprovalID != "" {
-					return out, nil
+					return populateSessionRunAggregates(out), nil
 				}
 				continue
 			}
@@ -76,7 +78,14 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 			latest = planned
 		}
 
-		selection := selectNextStepForSession(state, latest)
+		pinnedPlan := latest
+		if pinned, pinnedOK, err := s.pinnedPlanForSession(ctx, state); err != nil {
+			return SessionRunOutput{}, err
+		} else if pinnedOK {
+			pinnedPlan = pinned
+		}
+
+		selection := selectNextStepForSession(state, pinnedPlan, latest, s.LoopBudgets)
 		if selection.NeedsPlanning {
 			planned, err := s.createDriverPlan(ctx, sessionID, replanSessionReason)
 			if err != nil {
@@ -86,7 +95,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 			continue
 		}
 		if !selection.HasStep {
-			return out, nil
+			return populateSessionRunAggregates(out), nil
 		}
 
 		stepOut, err := s.runStepWithDecision(ctx, sessionID, leaseID, selection.Step, nil, nil)
@@ -103,7 +112,7 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 		}
 		s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
 		if isTerminalPhase(stepOut.Session.Phase) || stepOut.Session.PendingApprovalID != "" {
-			return out, nil
+			return populateSessionRunAggregates(out), nil
 		}
 	}
 }
@@ -116,14 +125,14 @@ func (s *Service) createDriverPlan(ctx context.Context, sessionID, changeReason 
 	return pl, nil
 }
 
-func selectNextStepForSession(state session.State, latest plan.Spec) sessionStepSelection {
-	if step, ok := pinnedStepForSession(state, latest); ok {
+func selectNextStepForSession(state session.State, pinned plan.Spec, latest plan.Spec, budgets LoopBudgets) sessionStepSelection {
+	if step, ok := pinnedStepForSession(state, pinned, budgets); ok {
 		return sessionStepSelection{Step: step, HasStep: true}
 	}
 	if step, ok := firstPendingPlanStep(latest); ok {
 		return sessionStepSelection{Step: step, HasStep: true}
 	}
-	if step, ok := firstFailedPlanStep(latest); ok {
+	if step, ok := firstFailedPlanStep(latest, budgets); ok {
 		switch normalizedOnFailStrategy(step) {
 		case "replan":
 			return sessionStepSelection{NeedsPlanning: true}
@@ -136,21 +145,21 @@ func selectNextStepForSession(state session.State, latest plan.Spec) sessionStep
 	return sessionStepSelection{}
 }
 
-func pinnedStepForSession(state session.State, latest plan.Spec) (plan.StepSpec, bool) {
+func pinnedStepForSession(state session.State, latest plan.Spec, budgets LoopBudgets) (plan.StepSpec, bool) {
 	if state.InFlightStepID != "" {
-		if step, ok := executableStepByID(latest, state.InFlightStepID); ok {
+		if step, ok := executableStepByID(latest, state.InFlightStepID, budgets); ok {
 			return step, true
 		}
 	}
 	if state.CurrentStepID != "" {
-		if step, ok := executableStepByID(latest, state.CurrentStepID); ok {
+		if step, ok := executableStepByID(latest, state.CurrentStepID, budgets); ok {
 			return step, true
 		}
 	}
 	return plan.StepSpec{}, false
 }
 
-func executableStepByID(latest plan.Spec, stepID string) (plan.StepSpec, bool) {
+func executableStepByID(latest plan.Spec, stepID string, budgets LoopBudgets) (plan.StepSpec, bool) {
 	if stepID == "" {
 		return plan.StepSpec{}, false
 	}
@@ -164,6 +173,11 @@ func executableStepByID(latest plan.Spec, stepID string) (plan.StepSpec, bool) {
 	case plan.StepFailed:
 		switch normalizedOnFailStrategy(step) {
 		case "replan", "abort":
+			return plan.StepSpec{}, false
+		case "continue":
+			if step.Attempt < allowedAttempts(step, budgets) {
+				return step, true
+			}
 			return plan.StepSpec{}, false
 		default:
 			return step, true
@@ -182,9 +196,12 @@ func firstPendingPlanStep(latest plan.Spec) (plan.StepSpec, bool) {
 	return plan.StepSpec{}, false
 }
 
-func firstFailedPlanStep(latest plan.Spec) (plan.StepSpec, bool) {
+func firstFailedPlanStep(latest plan.Spec, budgets LoopBudgets) (plan.StepSpec, bool) {
 	for _, step := range latest.Steps {
 		if step.Status == plan.StepFailed {
+			if normalizedOnFailStrategy(step) == "continue" && step.Attempt >= allowedAttempts(step, budgets) {
+				continue
+			}
 			return step, true
 		}
 	}
@@ -206,6 +223,9 @@ func mergeSessionRunOutputs(base, next SessionRunOutput) SessionRunOutput {
 	if next.Plan != nil {
 		out.Plan = next.Plan
 	}
+	if len(next.Aggregates) > 0 || next.Plan != nil {
+		out.Aggregates = next.Aggregates
+	}
 	out.Session = next.Session
 	return out
 }
@@ -213,6 +233,15 @@ func mergeSessionRunOutputs(base, next SessionRunOutput) SessionRunOutput {
 func planPointer(pl plan.Spec) *plan.Spec {
 	copyPlan := pl
 	return &copyPlan
+}
+
+func populateSessionRunAggregates(out SessionRunOutput) SessionRunOutput {
+	if out.Plan == nil {
+		out.Aggregates = nil
+		return out
+	}
+	out.Aggregates = execution.AggregateResultsFromPlan(*out.Plan)
+	return out
 }
 
 func isTerminalPhase(phase session.Phase) bool {

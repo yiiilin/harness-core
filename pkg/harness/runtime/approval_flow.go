@@ -13,6 +13,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
+	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
 
 func (s *Service) RespondApproval(approvalID string, response approval.Response) (approval.Record, session.State, error) {
@@ -32,6 +33,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	}
 
 	now := s.nowMilli()
+	originalApproval := cloneApprovalRecord(rec)
 	rec.Reply = response.Reply
 	rec.Metadata = mergeApprovalResponseMetadata(rec.Metadata, response)
 	rec.RespondedAt = now
@@ -57,6 +59,27 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	var updatedTaskUpdated bool
 	var updatedTaskErr error
 	step := rec.Step
+	originalStep := cloneStepSpec(step)
+	var originalAttempt execution.Attempt
+	var hadOriginalAttempt bool
+	var originalTask task.Record
+	var hadOriginalTask bool
+	if response.Reply == approval.ReplyReject {
+		originalAttempt, hadOriginalAttempt, err = findLatestBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID)
+		if err != nil {
+			return approval.Record{}, session.State{}, err
+		}
+		if hadOriginalAttempt {
+			originalAttempt = cloneAttemptRecord(originalAttempt)
+		}
+		if s.Tasks != nil && st.TaskID != "" {
+			originalTask, err = s.Tasks.Get(st.TaskID)
+			if err != nil {
+				return approval.Record{}, session.State{}, err
+			}
+			hadOriginalTask = true
+		}
+	}
 
 	switch response.Reply {
 	case approval.ReplyReject:
@@ -123,26 +146,61 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		if s.Approvals == nil {
 			return approval.Record{}, session.State{}, approval.ErrApprovalNotFound
 		}
+		approvalUpdated := false
+		attemptUpdated := false
+		planUpdated := false
+		taskUpdated := false
 		if err := s.Approvals.Update(rec); err != nil {
 			return approval.Record{}, session.State{}, err
 		}
+		approvalUpdated = true
 		if response.Reply == approval.ReplyReject {
 			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
-				return approval.Record{}, session.State{}, err
+				rollbackErr := restoreApprovalRecord(s.Approvals, originalApproval)
+				return approval.Record{}, session.State{}, joinRollbackError(err, rollbackErr)
 			}
+			attemptUpdated = hadOriginalAttempt
 		}
 		if response.Reply == approval.ReplyReject {
 			updatedPlan, err = updateLatestPlanStepInStore(s.Plans, rec.SessionID, step)
 			if err != nil {
-				return approval.Record{}, session.State{}, err
+				rollbackErr := error(nil)
+				if attemptUpdated {
+					rollbackErr = restoreAttemptRecord(s.Attempts, originalAttempt)
+				}
+				rollbackErr = joinRollbackError(rollbackErr, restoreApprovalRecord(s.Approvals, originalApproval))
+				return approval.Record{}, session.State{}, joinRollbackError(err, rollbackErr)
 			}
+			planUpdated = true
 			if _, updatedTaskErr = updateTaskForTerminalInStore(s.Tasks, st); updatedTaskErr != nil {
-				return approval.Record{}, session.State{}, updatedTaskErr
+				rollbackErr := error(nil)
+				if planUpdated {
+					rollbackErr = restorePlanStepState(s.Plans, rec.SessionID, originalStep)
+				}
+				if attemptUpdated {
+					rollbackErr = joinRollbackError(rollbackErr, restoreAttemptRecord(s.Attempts, originalAttempt))
+				}
+				rollbackErr = joinRollbackError(rollbackErr, restoreApprovalRecord(s.Approvals, originalApproval))
+				return approval.Record{}, session.State{}, joinRollbackError(updatedTaskErr, rollbackErr)
 			}
 			updatedTaskUpdated = true
+			taskUpdated = hadOriginalTask
 		}
 		if err := s.Sessions.Update(st); err != nil {
-			return approval.Record{}, session.State{}, err
+			rollbackErr := error(nil)
+			if taskUpdated {
+				rollbackErr = restoreTaskRecord(s.Tasks, originalTask)
+			}
+			if planUpdated {
+				rollbackErr = joinRollbackError(rollbackErr, restorePlanStepState(s.Plans, rec.SessionID, originalStep))
+			}
+			if attemptUpdated {
+				rollbackErr = joinRollbackError(rollbackErr, restoreAttemptRecord(s.Attempts, originalAttempt))
+			}
+			if approvalUpdated {
+				rollbackErr = joinRollbackError(rollbackErr, restoreApprovalRecord(s.Approvals, originalApproval))
+			}
+			return approval.Record{}, session.State{}, joinRollbackError(err, rollbackErr)
 		}
 		s.emitEventsBestEffort(context.Background(), events)
 	}

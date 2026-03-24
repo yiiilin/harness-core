@@ -242,6 +242,99 @@ func TestAbortSessionConsumesApprovedPendingApprovalBeforeResume(t *testing.T) {
 	}
 }
 
+func TestAbortSessionNoRunnerRollsBackApprovalFactsWhenSessionWriteFails(t *testing.T) {
+	boom := errors.New("boom:session.update")
+	sessions := &nthFailingSessionUpdateStore{
+		Store:            session.NewMemoryStore(),
+		updateErr:        boom,
+		failOnUpdateCall: 3,
+	}
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	audits := audit.NewMemoryStore()
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		&countingHandler{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Sessions: sessions,
+		Tasks:    tasks,
+		Plans:    plans,
+		Tools:    tools,
+		Audit:    audits,
+	}).WithPolicyEvaluator(askPolicy{})
+	rt.Runner = nil
+
+	sess := mustCreateSession(t, rt, "abort rollback", "abort should roll back no-runner partial writes")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "abort rollback"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	pl, err := rt.CreatePlan(attached.SessionID, "abort rollback", []plan.StepSpec{{
+		StepID: "step_abort_rollback",
+		Title:  "abort rollback",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "echo gated", "timeout_ms": 5000}},
+		Verify: verify.Spec{},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	initial, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if initial.Execution.PendingApproval == nil {
+		t.Fatalf("expected pending approval")
+	}
+	approvalID := initial.Execution.PendingApproval.ApprovalID
+
+	if _, err := rt.AbortSession(context.Background(), attached.SessionID, hruntime.AbortRequest{
+		Code:   "operator.abort",
+		Reason: "abort rollback",
+	}); !errors.Is(err, boom) {
+		t.Fatalf("expected abort to surface session update error, got %v", err)
+	}
+
+	storedSession, err := rt.GetSession(attached.SessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if storedSession.Phase == session.PhaseAborted || storedSession.PendingApprovalID != approvalID {
+		t.Fatalf("expected failed abort not to persist aborted session state, got %#v", storedSession)
+	}
+
+	storedApproval, err := rt.GetApproval(approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if storedApproval.Status != approval.StatusPending {
+		t.Fatalf("expected failed abort to restore approval to pending, got %#v", storedApproval)
+	}
+
+	attempts := mustListAttempts(t, rt, attached.SessionID)
+	if len(attempts) != 1 || attempts[0].Status != execution.AttemptBlocked {
+		t.Fatalf("expected failed abort to restore blocked attempt, got %#v", attempts)
+	}
+
+	plansAfter := mustListPlans(t, rt, attached.SessionID)
+	if len(plansAfter) != 1 || plansAfter[0].Steps[0].Status != plan.StepBlocked {
+		t.Fatalf("expected failed abort to restore blocked plan step, got %#v", plansAfter)
+	}
+
+	storedTask, err := rt.GetTask(tsk.TaskID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if storedTask.Status == task.StatusAborted {
+		t.Fatalf("expected failed abort not to persist aborted task state, got %#v", storedTask)
+	}
+}
+
 func TestAbortSessionMarksRecoverableSessionTerminal(t *testing.T) {
 	sessions := session.NewMemoryStore()
 	tasks := task.NewMemoryStore()

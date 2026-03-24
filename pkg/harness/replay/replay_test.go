@@ -29,6 +29,14 @@ func TestReaderProjectsSession(t *testing.T) {
 			{EventID: "event-1", Sequence: 1, CycleID: "cycle-1", CreatedAt: 1},
 			{EventID: "event-orphan", Sequence: 4, CycleID: "", CreatedAt: 4},
 		},
+		blocked: []execution.BlockedRuntimeProjection{
+			{
+				Runtime: execution.BlockedRuntime{
+					BlockedRuntimeID: "blocked-1",
+					SessionID:        "session-42",
+				},
+			},
+		},
 	}
 
 	readerGetter := NewReader(reader)
@@ -51,6 +59,9 @@ func TestReaderProjectsSession(t *testing.T) {
 	if len(projection.Cycles) != 2 {
 		t.Fatalf("expected 2 cycles, got %d", len(projection.Cycles))
 	}
+	if len(projection.BlockedRuntimes) != 1 || projection.BlockedRuntimes[0].Runtime.BlockedRuntimeID != "blocked-1" {
+		t.Fatalf("expected blocked runtime projections to be included, got %#v", projection.BlockedRuntimes)
+	}
 
 	firstCycle := projection.Cycles[0]
 	if firstCycle.Cycle.CycleID != "cycle-1" {
@@ -72,9 +83,15 @@ func TestReaderUsesGetExecutionCycleWhenAvailable(t *testing.T) {
 		events: []audit.Event{{EventID: "event-1", Sequence: 1, CycleID: "cycle-1", CreatedAt: 1}},
 		getReturn: map[string]execution.ExecutionCycle{
 			"cycle-1": {
-				CycleID:        "cycle-1",
-				SessionID:      "session-1",
-				RuntimeHandles: []execution.RuntimeHandle{{HandleID: "via-get"}},
+				CycleID:   "cycle-1",
+				SessionID: "session-1",
+				RuntimeHandles: []execution.RuntimeHandle{{
+					HandleID: "via-get",
+					Metadata: map[string]any{
+						execution.InteractiveMetadataKeyEnabled:      true,
+						execution.InteractiveMetadataKeySupportsView: true,
+					},
+				}},
 			},
 		},
 	}
@@ -96,6 +113,9 @@ func TestReaderUsesGetExecutionCycleWhenAvailable(t *testing.T) {
 	handles := projection.Cycles[0].Cycle.RuntimeHandles
 	if len(handles) != 1 || handles[0].HandleID != "via-get" {
 		t.Fatalf("projection did not include runtime handles from GetExecutionCycle")
+	}
+	if len(projection.Cycles[0].InteractiveRuntimes) != 1 || projection.Cycles[0].InteractiveRuntimes[0].Handle.HandleID != "via-get" {
+		t.Fatalf("projection did not include derived interactive runtimes: %#v", projection.Cycles[0])
 	}
 }
 
@@ -125,6 +145,7 @@ func TestReaderProjectsSingleExecutionCycle(t *testing.T) {
 type fakeExecutionFactReader struct {
 	cycles    []execution.ExecutionCycle
 	events    []audit.Event
+	blocked   []execution.BlockedRuntimeProjection
 	getReturn map[string]execution.ExecutionCycle
 	getCalls  []string
 }
@@ -135,6 +156,10 @@ func (f *fakeExecutionFactReader) ListExecutionCycles(sessionID string) ([]execu
 
 func (f *fakeExecutionFactReader) ListAuditEvents(sessionID string) ([]audit.Event, error) {
 	return f.events, nil
+}
+
+func (f *fakeExecutionFactReader) ListBlockedRuntimeProjections() ([]execution.BlockedRuntimeProjection, error) {
+	return f.blocked, nil
 }
 
 func (f *fakeExecutionFactReader) GetExecutionCycle(sessionID, cycleID string) (execution.ExecutionCycle, error) {

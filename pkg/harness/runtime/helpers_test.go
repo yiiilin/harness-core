@@ -60,6 +60,18 @@ func mustListPlans(tb testing.TB, rt *hruntime.Service, sessionID string) []plan
 	return items
 }
 
+func mustPlanByRevision(tb testing.TB, rt *hruntime.Service, sessionID string, revision int) plan.Spec {
+	tb.Helper()
+	items := mustListPlans(tb, rt, sessionID)
+	for _, item := range items {
+		if item.Revision == revision {
+			return item
+		}
+	}
+	tb.Fatalf("expected plan revision %d, got %#v", revision, items)
+	return plan.Spec{}
+}
+
 func mustListAttempts(tb testing.TB, rt *hruntime.Service, sessionID string) []execution.Attempt {
 	tb.Helper()
 	items, err := rt.ListAttempts(sessionID)

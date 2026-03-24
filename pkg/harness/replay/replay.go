@@ -23,6 +23,9 @@ func NewReader(source SessionReader) *Reader {
 	if getter, ok := source.(CycleReader); ok {
 		reader.cycleReader = getter
 	}
+	if blocked, ok := source.(BlockedRuntimeProjectionReader); ok {
+		reader.blockedReader = blocked
+	}
 	return reader
 }
 
@@ -47,7 +50,12 @@ func (r *Reader) SessionProjection(sessionID string) (SessionProjection, error) 
 		return SessionProjection{}, err
 	}
 
-	return BuildSessionProjection(sessionID, cycles, events), nil
+	blocked, err := r.listBlockedRuntimeProjections()
+	if err != nil {
+		return SessionProjection{}, err
+	}
+
+	return BuildSessionProjectionWithBlockedRuntimes(sessionID, cycles, blocked, events), nil
 }
 
 // ExecutionCycleProjection loads one public execution cycle plus session audit
@@ -85,16 +93,25 @@ func LoadCycleProjection(reader SessionReader, sessionID, cycleID string) (Execu
 // BuildSessionProjection groups ordered audit events under their execution
 // cycles while preserving unmatched session-level events.
 func BuildSessionProjection(sessionID string, cycles []execution.ExecutionCycle, auditEvents []audit.Event) SessionProjection {
+	return BuildSessionProjectionWithBlockedRuntimes(sessionID, cycles, nil, auditEvents)
+}
+
+func BuildSessionProjectionWithBlockedRuntimes(sessionID string, cycles []execution.ExecutionCycle, blocked []execution.BlockedRuntimeProjection, auditEvents []audit.Event) SessionProjection {
 	orderedCycles := orderedExecutionCycles(cycles)
 	projection := SessionProjection{
-		SessionID: firstNonEmpty(sessionID, sessionIDFromCycles(orderedCycles), sessionIDFromEvents(auditEvents)),
-		Cycles:    make([]ExecutionCycleProjection, len(orderedCycles)),
-		Events:    orderedAuditEvents(auditEvents),
+		SessionID:       firstNonEmpty(sessionID, sessionIDFromCycles(orderedCycles), sessionIDFromEvents(auditEvents)),
+		Cycles:          make([]ExecutionCycleProjection, len(orderedCycles)),
+		BlockedRuntimes: append([]execution.BlockedRuntimeProjection(nil), blocked...),
+		Events:          orderedAuditEvents(auditEvents),
 	}
 
 	cycleIndex := make(map[string]int, len(orderedCycles))
 	for i, cycle := range orderedCycles {
-		projection.Cycles[i] = ExecutionCycleProjection{Cycle: cloneExecutionCycle(cycle)}
+		projection.Cycles[i] = ExecutionCycleProjection{
+			Cycle:               cloneExecutionCycle(cycle),
+			TargetSlices:        execution.TargetSlicesFromCycle(cycle),
+			InteractiveRuntimes: execution.InteractiveRuntimesFromHandles(cycle.RuntimeHandles),
+		}
 		if cycle.CycleID != "" {
 			cycleIndex[cycle.CycleID] = i
 		}
@@ -114,7 +131,11 @@ func BuildSessionProjection(sessionID string, cycles []execution.ExecutionCycle,
 // BuildExecutionCycleProjection keeps a logical execution cycle together with
 // its ordered cycle-correlated audit events.
 func BuildExecutionCycleProjection(cycle execution.ExecutionCycle, auditEvents []audit.Event) ExecutionCycleProjection {
-	projection := ExecutionCycleProjection{Cycle: cloneExecutionCycle(cycle)}
+	projection := ExecutionCycleProjection{
+		Cycle:               cloneExecutionCycle(cycle),
+		TargetSlices:        execution.TargetSlicesFromCycle(cycle),
+		InteractiveRuntimes: execution.InteractiveRuntimesFromHandles(cycle.RuntimeHandles),
+	}
 	for _, event := range orderedAuditEvents(auditEvents) {
 		if cycle.CycleID == "" || event.CycleID != cycle.CycleID {
 			continue
@@ -144,6 +165,13 @@ func (r *Reader) hydrateCycles(sessionID string, cycles []execution.ExecutionCyc
 		}
 	}
 	return out, nil
+}
+
+func (r *Reader) listBlockedRuntimeProjections() ([]execution.BlockedRuntimeProjection, error) {
+	if r == nil || r.blockedReader == nil {
+		return nil, nil
+	}
+	return r.blockedReader.ListBlockedRuntimeProjections()
 }
 
 func getCycle(sessionReader SessionReader, cycleReader CycleReader, sessionID, cycleID string) (execution.ExecutionCycle, error) {

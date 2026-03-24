@@ -8,10 +8,11 @@ import (
 )
 
 type Request struct {
-	SessionID string      `json:"session_id,omitempty"`
-	TaskID    string      `json:"task_id,omitempty"`
-	StepID    string      `json:"step_id,omitempty"`
-	Action    action.Spec `json:"action"`
+	SessionID    string               `json:"session_id,omitempty"`
+	TaskID       string               `json:"task_id,omitempty"`
+	StepID       string               `json:"step_id,omitempty"`
+	Action       action.Spec          `json:"action"`
+	Requirements *SupportRequirements `json:"requirements,omitempty"`
 }
 
 type SnapshotScope string
@@ -53,6 +54,10 @@ type Resolution struct {
 
 type Resolver interface {
 	Resolve(ctx context.Context, req Request) (Resolution, error)
+}
+
+type Matcher interface {
+	Match(ctx context.Context, req Request) (MatchResult, error)
 }
 
 type Freezer interface {

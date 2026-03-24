@@ -26,7 +26,9 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = harness.NewWorkerHelper
 	var _ = harness.NewReplayReader
 	var _ = (*harness.Service).CreatePlanFromPlanner
+	var _ = (*harness.Service).CreatePlanFromProgram
 	var _ = (*harness.Service).RunSession
+	var _ = (*harness.Service).RunProgram
 	var _ = (*harness.Service).RunClaimedSession
 	var _ = (*harness.Service).RecoverClaimedSession
 	var _ = (*harness.Service).RespondApproval
@@ -34,9 +36,21 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = (*harness.Service).ClaimRunnableSession
 	var _ = (*harness.Service).ClaimRecoverableSession
 	var _ = (*harness.Service).ReleaseSessionLease
+	var _ = (*harness.Service).MatchCapability
+	var _ = (*harness.Service).GetBlockedRuntime
+	var _ = (*harness.Service).GetBlockedRuntimeByApproval
+	var _ = (*harness.Service).ListBlockedRuntimes
+	var _ = (*harness.Service).GetBlockedRuntimeProjection
+	var _ = (*harness.Service).GetBlockedRuntimeProjectionByApproval
+	var _ = (*harness.Service).ListBlockedRuntimeProjections
 	var _ = (*harness.Service).ListAttempts
 	var _ = (*harness.Service).ListActions
 	var _ = (*harness.Service).ListVerifications
+	var _ = (*harness.Service).ListAggregateResults
+	var _ = (*harness.Service).GetInteractiveRuntime
+	var _ = (*harness.Service).ListInteractiveRuntimes
+	var _ = (*harness.Service).UpdateInteractiveRuntime
+	var _ = (*harness.Service).UpdateClaimedInteractiveRuntime
 	var _ = (*harness.Service).ListExecutionCycles
 	var _ = worker.New
 	var _ = replay.NewReader
@@ -50,8 +64,76 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ harness.WorkerLoopIteration
 	var _ harness.WorkerResult
 	var _ harness.ReplaySessionProjection
+	var _ harness.CapabilityMatchResult
+	var _ harness.CapabilityUnsupportedReason
+	var _ harness.CapabilityUnsupportedReasonCode
+	var _ harness.CapabilitySupportRequirements
+	var _ harness.ExecutionBlockedRuntime
+	var _ harness.ExecutionBlockedRuntimeKind
+	var _ harness.ExecutionBlockedRuntimeStatus
+	var _ harness.ExecutionTarget
+	var _ harness.ExecutionTargetRef
+	var _ harness.ExecutionTargetSelection
+	var _ harness.ExecutionTargetSelectionMode
+	var _ harness.ExecutionTargetFailureStrategy
+	var _ harness.ExecutionAggregateScope
+	var _ harness.ExecutionAggregateStatus
+	var _ harness.ExecutionAggregateTargetResult
+	var _ harness.ExecutionAggregateResult
+	var _ harness.ExecutionInteractiveCapabilities
+	var _ harness.ExecutionInteractiveSnapshot
+	var _ harness.ExecutionInteractiveObservation
+	var _ harness.ExecutionInteractiveOperation
+	var _ harness.ExecutionInteractiveOperationKind
+	var _ harness.ExecutionInteractiveRuntime
+	var _ = harness.ExecutionTargetArgKey
+	var _ = harness.ExecutionTargetMetadataKeyID
+	var _ = harness.ExecutionTargetMetadataKeyKind
+	var _ = harness.ExecutionAggregateMetadataKeyID
+	var _ = harness.ExecutionAggregateMetadataKeyScope
+	var _ = harness.ExecutionAggregateMetadataKeyStrategy
+	var _ = harness.ExecutionInteractiveMetadataKeyEnabled
+	var _ = harness.ExecutionInteractiveMetadataKeySupportsReopen
+	var _ = harness.ExecutionInteractiveMetadataKeySupportsView
+	var _ = harness.ExecutionInteractiveMetadataKeySupportsWrite
+	var _ = harness.ExecutionInteractiveMetadataKeySupportsClose
+	var _ = harness.ExecutionInteractiveMetadataKeyNextOffset
+	var _ = harness.ExecutionInteractiveMetadataKeyClosed
+	var _ = harness.ExecutionInteractiveMetadataKeyExitCode
+	var _ = harness.ExecutionInteractiveMetadataKeyStatus
+	var _ = harness.ExecutionInteractiveMetadataKeyStatusReason
+	var _ = harness.ExecutionInteractiveMetadataKeySnapshotArtifactID
+	var _ = harness.ExecutionInteractiveMetadataKeyLastOperationKind
+	var _ = harness.ExecutionInteractiveMetadataKeyLastOperationAt
+	var _ = harness.ExecutionInteractiveMetadataKeyLastOperationOffset
+	var _ = harness.ExecutionInteractiveMetadataKeyLastOperationBytes
+	var _ = harness.ExecutionInteractiveOperationReopen
+	var _ = harness.ExecutionInteractiveOperationView
+	var _ = harness.ExecutionInteractiveOperationWrite
+	var _ = harness.ExecutionInteractiveOperationClose
+	var _ harness.ExecutionAttachmentInput
+	var _ harness.ExecutionAttachmentInputKind
+	var _ harness.ExecutionAttachmentMaterialization
+	var _ harness.ExecutionArtifactRef
+	var _ harness.ExecutionAttachmentRef
+	var _ harness.ExecutionOutputRef
+	var _ harness.ExecutionOutputRefKind
+	var _ harness.ExecutionProgram
+	var _ harness.ExecutionProgramNode
+	var _ harness.ExecutionProgramInputBinding
+	var _ harness.ExecutionProgramInputBindingKind
+	var _ harness.ExecutionVerificationScope
+	var _ harness.ExecutionTargetSlice
+	var _ harness.ExecutionBlockedRuntimeProjection
+	var _ harness.ExecutionBlockedRuntimeWait
+	var _ harness.ExecutionBlockedRuntimeWaitScope
+	var _ harness.ExecutionBlockedRuntimeRecord
+	var _ harness.ExecutionBlockedRuntimeSubject
+	var _ harness.ExecutionBlockedRuntimeCondition
+	var _ harness.ExecutionBlockedRuntimeConditionKind
 	var _ harness.StepRunOutput
 	var _ harness.SessionRunOutput
+	var _ harness.InteractiveRuntimeUpdate
 	var _ harness.RuntimeHandleUpdate
 	var _ harness.RuntimeHandleCloseRequest
 	var _ harness.RuntimeHandleInvalidateRequest
@@ -83,8 +165,20 @@ func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
 				strings.Contains(string(data), "github.com/yiiilin/harness-core/adapters v0.0.0") {
 				t.Fatalf("%s still contains workspace placeholder repo-local dependency versions", rel)
 			}
+			if containsReplaceDirective(string(data)) {
+				t.Fatalf("%s still contains repo-local replace directives", rel)
+			}
 		})
 	}
+}
+
+func containsReplaceDirective(goMod string) bool {
+	for _, line := range strings.Split(goMod, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "replace ") {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTier1InMemoryWorkerApprovalReplayFlow(t *testing.T) {

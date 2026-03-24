@@ -53,7 +53,7 @@ INSERT INTO attempts (
 SELECT attempt_id, session_id, task_id, step_id, approval_id, cycle_id, trace_id, status, step_json, metadata_json, started_at, finished_at
 FROM attempts
 WHERE session_id = $1
-ORDER BY started_at ASC`)).WithArgs("sess1").WillReturnError(listBoom)
+ORDER BY started_at ASC, COALESCE(step_id, '') ASC, attempt_id ASC`)).WithArgs("sess1").WillReturnError(listBoom)
 	if _, err := repo.List("sess1"); !errors.Is(err, listBoom) {
 		t.Fatalf("expected list storage error, got %v", err)
 	}
