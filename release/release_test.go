@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -163,10 +164,7 @@ func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read %s: %v", rel, err)
 			}
-			if strings.Contains(string(data), "github.com/yiiilin/harness-core v0.0.0") ||
-				strings.Contains(string(data), "github.com/yiiilin/harness-core/modules v0.0.0") ||
-				strings.Contains(string(data), "github.com/yiiilin/harness-core/pkg/harness/builtins v0.0.0") ||
-				strings.Contains(string(data), "github.com/yiiilin/harness-core/adapters v0.0.0") {
+			if containsWorkspacePlaceholderVersion(string(data)) {
 				t.Fatalf("%s still contains workspace placeholder repo-local dependency versions", rel)
 			}
 			if containsReplaceDirective(string(data)) {
@@ -176,7 +174,7 @@ func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
 	}
 }
 
-func TestCompanionModulesReferenceTaggedRepoLocalVersions(t *testing.T) {
+func TestCompanionModulesReferenceResolvableRepoLocalVersions(t *testing.T) {
 	t.Parallel()
 
 	tags := gitTagSet(t)
@@ -213,13 +211,101 @@ func TestCompanionModulesReferenceTaggedRepoLocalVersions(t *testing.T) {
 				if !ok {
 					continue
 				}
-				expected := tagResolver(fields[1])
-				if !tags[expected] {
-					t.Fatalf("%s references %s %s but local tag %q is missing", rel, fields[0], fields[1], expected)
+				version := fields[1]
+				switch {
+				case isPseudoVersion(version):
+					if moduleHasLocalReleaseTag(tags, fields[0]) && isZeroBasePseudoVersion(version) {
+						t.Fatalf("%s references %s %s but zero-base pseudo-versions are not allowed once the module has release tags", rel, fields[0], version)
+					}
+					if !gitCommitExists(t, pseudoVersionCommit(version)) {
+						t.Fatalf("%s references %s %s but local commit %q is missing", rel, fields[0], version, pseudoVersionCommit(version))
+					}
+				default:
+					expected := tagResolver(version)
+					if !tags[expected] {
+						t.Fatalf("%s references %s %s but local tag %q is missing", rel, fields[0], version, expected)
+					}
 				}
 			}
 		})
 	}
+}
+
+var pseudoVersionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\.[0-9]{14}-([0-9a-f]{12})$|^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]{14}-([0-9a-f]{12})$`)
+
+func isPseudoVersion(version string) bool {
+	return pseudoVersionPattern.MatchString(version)
+}
+
+func pseudoVersionCommit(version string) string {
+	matches := pseudoVersionPattern.FindStringSubmatch(version)
+	if len(matches) < 3 {
+		return ""
+	}
+	for _, match := range matches[1:] {
+		if match != "" {
+			return match
+		}
+	}
+	return ""
+}
+
+func gitCommitExists(t *testing.T, rev string) bool {
+	t.Helper()
+	if rev == "" {
+		return false
+	}
+	cmd := exec.Command("git", "rev-parse", "--verify", rev+"^{commit}")
+	cmd.Dir = filepath.Join("..")
+	return cmd.Run() == nil
+}
+
+func moduleHasLocalReleaseTag(tags map[string]bool, modulePath string) bool {
+	for tag := range tags {
+		switch modulePath {
+		case "github.com/yiiilin/harness-core":
+			if !strings.Contains(tag, "/") {
+				return true
+			}
+		case "github.com/yiiilin/harness-core/pkg/harness/builtins":
+			if strings.HasPrefix(tag, "pkg/harness/builtins/") {
+				return true
+			}
+		case "github.com/yiiilin/harness-core/modules":
+			if strings.HasPrefix(tag, "modules/") {
+				return true
+			}
+		case "github.com/yiiilin/harness-core/adapters":
+			if strings.HasPrefix(tag, "adapters/") {
+				return true
+			}
+		case "github.com/yiiilin/harness-core/cmd/harness-core":
+			if strings.HasPrefix(tag, "cmd/harness-core/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isZeroBasePseudoVersion(version string) bool {
+	return strings.HasPrefix(version, "v0.0.0-")
+}
+
+var workspacePlaceholderPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core\s+v0\.0\.0\s*$`),
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core/modules\s+v0\.0\.0\s*$`),
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core/pkg/harness/builtins\s+v0\.0\.0\s*$`),
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core/adapters\s+v0\.0\.0\s*$`),
+}
+
+func containsWorkspacePlaceholderVersion(goMod string) bool {
+	for _, pattern := range workspacePlaceholderPatterns {
+		if pattern.MatchString(goMod) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsReplaceDirective(goMod string) bool {

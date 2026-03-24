@@ -126,11 +126,14 @@ Use companion-module tags for:
 
 Companion module requirement rule:
 
-- repo-local dependencies inside companion `go.mod` files must use real released versions
-- every referenced companion-module version must have a matching companion-module tag, not only a root tag
-- those companion tags must be pushed, not just created locally, or downstream `go mod tidy` may still resolve pseudo-versions
+- active development branches may use resolvable pseudo-versions between repo-local modules so external consumers can follow `@dev`
+- when a companion module already has release tags, its dev pseudo-version should advance from the latest pushed tag instead of falling back to `v0.0.0-...`
+- those pseudo-versions must point at reachable commits in this repository and must never use the old `v0.0.0` workspace placeholder form
+- published releases must rewrite repo-local dependencies back to real released versions before cutting and pushing tags
+- every referenced companion-module release version must have a matching companion-module tag, not only a root tag
+- those companion tags must be pushed, not just created locally, or downstream `go mod tidy` may fail to resolve the dependency graph cleanly
 - `v0.0.0` is a workspace-only placeholder and must never ship in a published companion module
-- `replace` directives are acceptable for local workspace development, but external consumers do not honor dependency-module `replace` lines
+- root-module `replace` directives are acceptable for local workspace development, but downstream consumers do not inherit dependency-module `replace` lines
 
 Do not tag companion modules as a proxy for kernel semantic changes unless the
 root module also needs a release.

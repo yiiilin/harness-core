@@ -1,5 +1,6 @@
 github.com/kisielk/sqlstruct v0.0.0-20201105191214-5f3e10d3ab46 h1:veS9QfglfvqAw2e+eeNT/SbGySq8ajECXJ9e4fPoLhY=
 github.com/yiiilin/harness-core v1.0.1/go.mod h1:hS9wFOZWUDJIRS7cB5jbTtSghIrpwnAPT/OC89TiNeU=
+github.com/yiiilin/harness-core v1.0.2-0.20260324015601-82b204d41c30/go.mod h1:hS9wFOZWUDJIRS7cB5jbTtSghIrpwnAPT/OC89TiNeU=
 github.com/yiiilin/harness-core/adapters v0.1.0/go.mod h1:DvxGrB+7kF3W0RvnMsp+NHdRTS87hLG2uZ8jWm65PZI=
 github.com/yiiilin/harness-core/modules v0.1.0/go.mod h1:1QR64BvQ2Jg4SD3Zdc/umPgHBl8KkTOHtbTqbXso2Zk=
 github.com/yiiilin/harness-core/pkg/harness/builtins v0.1.0/go.mod h1:fx1xUHL88NrWhiRLIKz21fYcBU66NbGrzFGIXF57/1w=
