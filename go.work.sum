@@ -3,6 +3,7 @@ github.com/yiiilin/harness-core v1.0.1/go.mod h1:hS9wFOZWUDJIRS7cB5jbTtSghIrpwnA
 github.com/yiiilin/harness-core v1.0.2-0.20260324015601-82b204d41c30/go.mod h1:hS9wFOZWUDJIRS7cB5jbTtSghIrpwnAPT/OC89TiNeU=
 github.com/yiiilin/harness-core v1.0.2-0.20260324054047-5c8a6cc67f4b/go.mod h1:SKk82Zd40GWqMhCNML801fTv5zmxo4ZgljeVR2HlLDA=
 github.com/yiiilin/harness-core v1.0.2-0.20260324065650-154bedafd634/go.mod h1:rh5pTK3Xbd/ME0hSEILkc178s58TLD/cNCBK32ATmw8=
+github.com/yiiilin/harness-core v1.0.2-0.20260324091209-b6cf2754e97b/go.mod h1:et2Fb6hMiz6tGAKiHQw/zORGrWjvVkRLVc3+g2MCfhE=
 github.com/yiiilin/harness-core/adapters v0.1.0/go.mod h1:DvxGrB+7kF3W0RvnMsp+NHdRTS87hLG2uZ8jWm65PZI=
 github.com/yiiilin/harness-core/modules v0.1.0/go.mod h1:1QR64BvQ2Jg4SD3Zdc/umPgHBl8KkTOHtbTqbXso2Zk=
 github.com/yiiilin/harness-core/pkg/harness/builtins v0.1.0/go.mod h1:fx1xUHL88NrWhiRLIKz21fYcBU66NbGrzFGIXF57/1w=
