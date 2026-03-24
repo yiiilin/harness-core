@@ -45,6 +45,7 @@ type Options struct {
 	Planner                Planner
 	TargetResolver         TargetResolver
 	AttachmentMaterializer AttachmentMaterializer
+	InteractiveController  InteractiveController
 	EventSink              EventSink
 	Clock                  Clock
 	Metrics                Metrics

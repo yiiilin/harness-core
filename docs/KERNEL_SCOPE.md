@@ -59,6 +59,7 @@ The following concerns belong in the kernel:
 - capability resolution and replay-stable capability snapshots
 - transport-neutral target resolution hooks for executable target fan-out
 - transport-neutral attachment materialization hooks when runtime semantics depend on them
+- transport-neutral interactive controller hooks when durable runtime-handle semantics depend on them
 - context assembly / compaction hooks when they affect runtime behavior globally
 - transport-neutral control-plane primitives required for correct execution
 - typed extension points that change runtime semantics globally

@@ -46,6 +46,17 @@ type AttachmentMaterializer interface {
 	Materialize(ctx context.Context, request AttachmentMaterializeRequest) (any, error)
 }
 
+// InteractiveController owns transport-neutral interactive runtime lifecycle
+// operations while leaving backend-specific semantics to companion modules or
+// embedders.
+type InteractiveController interface {
+	StartInteractive(ctx context.Context, request InteractiveStartRequest) (InteractiveStartResult, error)
+	ReopenInteractive(ctx context.Context, handle execution.RuntimeHandle, request InteractiveReopenRequest) (InteractiveReopenResult, error)
+	ViewInteractive(ctx context.Context, handle execution.RuntimeHandle, request InteractiveViewRequest) (InteractiveViewResult, error)
+	WriteInteractive(ctx context.Context, handle execution.RuntimeHandle, request InteractiveWriteRequest) (InteractiveWriteResult, error)
+	CloseInteractive(ctx context.Context, handle execution.RuntimeHandle, request InteractiveCloseRequest) (InteractiveCloseResult, error)
+}
+
 // ToolInvoker executes a tool action.
 type ToolInvoker interface {
 	Invoke(ctx context.Context, step plan.StepSpec) (action.Result, error)

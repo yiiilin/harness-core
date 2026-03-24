@@ -23,6 +23,7 @@ const (
 	EventLeaseRenewed             = "lease.renewed"
 	EventLeaseReleased            = "lease.released"
 	EventRecoveryStateChanged     = "recovery.state_changed"
+	EventRuntimeHandleCreated     = "runtime_handle.created"
 	EventRuntimeHandleUpdated     = "runtime_handle.updated"
 	EventRuntimeHandleClosed      = "runtime_handle.closed"
 	EventRuntimeHandleInvalidated = "runtime_handle.invalidated"

@@ -19,7 +19,11 @@ func Register(opts *hruntime.Options) {
 	hasCustomPolicy := opts.Policy != nil
 	resolved := hruntime.WithDefaults(*opts)
 	hverify.RegisterBuiltins(resolved.Verifiers)
-	shellmodule.Register(resolved.Tools, resolved.Verifiers)
+	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})
+	shellmodule.RegisterWithOptions(resolved.Tools, resolved.Verifiers, shellmodule.Options{PTYManager: manager})
+	if resolved.InteractiveController == nil {
+		resolved.InteractiveController = shellmodule.NewInteractiveController(manager)
+	}
 	filesystemmodule.Register(resolved.Tools, resolved.Verifiers)
 	httpmodule.Register(resolved.Tools, resolved.Verifiers)
 	resolved.Tools.Register(tool.Definition{

@@ -61,6 +61,7 @@ type Service struct {
 	Planner                Planner
 	TargetResolver         TargetResolver
 	AttachmentMaterializer AttachmentMaterializer
+	InteractiveController  InteractiveController
 	EventSink              EventSink
 	Clock                  Clock
 	Metrics                Metrics
@@ -101,6 +102,7 @@ func New(opts Options) *Service {
 		Planner:                opts.Planner,
 		TargetResolver:         opts.TargetResolver,
 		AttachmentMaterializer: opts.AttachmentMaterializer,
+		InteractiveController:  opts.InteractiveController,
 		EventSink:              opts.EventSink,
 		Clock:                  opts.Clock,
 		Metrics:                metricsOrNoop(opts.Metrics),

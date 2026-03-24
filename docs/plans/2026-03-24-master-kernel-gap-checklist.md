@@ -147,6 +147,37 @@ This checklist consolidates open items from:
 - [x] Add focused runtime tests for generic blocked-runtime lifecycle, lookup, projection, and claim semantics.
 - [x] Keep these items open until they are implemented with code, tests, and docs rather than closing them as documentation-only work.
 
+## Task 6B: Add a transport-neutral interactive control plane
+
+**Goal:** move start / reopen / view / write / close into a kernel-owned transport-neutral controller contract while keeping PTY-specific attach/resize and other backend details outside core.
+
+**Files:**
+- Modify: `pkg/harness/runtime/interfaces.go`
+- Modify: `pkg/harness/runtime/options.go`
+- Modify: `pkg/harness/runtime/service.go`
+- Modify: `pkg/harness/runtime/interactive_control.go`
+- Modify: `pkg/harness/runtime/errors.go`
+- Modify: `pkg/harness/harness.go`
+- Modify: `pkg/harness/audit/event.go`
+- Test: `pkg/harness/runtime/interactive_runtime_test.go`
+- Modify: `modules/shell/interactive_controller.go`
+- Test: `modules/shell/pty_test.go`
+- Modify: `pkg/harness/builtins/builtins.go`
+- Test: `pkg/harness/builtins/builtins_test.go`
+- Modify: `docs/API.md`
+- Modify: `docs/CURRENT_STATE.md`
+- Modify: `docs/STATUS.md`
+- Modify: `docs/EMBEDDER_VNEXT.md`
+- Modify: `docs/EMBEDDER_VNEXT_REALITY_CHECK.md`
+- Modify: `docs/KERNEL_SCOPE.md`
+- Modify: `docs/EXTENSIBILITY.md`
+
+- [x] Add a public `InteractiveController` runtime hook plus public start/reopen/view/write/close request and result contracts.
+- [x] Add kernel runtime service APIs that persist runtime-handle state and audit events around interactive control operations.
+- [x] Add a shell-module PTY controller implementation that can back the new kernel control plane through a shared `PTYManager`.
+- [x] Wire the default builtins composition helper so the default shell PTY path also satisfies the new interactive control-plane surface.
+- [x] Update docs to clarify that the control-plane contract is now in core while PTY attach/resize and other backend-specific behavior remain outside.
+
 ## Task 7: Final verification and checklist synchronization
 
 **Files:**

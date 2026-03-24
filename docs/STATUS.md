@@ -57,7 +57,7 @@ That pass closed the remaining correctness-oriented kernel gaps that were still 
 This does not mean `v1` is ready today.
 The remaining blockers are now primarily release-discipline items from `docs/V1_RELEASE_CHECKLIST.md`, not an open pure-kernel correctness checklist.
 The active consolidated follow-up checklist now lives in `docs/plans/2026-03-24-master-kernel-gap-checklist.md`.
-At the execution-model layer, the generic blocked-runtime lifecycle is now part of the baseline; the largest remaining redesign item is true concurrent multi-target scheduling.
+At the execution-model layer, the generic blocked-runtime lifecycle and transport-neutral interactive control plane are now part of the baseline; the largest remaining redesign item is true concurrent multi-target scheduling.
 
 For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
 The recommended public path is `pkg/harness/postgres`, especially `OpenServiceWithConfig(...)` plus `postgres.Config`; the WebSocket adapter remains a reference transport layer.
@@ -76,7 +76,7 @@ The following are intentionally outside `harness-core`:
 
 Those belong in adapters, modules, or an embedding platform.
 The same currently applies to opaque continuation blobs for platform-specific loop resume state.
-Interactive I/O backends such as PTY view/write/attach also remain outside the kernel; the kernel owns runtime-handle state and replay facts, not backend-specific control planes.
+Interactive backend implementations such as PTY attach/resize or other transport-specific stream behavior remain outside the kernel; the kernel now owns the transport-neutral interactive controller contract plus runtime-handle state and replay facts.
 
 ## Best use today
 

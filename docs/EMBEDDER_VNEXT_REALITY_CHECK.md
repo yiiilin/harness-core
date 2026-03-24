@@ -125,12 +125,18 @@ The kernel now has public interactive runtime types and public state/projection 
 - `InteractiveRuntime`
 - `InteractiveObservation`
 - `InteractiveCapabilities`
+- `InteractiveController`
+- `StartInteractive(...)`
+- `ReopenInteractive(...)`
+- `ViewInteractive(...)`
+- `WriteInteractive(...)`
+- `CloseInteractive(...)`
 - `GetInteractiveRuntime(...)`
 - `ListInteractiveRuntimes(...)`
 - `UpdateInteractiveRuntime(...)`
 - `UpdateClaimedInteractiveRuntime(...)`
 
-This is enough to call the interactive state model real.
+This is enough to call the interactive control plane and state model real.
 
 ### Capability matcher and unsupported reason codes
 
@@ -192,11 +198,9 @@ That does **not** mean the kernel now owns product semantics such as:
 
 Those remain outside the kernel by design.
 
-### Interactive control plane is not complete in core
+### Interactive control plane is transport-neutral in core, not backend-specific
 
-The kernel now exposes typed interactive state and state updates.
-
-It does **not** yet expose a full kernel-native interactive control plane for:
+The kernel now exposes a real transport-neutral interactive controller surface for:
 
 - start
 - reopen
@@ -204,8 +208,11 @@ It does **not** yet expose a full kernel-native interactive control plane for:
 - write
 - close
 
-Those operations still live in companion modules or embedding layers.
-That is now an explicit boundary choice, not an accidental omission.
+What still stays outside the kernel is backend-specific behavior such as:
+
+- PTY attach or resize
+- stream transport protocol details
+- remote backend connection policy
 
 ### Attachment materialization is still incomplete
 
@@ -233,17 +240,7 @@ Needed to upgrade from step expansion to a real fan-out scheduler:
 - actual `MaxConcurrency` consumption
 - cancellation and retry semantics at the scheduler layer
 
-### 2. Complete interactive control plane
-
-Needed only if the kernel intentionally decides to own a first-class interactive execution surface:
-
-- start / reopen / view / write / close APIs
-- durable reopen semantics
-- projection/state alignment across restart
-
-Current code does not provide this yet.
-
-### 3. Generalized attachment materialization semantics
+### 2. Generalized attachment materialization semantics
 
 Needed to make attachment input fully kernel-native:
 
@@ -251,7 +248,7 @@ Needed to make attachment input fully kernel-native:
 - temp-file or other materialization lifecycle
 - durable reference semantics across execution and replay
 
-### 4. Release/module-consumption hygiene for companion modules
+### 3. Release/module-consumption hygiene for companion modules
 
 This is not a runtime semantics gap, but it is still a real embedder problem.
 
@@ -280,9 +277,8 @@ These are platform-layer responsibilities, not kernel gaps.
 If maintainers want to close the most meaningful remaining gaps without expanding kernel scope incorrectly, the best next priorities are:
 
 1. upgrade multi-target execution from sequential step expansion to a true concurrent scheduler
-2. decide whether interactive control should remain module/embedder-owned or become a real kernel control plane
-3. finish generic attachment materialization semantics if attachment input is intended to be kernel-native
-4. clean up companion-module release tags so `go mod tidy` succeeds for downstream users without local exclusions or workarounds
+2. finish generic attachment materialization semantics if attachment input is intended to be kernel-native
+3. clean up companion-module release tags so `go mod tidy` succeeds for downstream users without local exclusions or workarounds
 
 ## Bottom Line
 
@@ -291,7 +287,6 @@ The current repository is no longer missing the execution-model *concepts*.
 The remaining work is now about closing a few critical semantic gaps:
 
 - true concurrent multi-target scheduling
-- full interactive control-plane semantics
 - generalized attachment materialization
 - clean companion-module release hygiene
 

@@ -36,6 +36,7 @@ It is no longer just a minimal runtime skeleton:
 - resolver-backed `fanout_all` target discovery is public
 - temp-file attachment materialization is now real for native program execution
 - generic blocked-runtime lifecycle is now real for external, confirmation, and interactive waits
+- transport-neutral interactive start / reopen / view / write / close is now real in core through a public controller contract
 - shell PTY execution is extensible enough for external platforms
 - service reads now stay aligned with runner-backed committed state
 - runtime budgets start from durable first-runtime activity rather than raw enqueue time
@@ -131,7 +132,8 @@ The design direction is now correct:
 - capability variation lives in `modules/*`
 - transport exposure lives in `adapters/*`
 - target discovery and attachment materialization are now explicit kernel hooks
-- interactive I/O backends remain outside the kernel
+- transport-neutral interactive control now lives in the kernel
+- interactive I/O backends still remain outside the kernel
 
 The shell module is the clearest proof point because PTY execution can now be replaced through `PTYBackend` without forcing a local `PTYManager`.
 
@@ -163,6 +165,7 @@ These areas are now in good shape and should be treated as current strengths:
 - resolver-backed `fanout_all` target discovery
 - temp-file attachment materialization for native program execution
 - generic blocked-runtime records, lifecycle control, and projection reads
+- transport-neutral interactive control plus durable runtime-handle persistence
 - shell PTY execution extensibility
 - explicit stability guidance for embedders
 - dedicated release-gate tests for Tier 1 compatibility and durable restart/upgrade paths
@@ -225,7 +228,7 @@ The biggest remaining kernel work is no longer a collection of small correctness
 It is a short list of larger semantic gaps:
 
 - true concurrent multi-target scheduling with actual `MaxConcurrency` consumption
-- a deliberate decision on whether interactive control should ever move into core
+- more generalized attachment materialization semantics beyond the current temp-file subset
 
 ## What Should Not Be Mistaken For Kernel Gaps
 

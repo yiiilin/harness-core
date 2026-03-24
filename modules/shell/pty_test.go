@@ -12,6 +12,7 @@ import (
 	shellmodule "github.com/yiiilin/harness-core/modules/shell"
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/tool"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
@@ -72,6 +73,64 @@ func TestShellPTYModeReturnsRuntimeHandleAndStreamMetadata(t *testing.T) {
 	}
 }
 
+func TestPTYManagerInteractiveControllerDrivesKernelInteractiveLifecycle(t *testing.T) {
+	ctx := context.Background()
+	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})
+	t.Cleanup(func() {
+		_ = manager.CloseAll(ctx, "test cleanup")
+	})
+
+	rt := hruntime.New(hruntime.Options{
+		InteractiveController: shellmodule.NewInteractiveController(manager),
+	})
+	sess, err := rt.CreateSession("interactive shell controller", "exercise PTY controller through core runtime")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	started, err := rt.StartInteractive(ctx, sess.SessionID, hruntime.InteractiveStartRequest{
+		Kind: "pty",
+		Spec: map[string]any{
+			"command": "cat",
+		},
+	})
+	if err != nil {
+		t.Fatalf("start interactive: %v", err)
+	}
+	if started.Handle.HandleID == "" || started.Handle.Value == "" || !started.Capabilities.View || !started.Capabilities.Write || !started.Capabilities.Close {
+		t.Fatalf("unexpected started interactive runtime: %#v", started)
+	}
+
+	written, err := rt.WriteInteractive(ctx, started.Handle.HandleID, hruntime.InteractiveWriteRequest{Input: "from-controller\n"})
+	if err != nil {
+		t.Fatalf("write interactive: %v", err)
+	}
+	if written.Bytes <= 0 || written.Runtime.LastOperation.Kind != execution.InteractiveOperationWrite {
+		t.Fatalf("unexpected write result: %#v", written)
+	}
+
+	viewed := waitForInteractiveViewContains(t, rt, started.Handle.HandleID, "from-controller")
+	if viewed.Runtime.LastOperation.Kind != execution.InteractiveOperationView {
+		t.Fatalf("expected view operation metadata, got %#v", viewed)
+	}
+
+	reopened, err := rt.ReopenInteractive(ctx, started.Handle.HandleID, hruntime.InteractiveReopenRequest{})
+	if err != nil {
+		t.Fatalf("reopen interactive: %v", err)
+	}
+	if reopened.LastOperation.Kind != execution.InteractiveOperationReopen {
+		t.Fatalf("expected reopen metadata, got %#v", reopened)
+	}
+
+	closed, err := rt.CloseInteractive(ctx, started.Handle.HandleID, hruntime.InteractiveCloseRequest{Reason: "done"})
+	if err != nil {
+		t.Fatalf("close interactive: %v", err)
+	}
+	if !closed.Observation.Closed || closed.Observation.Status != "closed" || closed.LastOperation.Kind != execution.InteractiveOperationClose {
+		t.Fatalf("unexpected close result: %#v", closed)
+	}
+}
+
 func TestPTYManagerReadWriteAndCloseLifecycle(t *testing.T) {
 	ctx := context.Background()
 	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})
@@ -107,6 +166,26 @@ func TestPTYManagerReadWriteAndCloseLifecycle(t *testing.T) {
 	if !closed.Closed || closed.StatusReason != "operator stop" {
 		t.Fatalf("expected closed PTY read result after close, got %#v", closed)
 	}
+}
+
+func waitForInteractiveViewContains(t *testing.T, rt *hruntime.Service, handleID, text string) hruntime.InteractiveViewResult {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		viewed, err := rt.ViewInteractive(context.Background(), handleID, hruntime.InteractiveViewRequest{
+			Offset:   0,
+			MaxBytes: 4096,
+		})
+		if err != nil {
+			t.Fatalf("view interactive: %v", err)
+		}
+		if strings.Contains(viewed.Data, text) {
+			return viewed
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("interactive view never contained %q", text)
+	return hruntime.InteractiveViewResult{}
 }
 
 func TestShellPTYVerifiers(t *testing.T) {

@@ -154,6 +154,13 @@ Durable execution facts and reads:
 - `GetBlockedRuntimeProjectionByApproval`
 - `ListBlockedRuntimeProjections`
 
+Interactive control plane:
+- `StartInteractive`
+- `ReopenInteractive`
+- `ViewInteractive`
+- `WriteInteractive`
+- `CloseInteractive`
+
 Runtime handle control:
 - `UpdateRuntimeHandle`
 - `UpdateInteractiveRuntime`
@@ -192,6 +199,16 @@ Read consistency rule:
 - runtime control types:
   - `StepRunOutput`
   - `SessionRunOutput`
+  - `InteractiveStartRequest`
+  - `InteractiveStartResult`
+  - `InteractiveReopenRequest`
+  - `InteractiveReopenResult`
+  - `InteractiveViewRequest`
+  - `InteractiveViewResult`
+  - `InteractiveWriteRequest`
+  - `InteractiveWriteResult`
+  - `InteractiveCloseRequest`
+  - `InteractiveCloseResult`
   - `AbortRequest`
   - `AbortOutput`
   - `InteractiveRuntimeUpdate`
@@ -208,6 +225,7 @@ Read consistency rule:
   - context assembler
   - target resolver
   - attachment materializer
+  - interactive controller
   - event sink
   - metrics exporter
   - trace exporter
@@ -403,7 +421,7 @@ Current scope:
 This is a mixed state:
 - target-slice population is partially runtime-backed today
 - blocked-runtime projection is runtime-backed today
-- interactive projection still remains a read/state layer, not a core I/O control plane
+- interactive projection and the transport-neutral interactive control plane are runtime-backed today
 
 ## Interactive Runtime Projection Contracts
 
@@ -420,16 +438,22 @@ The runtime also exposes:
 
 - `GetInteractiveRuntime(handleID)`
 - `ListInteractiveRuntimes(sessionID)`
+- `StartInteractive(sessionID, request)`
+- `ReopenInteractive(handleID, request)`
+- `ViewInteractive(handleID, request)`
+- `WriteInteractive(handleID, request)`
+- `CloseInteractive(handleID, request)`
 - `UpdateInteractiveRuntime(handleID, update)`
 - `UpdateClaimedInteractiveRuntime(handleID, leaseID, update)`
 
 Current scope:
 
 - interactive runtime projection is derived from persisted runtime handles plus stable interactive metadata keys
-- the kernel now exposes a typed transport-neutral way to persist last-known interactive observation and reopen/view/write/close projection state without encoding PTY-specific UX into core
+- the kernel now exposes a typed transport-neutral interactive controller contract for start/reopen/view/write/close plus durable runtime-handle persistence
+- companion modules or embedders implement the backend-specific behavior behind that contract
 - `pkg/harness/replay.ExecutionCycleProjection` now exposes `InteractiveRuntimes`
 - runtime-handle lifecycle still remains authoritative for active/closed/invalidated status
-- actual interactive I/O backends such as PTY read/write/attach remain companion-module or embedder concerns
+- actual interactive I/O backends such as PTY attach/resize or other transport-specific stream behavior remain companion-module or embedder concerns
 
 ## Target-Scoped Execution Facts
 

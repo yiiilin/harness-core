@@ -42,7 +42,7 @@ These terms do **not** imply product semantics such as:
 | Preplanned execution-program / tool-graph contracts | Supported | Typed program/node/input-binding contracts are public and the runtime now exposes minimal single-target program execution entry points. |
 | Target-slice / richer blocked-runtime projection contracts | Partial | Typed projection contracts are public; target slices are runtime-backed, and blocked-runtime projections are now populated for both approval-backed and generic current blocked runtimes. Broader multi-target scheduler semantics remain unimplemented. |
 | Generic blocked-runtime contract types | Supported | Typed durable blocked-runtime record/condition contracts are public and now back a generic blocked-runtime lifecycle API. |
-| Durable interactive runtime handles | Partial | Runtime handles, typed interactive projections, and interactive-state updates are public now. Actual reopen/view/write/close backends remain embedder or module concerns. |
+| Durable interactive runtime handles | Supported | Runtime handles, typed interactive projections, and a transport-neutral interactive controller surface for start/reopen/view/write/close are public now. Backend-specific attach/resize behavior remains embedder or module concern. |
 | PTY backend replacement | Supported in companion module | `modules/shell` exposes `PTYBackend` and `PTYInspector`; this is companion-module surface, not kernel core. |
 | Replay/debug execution cycles | Supported | `pkg/harness/replay` projects execution cycles plus audit events. |
 | Capability unsupported reason codes | Supported | Public capability matching can return stable unsupported reason codes. |
@@ -137,13 +137,18 @@ Current interactive runtime semantics:
 
 - `ExecutionInteractiveRuntime` is the public projection shape over a persisted runtime handle plus stable interactive metadata
 - the runtime now exposes:
+  - `StartInteractive(...)`
+  - `ReopenInteractive(...)`
+  - `ViewInteractive(...)`
+  - `WriteInteractive(...)`
+  - `CloseInteractive(...)`
   - `GetInteractiveRuntime(...)`
   - `ListInteractiveRuntimes(...)`
   - `UpdateInteractiveRuntime(...)`
   - `UpdateClaimedInteractiveRuntime(...)`
-- this lets embedders persist reopen/view/write/close projection state in a transport-neutral way
-- actual interactive control APIs remain outside the kernel and stay in companion modules or embedding layers
-- this boundary is intentional: the kernel owns runtime-handle state and replay facts, while PTY or other interactive I/O backends remain module/embedder concerns
+- `runtime.InteractiveController` is the transport-neutral kernel hook behind those operations
+- this lets embedders own backend-specific interactive behavior while the kernel persists durable runtime-handle state, last-known observation, and replay facts
+- PTY attach/resize or other transport-specific stream behaviors still remain module/embedder concerns
 
 Current native fan-out semantics:
 
@@ -195,6 +200,6 @@ The approved delivery shape is incremental:
 1. Wave 1: docs, support matrix, capability reason codes, publish hygiene
 2. Wave 2: public model layer for targets / blocked-runtime / refs
 3. Wave 3: runtime engine for fan-out / tool graph / dataflow / verification scopes
-4. Wave 4: stronger durable interactive lifecycle and richer projections
+4. Wave 4: stronger durable interactive lifecycle, public interactive controller hooks, and richer projections
 
 The current repository state only claims Wave 1 completion once the corresponding code, tests, and docs land.

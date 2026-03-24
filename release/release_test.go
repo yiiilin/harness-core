@@ -51,6 +51,11 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = (*harness.Service).ListAggregateResults
 	var _ = (*harness.Service).GetInteractiveRuntime
 	var _ = (*harness.Service).ListInteractiveRuntimes
+	var _ = (*harness.Service).StartInteractive
+	var _ = (*harness.Service).ReopenInteractive
+	var _ = (*harness.Service).ViewInteractive
+	var _ = (*harness.Service).WriteInteractive
+	var _ = (*harness.Service).CloseInteractive
 	var _ = (*harness.Service).UpdateInteractiveRuntime
 	var _ = (*harness.Service).UpdateClaimedInteractiveRuntime
 	var _ = (*harness.Service).ListExecutionCycles
@@ -135,6 +140,16 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ harness.ExecutionBlockedRuntimeConditionKind
 	var _ harness.StepRunOutput
 	var _ harness.SessionRunOutput
+	var _ harness.InteractiveStartRequest
+	var _ harness.InteractiveStartResult
+	var _ harness.InteractiveReopenRequest
+	var _ harness.InteractiveReopenResult
+	var _ harness.InteractiveViewRequest
+	var _ harness.InteractiveViewResult
+	var _ harness.InteractiveWriteRequest
+	var _ harness.InteractiveWriteResult
+	var _ harness.InteractiveCloseRequest
+	var _ harness.InteractiveCloseResult
 	var _ harness.InteractiveRuntimeUpdate
 	var _ harness.RuntimeHandleUpdate
 	var _ harness.RuntimeHandleCloseRequest
@@ -142,6 +157,7 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ harness.TargetResolver
 	var _ harness.AttachmentMaterializeRequest
 	var _ harness.AttachmentMaterializer
+	var _ harness.InteractiveController
 }
 
 func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
