@@ -16,6 +16,7 @@ This document is not about any specific transport implementation. WebSocket is t
 See also:
 - `docs/EVENTS.md`
 - `docs/ADAPTERS.md`
+- `docs/ADAPTER_PROTOCOL.md`
 
 ---
 

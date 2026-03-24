@@ -127,6 +127,7 @@ The most stable embedding path remains:
 
 Treat `pkg/harness/builtins`, `modules/*`, `adapters/*`, and `cmd/harness-core` as public companion modules with their own release cadence.
 Use `docs/ADAPTERS.md` for transport-binding rules and `docs/RELEASING.md` for multi-module tagging flow.
+Use `docs/ADAPTER_PROTOCOL.md` for the current reference WebSocket action mapping.
 
 ## Default durable Postgres construction style
 
@@ -173,6 +174,7 @@ go run ./cmd/harness-core
 
 If you want an in-process durable example instead of the WebSocket adapter, see `examples/postgres-embedded`.
 If you want a more realistic platform-style durable restart/approval flow, see `examples/platform-durable-embedding`.
+If you want a durable embedder-facing example that also exercises interactive WebSocket control, see `examples/postgres-websocket-embedding`.
 
 ## Run Postgres-backed WebSocket adapter
 
@@ -216,13 +218,17 @@ Embedding platforms should use `pkg/harness/postgres` directly for bootstrap, st
 
 ```bash
 make test-workspace
+make check-companion-versions
+make test-external-consumers
 make release-check
 make release-preflight
 make build
 ```
 
 - `make test-workspace` runs tests across the root kernel module plus all companion modules in `go.work`
-- `make release-check` runs the release gate focused on the stable kernel promise
+- `make check-companion-versions` verifies that companion `go.mod` files are synced to the current compatible repo-local versions
+- `make test-external-consumers` builds blank external consumer modules against snapshot `@dev` resolution without repo-local `replace`
+- `make release-check` runs the stable-kernel release gate plus the companion-module consumption checks
 - `make release-preflight` runs workspace tests plus the release gate before tagging
 - `make build` writes the reference server binary to `bin/harness-core`
 
@@ -257,6 +263,14 @@ go run ./examples/postgres-workers
 ```bash
 export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
 go run ./examples/postgres-embedded
+```
+
+## Run Postgres WebSocket embedding example
+
+```bash
+export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
+export HARNESS_POSTGRES_SCHEMA='postgres_websocket_embedding'
+go run ./examples/postgres-websocket-embedding
 ```
 
 ## Run durable platform embedding example

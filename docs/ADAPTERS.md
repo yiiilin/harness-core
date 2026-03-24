@@ -17,6 +17,7 @@ See also:
 
 - `docs/API.md`
 - `docs/PROTOCOL.md`
+- `docs/ADAPTER_PROTOCOL.md`
 - `docs/EVENTS.md`
 - `docs/VERSIONING.md`
 - `docs/EMBEDDING.md`
@@ -149,6 +150,7 @@ Today:
 
 - `adapters/http` is a thin reference HTTP control plane
 - `adapters/websocket` is the richer reference adapter
+- `adapters/websocket` transport actions are documented in `docs/ADAPTER_PROTOCOL.md`
 - `adapters/websocket` exposes its own public `websocket.Config` for adapter-owned transport settings such as listen address and shared token
 - embedders should not need `internal/config` just to construct a repository-shipped adapter
 

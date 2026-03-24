@@ -42,6 +42,11 @@ That performs:
 - `make test-workspace`
 - `make release-check`
 
+The release gate now also includes:
+
+- `make check-companion-versions`
+- `make test-external-consumers`
+
 The goal is to validate both:
 
 - the full workspace
@@ -140,6 +145,16 @@ Repository guardrails now enforce the two local parts of that rule:
 
 - repo-local companion-module pseudo-versions must never use placeholder `v0.0.0`
 - repo-local companion-module pseudo-versions must stay on zero-base `v0.0.0-...` until matching companion tags exist
+- repo-local companion-module `go.mod` files should be synced to the current repo-local compatible commit before preflight
+
+Maintainer helpers:
+
+- `make sync-companion-versions`
+  - rewrites repo-local companion `go.mod` references to the current compatible root/companion pseudo-versions
+- `make check-companion-versions`
+  - fails if those files drift from the current repo-local compatible versions
+- `make test-external-consumers`
+  - builds clean blank consumer modules against snapshot `@dev` module resolution without repo-local `replace`
 
 What the repository cannot prove locally:
 
@@ -155,7 +170,8 @@ root module also needs a release.
 
 For maintainers, the default flow is:
 
-1. `make release-preflight`
-2. `make release-resolve MODULE=... VERSION=...`
-3. `make release-tag MODULE=... VERSION=... APPLY=1`
-4. `git push origin <resolved-tag>`
+1. `make sync-companion-versions`
+2. `make release-preflight`
+3. `make release-resolve MODULE=... VERSION=...`
+4. `make release-tag MODULE=... VERSION=... APPLY=1`
+5. `git push origin <resolved-tag>`

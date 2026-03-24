@@ -114,7 +114,7 @@ rt := harness.New(opts)
 - `pkg/harness/replay`
 
 `pkg/harness/builtins`、`modules/*`、`adapters/*`、`cmd/harness-core` 则属于公开但独立版本演进的 companion modules。
-传输适配建议看 `docs/ADAPTERS.md`，多模块发布流程看 `docs/RELEASING.md`。
+传输适配建议看 `docs/ADAPTERS.md`，WebSocket action 映射看 `docs/ADAPTER_PROTOCOL.md`，多模块发布流程看 `docs/RELEASING.md`。
 
 ---
 
@@ -183,17 +183,31 @@ go run ./examples/platform-durable-embedding
 
 ---
 
+## 运行 Postgres + WebSocket 接入示例
+
+```bash
+export HARNESS_POSTGRES_DSN='postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable'
+export HARNESS_POSTGRES_SCHEMA='postgres_websocket_embedding'
+go run ./examples/postgres-websocket-embedding
+```
+
+---
+
 ## 测试与性能基线
 
 ```bash
 make test-workspace
+make check-companion-versions
+make test-external-consumers
 make release-check
 make release-preflight
 go test -bench . -benchmem ./pkg/harness/runtime
 ```
 
 - `make test-workspace` 会通过 `go.work` 跑完整个仓库的多模块测试
-- `make release-check` 只关注稳定内核承诺的 release gate
+- `make check-companion-versions` 会校验 companion `go.mod` 是否已经同步到当前兼容提交
+- `make test-external-consumers` 会在空白外部 module 里验证 `@dev` 消费链，不依赖仓库内 `replace`
+- `make release-check` 会在稳定内核 gate 之外一并检查 companion modules 的对外消费链路
 - `make release-preflight` 会先做 workspace 测试，再做 release gate
 - `make build` 会把参考服务端二进制输出到 `bin/harness-core`
 

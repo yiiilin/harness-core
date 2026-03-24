@@ -1,4 +1,4 @@
-.PHONY: run build client test test-kernel test-builtins test-modules test-adapters test-cli test-workspace test-evals test-release release-check release-preflight release-resolve release-tag
+.PHONY: run build client test test-kernel test-builtins test-modules test-adapters test-cli test-workspace test-evals test-release test-external-consumers sync-companion-versions check-companion-versions release-check release-preflight release-resolve release-tag
 
 run:
 	go run ./cmd/harness-core
@@ -35,7 +35,16 @@ test-evals:
 test-release:
 	go test ./release -count=1
 
-release-check: test-release test-evals
+test-external-consumers:
+	go test ./release -run TestExternalConsumersBuildAgainstSnapshotRepo -count=1
+
+sync-companion-versions:
+	go run ./scripts/sync_companion_versions.go
+
+check-companion-versions:
+	go run ./scripts/sync_companion_versions.go --check
+
+release-check: check-companion-versions test-release test-evals
 	@echo "release-check passed"
 
 release-preflight:

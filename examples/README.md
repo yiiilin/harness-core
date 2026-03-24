@@ -33,6 +33,9 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - `postgres-embedded`
   - The smallest durable embedding example through the public Postgres bootstrap.
   - Shows how to open a durable runtime and run work without adapters.
+- `postgres-websocket-embedding`
+  - A durable embedder-facing example that also exposes the reference WebSocket adapter.
+  - Shows public Postgres bootstrap, builtins/modules wiring, interactive control, and transport actions in one runnable flow.
 - `postgres-workers`
   - A durable multi-worker reference example.
   - Shows two runtime instances contending for runnable and recoverable sessions through claim/lease APIs.
@@ -47,7 +50,7 @@ Each example is intentionally small and focused. Pick the one that matches the i
 - Use `workflow-scenarios` if you want to watch a few concrete tasks move through the workflow before reading lower-level tests.
 - Use `program-graph` if you are wiring a preplanned tool graph directly into the kernel.
 - Use `platform-reference` if you are building a platform-side worker around PTY or interactive shell execution.
-- Use `postgres-embedded` and `postgres-workers` if you need durable runtime state or multi-instance coordination.
+- Use `postgres-embedded`, `postgres-websocket-embedding`, and `postgres-workers` if you need durable runtime state, adapter wiring, or multi-instance coordination.
 - Use `go-client` if you are integrating through the shipped WebSocket adapter rather than embedding the kernel directly.
 
 Every example directory has its own `README.md` with:

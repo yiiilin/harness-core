@@ -369,6 +369,155 @@ func (s *Server) handle(conn *gorillaws.Conn, env protocol.Envelope) {
 			return
 		}
 		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: map[string]any{"approval": rec, "session": st}})
+	case "blocked_runtime.get":
+		var payload struct {
+			SessionID        string `json:"session_id,omitempty"`
+			BlockedRuntimeID string `json:"blocked_runtime_id,omitempty"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		var (
+			rec any
+			err error
+		)
+		switch {
+		case payload.BlockedRuntimeID != "":
+			rec, err = s.runtime.GetBlockedRuntimeByID(payload.BlockedRuntimeID)
+		case payload.SessionID != "":
+			rec, err = s.runtime.GetBlockedRuntime(payload.SessionID)
+		default:
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_BLOCKED_RUNTIME", Message: "session_id or blocked_runtime_id is required"}})
+			return
+		}
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BLOCKED_RUNTIME_GET_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "blocked_runtime.get_by_approval":
+		var payload protocol.ApprovalGetPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.GetBlockedRuntimeByApproval(payload.ApprovalID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BLOCKED_RUNTIME_GET_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "blocked_runtime.list":
+		items, err := s.runtime.ListBlockedRuntimes()
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BLOCKED_RUNTIME_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "blocked_runtime_projection.get":
+		var payload struct {
+			SessionID  string `json:"session_id,omitempty"`
+			ApprovalID string `json:"approval_id,omitempty"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		var (
+			rec any
+			err error
+		)
+		switch {
+		case payload.ApprovalID != "":
+			rec, err = s.runtime.GetBlockedRuntimeProjectionByApproval(payload.ApprovalID)
+		case payload.SessionID != "":
+			rec, err = s.runtime.GetBlockedRuntimeProjection(payload.SessionID)
+		default:
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BAD_BLOCKED_RUNTIME_PROJECTION", Message: "session_id or approval_id is required"}})
+			return
+		}
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BLOCKED_RUNTIME_PROJECTION_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "blocked_runtime_projection.list":
+		items, err := s.runtime.ListBlockedRuntimeProjections()
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "BLOCKED_RUNTIME_PROJECTION_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "interactive.get":
+		var payload protocol.RuntimeHandleGetPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.GetInteractiveRuntime(payload.HandleID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_GET_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "interactive.list":
+		var payload protocol.SessionScopedPayload
+		_ = json.Unmarshal(env.Payload, &payload)
+		items, err := s.runtime.ListInteractiveRuntimes(payload.SessionID)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_LIST_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: items})
+	case "interactive.start":
+		var payload struct {
+			SessionID string                           `json:"session_id"`
+			Request   hruntime.InteractiveStartRequest `json:"request"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.StartInteractive(context.Background(), payload.SessionID, payload.Request)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_START_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "interactive.reopen":
+		var payload struct {
+			HandleID string                            `json:"handle_id"`
+			Request  hruntime.InteractiveReopenRequest `json:"request"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.ReopenInteractive(context.Background(), payload.HandleID, payload.Request)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_REOPEN_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "interactive.view":
+		var payload struct {
+			HandleID string                          `json:"handle_id"`
+			Request  hruntime.InteractiveViewRequest `json:"request"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.ViewInteractive(context.Background(), payload.HandleID, payload.Request)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_VIEW_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "interactive.write":
+		var payload struct {
+			HandleID string                           `json:"handle_id"`
+			Request  hruntime.InteractiveWriteRequest `json:"request"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.WriteInteractive(context.Background(), payload.HandleID, payload.Request)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_WRITE_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
+	case "interactive.close":
+		var payload struct {
+			HandleID string                           `json:"handle_id"`
+			Request  hruntime.InteractiveCloseRequest `json:"request"`
+		}
+		_ = json.Unmarshal(env.Payload, &payload)
+		rec, err := s.runtime.CloseInteractive(context.Background(), payload.HandleID, payload.Request)
+		if err != nil {
+			_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: false, Error: &protocol.ErrorBody{Code: "INTERACTIVE_CLOSE_FAILED", Message: err.Error()}})
+			return
+		}
+		_ = conn.WriteJSON(protocol.Response{ID: env.ID, Type: protocol.EnvelopeTypeResponse, OK: true, Result: rec})
 	case "verify.evaluate":
 		var payload struct {
 			SessionID string        `json:"session_id"`

@@ -45,7 +45,9 @@ Important implication:
 For local repository verification:
 
 - `make test-workspace` runs tests across all workspace modules
-- `make release-check` stays focused on the Tier 1 kernel promise
+- `make check-companion-versions` verifies that repo-local companion `go.mod` files track the current compatible commit
+- `make test-external-consumers` validates blank external consumers without repo-local `replace`
+- `make release-check` now includes the companion-module linkage and clean-consumer release gate in addition to the stable kernel assertions
 
 ---
 
