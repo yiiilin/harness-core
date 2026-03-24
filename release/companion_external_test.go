@@ -210,9 +210,13 @@ func main() {
 				got := modules[modulePath]
 				switch want {
 				case "dev":
-					if !strings.Contains(got, "-") {
-						t.Fatalf("%s resolved %s at %q; want a dev pseudo-version", tc.name, modulePath, got)
+					if isPseudoVersion(got) {
+						continue
 					}
+					if tagged := taggedReleaseVersionForModule(t, snapshotRepo, modulePath); tagged != "" && got == tagged {
+						continue
+					}
+					t.Fatalf("%s resolved %s at %q; want a dev pseudo-version or tagged release version", tc.name, modulePath, got)
 				default:
 					if got != want {
 						t.Fatalf("%s resolved %s at %q; want %q", tc.name, modulePath, got, want)
@@ -391,6 +395,38 @@ func listedModules(t *testing.T, workDir string, env []string) map[string]string
 		out[module.Path] = module.Version
 	}
 	return out
+}
+
+func taggedReleaseVersionForModule(t *testing.T, repoRoot, modulePath string) string {
+	t.Helper()
+
+	raw := runCommand(t, repoRoot, nil, "git", "tag", "--points-at", "HEAD")
+	tags := strings.Fields(raw)
+	for _, tag := range tags {
+		switch modulePath {
+		case "github.com/yiiilin/harness-core":
+			if strings.HasPrefix(tag, "v") && !strings.Contains(tag, "/") {
+				return tag
+			}
+		case "github.com/yiiilin/harness-core/modules":
+			if strings.HasPrefix(tag, "modules/") {
+				return strings.TrimPrefix(tag, "modules/")
+			}
+		case "github.com/yiiilin/harness-core/pkg/harness/builtins":
+			if strings.HasPrefix(tag, "pkg/harness/builtins/") {
+				return strings.TrimPrefix(tag, "pkg/harness/builtins/")
+			}
+		case "github.com/yiiilin/harness-core/adapters":
+			if strings.HasPrefix(tag, "adapters/") {
+				return strings.TrimPrefix(tag, "adapters/")
+			}
+		case "github.com/yiiilin/harness-core/cmd/harness-core":
+			if strings.HasPrefix(tag, "cmd/harness-core/") {
+				return strings.TrimPrefix(tag, "cmd/harness-core/")
+			}
+		}
+	}
+	return ""
 }
 
 func runCommand(t *testing.T, dir string, extraEnv []string, name string, args ...string) string {
