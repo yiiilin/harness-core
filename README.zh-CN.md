@@ -205,7 +205,7 @@ go test -bench . -benchmem ./pkg/harness/runtime
 ```
 
 - `make test-workspace` 会通过 `go.work` 跑完整个仓库的多模块测试
-- `make check-companion-versions` 会校验 companion `go.mod` 是否已经同步到当前兼容提交
+- `make check-companion-versions` 会校验当前已提交的 companion manifest 版本矩阵是否一致且可解析
 - `make test-external-consumers` 会在空白外部 module 里验证 `@dev` 消费链，不依赖仓库内 `replace`
 - `make release-check` 会在稳定内核 gate 之外一并检查 companion modules 的对外消费链路
 - `make release-preflight` 会先做 workspace 测试，再做 release gate

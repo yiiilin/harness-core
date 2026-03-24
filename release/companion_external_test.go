@@ -7,39 +7,38 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
 
-func TestCompanionModulesTrackCurrentRepoLocalVersions(t *testing.T) {
+func TestCompanionModulesTrackCommittedCompatibilityMatrix(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := filepath.Join("..")
-	rootVersion, companionVersion := repoLocalDevVersions(t, repoRoot)
+	matrix := committedCompatibilityMatrix(t, repoRoot)
 	expectations := map[string]map[string]string{
 		"go.mod": {
-			"github.com/yiiilin/harness-core/adapters":             companionVersion,
-			"github.com/yiiilin/harness-core/modules":              companionVersion,
-			"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+			"github.com/yiiilin/harness-core/adapters":             matrix.companionVersion,
+			"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+			"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 		},
 		"modules/go.mod": {
-			"github.com/yiiilin/harness-core": rootVersion,
+			"github.com/yiiilin/harness-core": matrix.rootVersion,
 		},
 		"pkg/harness/builtins/go.mod": {
-			"github.com/yiiilin/harness-core":         rootVersion,
-			"github.com/yiiilin/harness-core/modules": companionVersion,
+			"github.com/yiiilin/harness-core":         matrix.rootVersion,
+			"github.com/yiiilin/harness-core/modules": matrix.companionVersion,
 		},
 		"adapters/go.mod": {
-			"github.com/yiiilin/harness-core":                      rootVersion,
-			"github.com/yiiilin/harness-core/modules":              companionVersion,
-			"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+			"github.com/yiiilin/harness-core":                      matrix.rootVersion,
+			"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+			"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 		},
 		"cmd/harness-core/go.mod": {
-			"github.com/yiiilin/harness-core":                      rootVersion,
-			"github.com/yiiilin/harness-core/adapters":             companionVersion,
-			"github.com/yiiilin/harness-core/modules":              companionVersion,
-			"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+			"github.com/yiiilin/harness-core":                      matrix.rootVersion,
+			"github.com/yiiilin/harness-core/adapters":             matrix.companionVersion,
+			"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+			"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 		},
 	}
 
@@ -61,7 +60,7 @@ func TestCompanionModulesTrackCurrentRepoLocalVersions(t *testing.T) {
 
 func TestExternalConsumersBuildAgainstSnapshotRepo(t *testing.T) {
 	repoRoot := filepath.Join("..")
-	rootVersion, companionVersion := repoLocalDevVersions(t, repoRoot)
+	matrix := committedCompatibilityMatrix(t, repoRoot)
 	snapshotRepo := snapshotRepository(t, repoRoot)
 
 	cases := []struct {
@@ -76,10 +75,10 @@ func TestExternalConsumersBuildAgainstSnapshotRepo(t *testing.T) {
 			modulePath: "github.com/yiiilin/harness-core",
 			build:      false,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core/adapters":             companionVersion,
+				"github.com/yiiilin/harness-core/adapters":             matrix.companionVersion,
 				"github.com/yiiilin/harness-core":                      "dev",
-				"github.com/yiiilin/harness-core/modules":              companionVersion,
-				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+				"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 			},
 		},
 		{
@@ -95,10 +94,10 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core/adapters":             companionVersion,
+				"github.com/yiiilin/harness-core/adapters":             matrix.companionVersion,
 				"github.com/yiiilin/harness-core":                      "dev",
-				"github.com/yiiilin/harness-core/modules":              companionVersion,
-				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+				"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 			},
 		},
 		{
@@ -118,7 +117,7 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core":         rootVersion,
+				"github.com/yiiilin/harness-core":         matrix.rootVersion,
 				"github.com/yiiilin/harness-core/modules": "dev",
 			},
 		},
@@ -139,8 +138,8 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core":                      rootVersion,
-				"github.com/yiiilin/harness-core/modules":              companionVersion,
+				"github.com/yiiilin/harness-core":                      matrix.rootVersion,
+				"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
 				"github.com/yiiilin/harness-core/pkg/harness/builtins": "dev",
 			},
 		},
@@ -160,10 +159,10 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core":                      rootVersion,
+				"github.com/yiiilin/harness-core":                      matrix.rootVersion,
 				"github.com/yiiilin/harness-core/adapters":             "dev",
-				"github.com/yiiilin/harness-core/modules":              companionVersion,
-				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+				"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 			},
 		},
 		{
@@ -182,10 +181,10 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
-				"github.com/yiiilin/harness-core":                      rootVersion,
+				"github.com/yiiilin/harness-core":                      matrix.rootVersion,
 				"github.com/yiiilin/harness-core/adapters":             "dev",
-				"github.com/yiiilin/harness-core/modules":              companionVersion,
-				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+				"github.com/yiiilin/harness-core/modules":              matrix.companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": matrix.companionVersion,
 			},
 		},
 	}
@@ -223,54 +222,73 @@ func main() {
 	}
 }
 
-func repoLocalDevVersions(t *testing.T, repoRoot string) (root string, companion string) {
-	t.Helper()
-
-	headShort := strings.TrimSpace(runCommand(t, repoRoot, nil, "git", "rev-parse", "--short=12", "HEAD"))
-	headTime := strings.TrimSpace(runCommand(t, repoRoot, []string{"TZ=UTC"}, "git", "show", "-s", "--format=%cd", "--date=format-local:%Y%m%d%H%M%S", "HEAD"))
-	rootTag := latestRootTag(t, repoRoot)
-	major, minor, patch := parseReleaseTag(t, rootTag)
-	root = fmt.Sprintf("v%d.%d.%d-0.%s-%s", major, minor, patch+1, headTime, headShort)
-	companion = fmt.Sprintf("v0.0.0-%s-%s", headTime, headShort)
-	return root, companion
+type compatibilityMatrix struct {
+	rootVersion      string
+	companionVersion string
 }
 
-func latestRootTag(t *testing.T, repoRoot string) string {
+func committedCompatibilityMatrix(t *testing.T, repoRoot string) compatibilityMatrix {
 	t.Helper()
 
-	raw := runCommand(t, repoRoot, nil, "git", "tag", "--list", "v*")
-	tags := strings.Fields(raw)
-	best := ""
-	bestMajor, bestMinor, bestPatch := -1, -1, -1
-	for _, tag := range tags {
-		if !releaseTagPattern.MatchString(tag) {
+	requirements := map[string]map[string]string{
+		"go.mod":                      goModRequireVersions(t, filepath.Join(repoRoot, "go.mod")),
+		"modules/go.mod":              goModRequireVersions(t, filepath.Join(repoRoot, "modules/go.mod")),
+		"pkg/harness/builtins/go.mod": goModRequireVersions(t, filepath.Join(repoRoot, "pkg/harness/builtins/go.mod")),
+		"adapters/go.mod":             goModRequireVersions(t, filepath.Join(repoRoot, "adapters/go.mod")),
+		"cmd/harness-core/go.mod":     goModRequireVersions(t, filepath.Join(repoRoot, "cmd/harness-core/go.mod")),
+	}
+
+	rootVersion := uniqueRequiredVersion(t, []requiredVersion{
+		{file: "modules/go.mod", modulePath: "github.com/yiiilin/harness-core", version: requirements["modules/go.mod"]["github.com/yiiilin/harness-core"]},
+		{file: "pkg/harness/builtins/go.mod", modulePath: "github.com/yiiilin/harness-core", version: requirements["pkg/harness/builtins/go.mod"]["github.com/yiiilin/harness-core"]},
+		{file: "adapters/go.mod", modulePath: "github.com/yiiilin/harness-core", version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core"]},
+		{file: "cmd/harness-core/go.mod", modulePath: "github.com/yiiilin/harness-core", version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core"]},
+	})
+
+	companionVersion := uniqueRequiredVersion(t, []requiredVersion{
+		{file: "go.mod", modulePath: "github.com/yiiilin/harness-core/adapters", version: requirements["go.mod"]["github.com/yiiilin/harness-core/adapters"]},
+		{file: "go.mod", modulePath: "github.com/yiiilin/harness-core/modules", version: requirements["go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{file: "go.mod", modulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", version: requirements["go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+		{file: "pkg/harness/builtins/go.mod", modulePath: "github.com/yiiilin/harness-core/modules", version: requirements["pkg/harness/builtins/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{file: "adapters/go.mod", modulePath: "github.com/yiiilin/harness-core/modules", version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{file: "adapters/go.mod", modulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+		{file: "cmd/harness-core/go.mod", modulePath: "github.com/yiiilin/harness-core/adapters", version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/adapters"]},
+		{file: "cmd/harness-core/go.mod", modulePath: "github.com/yiiilin/harness-core/modules", version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{file: "cmd/harness-core/go.mod", modulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+	})
+
+	return compatibilityMatrix{
+		rootVersion:      rootVersion,
+		companionVersion: companionVersion,
+	}
+}
+
+type requiredVersion struct {
+	file       string
+	modulePath string
+	version    string
+}
+
+func uniqueRequiredVersion(t *testing.T, requirements []requiredVersion) string {
+	t.Helper()
+
+	want := ""
+	for _, requirement := range requirements {
+		if requirement.version == "" {
+			t.Fatalf("%s is missing requirement for %s", requirement.file, requirement.modulePath)
+		}
+		if want == "" {
+			want = requirement.version
 			continue
 		}
-		major, minor, patch := parseReleaseTag(t, tag)
-		if major > bestMajor || (major == bestMajor && minor > bestMinor) || (major == bestMajor && minor == bestMinor && patch > bestPatch) {
-			best = tag
-			bestMajor, bestMinor, bestPatch = major, minor, patch
+		if requirement.version != want {
+			t.Fatalf("repo-local manifest matrix drift: %s requires %s at %q; expected %q", requirement.file, requirement.modulePath, requirement.version, want)
 		}
 	}
-	if best == "" {
-		t.Fatalf("no root semver tags found")
+	if want == "" {
+		t.Fatalf("empty requirement set")
 	}
-	return best
-}
-
-var releaseTagPattern = regexp.MustCompile(`^v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
-
-func parseReleaseTag(t *testing.T, tag string) (major, minor, patch int) {
-	t.Helper()
-
-	matches := releaseTagPattern.FindStringSubmatch(tag)
-	if len(matches) != 4 {
-		t.Fatalf("unsupported release tag %q", tag)
-	}
-	if _, err := fmt.Sscanf(tag, "v%d.%d.%d", &major, &minor, &patch); err != nil {
-		t.Fatalf("parse release tag %q: %v", tag, err)
-	}
-	return major, minor, patch
+	return want
 }
 
 func goModRequireVersions(t *testing.T, path string) map[string]string {

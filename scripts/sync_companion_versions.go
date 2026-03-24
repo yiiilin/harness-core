@@ -19,13 +19,18 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	if checkOnly {
+		if err := checkCommittedCompatibilityMatrix(repoRoot); err != nil {
+			fatal(err)
+		}
+		return
+	}
 
 	rootVersion, companionVersion, err := repoLocalDevVersions(repoRoot)
 	if err != nil {
 		fatal(err)
 	}
 
-	changed := false
 	for _, update := range updates(rootVersion, companionVersion) {
 		next, err := rewriteFile(filepath.Join(repoRoot, update.Path), update.Requirements)
 		if err != nil {
@@ -38,20 +43,116 @@ func main() {
 		if bytes.Equal(current, next) {
 			continue
 		}
-		changed = true
-		if checkOnly {
-			fmt.Fprintf(os.Stderr, "%s is out of sync\n", update.Path)
-			continue
-		}
 		if err := os.WriteFile(filepath.Join(repoRoot, update.Path), next, 0o644); err != nil {
 			fatal(err)
 		}
 		fmt.Printf("updated %s\n", update.Path)
 	}
+}
 
-	if checkOnly && changed {
-		os.Exit(1)
+func checkCommittedCompatibilityMatrix(repoRoot string) error {
+	matrix, err := committedCompatibilityMatrix(repoRoot)
+	if err != nil {
+		return err
 	}
+
+	var mismatches []string
+	for _, update := range updates(matrix.RootVersion, matrix.CompanionVersion) {
+		requirements, err := goModRequireVersions(filepath.Join(repoRoot, update.Path))
+		if err != nil {
+			return err
+		}
+		for modulePath, want := range update.Requirements {
+			got := requirements[modulePath]
+			if got == want {
+				continue
+			}
+			mismatches = append(mismatches, fmt.Sprintf("%s requires %s at %q; want %q", update.Path, modulePath, got, want))
+		}
+	}
+
+	if len(mismatches) != 0 {
+		return errors.New(strings.Join(mismatches, "\n"))
+	}
+	return nil
+}
+
+type compatibilityMatrix struct {
+	RootVersion      string
+	CompanionVersion string
+}
+
+func committedCompatibilityMatrix(repoRoot string) (compatibilityMatrix, error) {
+	requirements := map[string]map[string]string{}
+	for _, relPath := range []string{
+		"go.mod",
+		"modules/go.mod",
+		"pkg/harness/builtins/go.mod",
+		"adapters/go.mod",
+		"cmd/harness-core/go.mod",
+	} {
+		parsed, err := goModRequireVersions(filepath.Join(repoRoot, relPath))
+		if err != nil {
+			return compatibilityMatrix{}, err
+		}
+		requirements[relPath] = parsed
+	}
+
+	rootVersion, err := uniqueRequiredVersion([]requiredVersion{
+		{Path: "modules/go.mod", ModulePath: "github.com/yiiilin/harness-core", Version: requirements["modules/go.mod"]["github.com/yiiilin/harness-core"]},
+		{Path: "pkg/harness/builtins/go.mod", ModulePath: "github.com/yiiilin/harness-core", Version: requirements["pkg/harness/builtins/go.mod"]["github.com/yiiilin/harness-core"]},
+		{Path: "adapters/go.mod", ModulePath: "github.com/yiiilin/harness-core", Version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core"]},
+		{Path: "cmd/harness-core/go.mod", ModulePath: "github.com/yiiilin/harness-core", Version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core"]},
+	})
+	if err != nil {
+		return compatibilityMatrix{}, err
+	}
+
+	companionVersion, err := uniqueRequiredVersion([]requiredVersion{
+		{Path: "go.mod", ModulePath: "github.com/yiiilin/harness-core/adapters", Version: requirements["go.mod"]["github.com/yiiilin/harness-core/adapters"]},
+		{Path: "go.mod", ModulePath: "github.com/yiiilin/harness-core/modules", Version: requirements["go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{Path: "go.mod", ModulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", Version: requirements["go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+		{Path: "pkg/harness/builtins/go.mod", ModulePath: "github.com/yiiilin/harness-core/modules", Version: requirements["pkg/harness/builtins/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{Path: "adapters/go.mod", ModulePath: "github.com/yiiilin/harness-core/modules", Version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{Path: "adapters/go.mod", ModulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", Version: requirements["adapters/go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+		{Path: "cmd/harness-core/go.mod", ModulePath: "github.com/yiiilin/harness-core/adapters", Version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/adapters"]},
+		{Path: "cmd/harness-core/go.mod", ModulePath: "github.com/yiiilin/harness-core/modules", Version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/modules"]},
+		{Path: "cmd/harness-core/go.mod", ModulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins", Version: requirements["cmd/harness-core/go.mod"]["github.com/yiiilin/harness-core/pkg/harness/builtins"]},
+	})
+	if err != nil {
+		return compatibilityMatrix{}, err
+	}
+
+	return compatibilityMatrix{
+		RootVersion:      rootVersion,
+		CompanionVersion: companionVersion,
+	}, nil
+}
+
+type requiredVersion struct {
+	Path       string
+	ModulePath string
+	Version    string
+}
+
+func uniqueRequiredVersion(requirements []requiredVersion) (string, error) {
+	want := ""
+	for _, requirement := range requirements {
+		if requirement.Version == "" {
+			return "", fmt.Errorf("%s is missing requirement for %s", requirement.Path, requirement.ModulePath)
+		}
+		if want == "" {
+			want = requirement.Version
+			continue
+		}
+		if requirement.Version != want {
+			return "", fmt.Errorf("repo-local manifest matrix drift: %s requires %s at %q; expected %q", requirement.Path, requirement.ModulePath, requirement.Version, want)
+		}
+	}
+	if want == "" {
+		return "", errors.New("empty requirement set")
+	}
+	return want, nil
 }
 
 type fileUpdate struct {
@@ -167,6 +268,22 @@ func parseReleaseTag(tag string) (int, int, int, error) {
 		return 0, 0, 0, err
 	}
 	return major, minor, patch, nil
+}
+
+func goModRequireVersions(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 || !strings.HasPrefix(fields[0], "github.com/yiiilin/harness-core") {
+			continue
+		}
+		out[fields[0]] = fields[1]
+	}
+	return out, nil
 }
 
 func rewriteFile(path string, requirements map[string]string) ([]byte, error) {

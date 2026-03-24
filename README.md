@@ -226,7 +226,7 @@ make build
 ```
 
 - `make test-workspace` runs tests across the root kernel module plus all companion modules in `go.work`
-- `make check-companion-versions` verifies that companion `go.mod` files are synced to the current compatible repo-local versions
+- `make check-companion-versions` verifies that the committed repo-local companion manifest matrix is internally consistent and resolvable
 - `make test-external-consumers` builds blank external consumer modules against snapshot `@dev` resolution without repo-local `replace`
 - `make release-check` runs the stable-kernel release gate plus the companion-module consumption checks
 - `make release-preflight` runs workspace tests plus the release gate before tagging

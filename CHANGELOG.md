@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v1.0.2 - 2026-03-24
+
+### Added
+- Core interactive control-plane APIs for start, reopen, view, write, and close flows
+- Expanded embedder-facing execution surfaces for blocked runtimes, capability matching, attachments, projections, and replay cycles
+- Companion-module external-consumer release coverage for root, modules, builtins, and adapters packages
+
+### Changed
+- Companion release checks now validate the committed manifest compatibility matrix instead of impossible HEAD self-reference
+- Repo-local companion manifests and release wiring now align cleanly with external `@dev` consumption and companion-module tagging
+
+### Fixed
+- External consumer resolution across root, modules, builtins, adapters, and CLI companion modules
+- Release engineering drift between workspace-local manifests, release tags, and downstream `go mod tidy` expectations
+
 ## v1.0.1 - 2026-03-23
 
 ### Added

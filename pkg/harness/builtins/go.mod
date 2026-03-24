@@ -3,8 +3,8 @@ module github.com/yiiilin/harness-core/pkg/harness/builtins
 go 1.24
 
 require (
-	github.com/yiiilin/harness-core v1.0.2-0.20260324091209-b6cf2754e97b
-	github.com/yiiilin/harness-core/modules v0.0.0-20260324091209-b6cf2754e97b
+	github.com/yiiilin/harness-core v1.0.2
+	github.com/yiiilin/harness-core/modules v0.1.1
 )
 
 require (
