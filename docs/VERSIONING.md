@@ -41,6 +41,7 @@ Important implication:
 - active development branches may temporarily use resolvable pseudo-versions between companion modules so external consumers can follow `@dev` without waiting for a fresh companion tag cut
 - until a companion module has a matching published companion tag on the remote, repo-local companion-module pseudo-versions should stay on the zero-base `v0.0.0-...` form
 - the root kernel module may still use its normal `v1.x.y-0...` pseudo-version flow because it already has a stable root tag lineage
+- when a `dev` change updates a public surface that crosses root/companion boundaries, the repo-local root/modules/builtins/adapters/cli references must move together to the same compatible commit rather than lagging one snapshot behind
 
 For local repository verification:
 

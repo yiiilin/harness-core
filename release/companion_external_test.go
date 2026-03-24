@@ -2,6 +2,7 @@ package release_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ func TestCompanionModulesTrackCurrentRepoLocalVersions(t *testing.T) {
 	rootVersion, companionVersion := repoLocalDevVersions(t, repoRoot)
 	expectations := map[string]map[string]string{
 		"go.mod": {
+			"github.com/yiiilin/harness-core/adapters":             companionVersion,
 			"github.com/yiiilin/harness-core/modules":              companionVersion,
 			"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
 		},
@@ -66,11 +68,24 @@ func TestExternalConsumersBuildAgainstSnapshotRepo(t *testing.T) {
 		name           string
 		modulePath     string
 		mainSource     string
+		build          bool
 		expectedModule map[string]string
 	}{
 		{
+			name:       "root-module",
+			modulePath: "github.com/yiiilin/harness-core",
+			build:      false,
+			expectedModule: map[string]string{
+				"github.com/yiiilin/harness-core/adapters":             companionVersion,
+				"github.com/yiiilin/harness-core":                      "dev",
+				"github.com/yiiilin/harness-core/modules":              companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+			},
+		},
+		{
 			name:       "root-kernel-package",
 			modulePath: "github.com/yiiilin/harness-core/pkg/harness",
+			build:      true,
 			mainSource: `package main
 
 import harness "github.com/yiiilin/harness-core/pkg/harness"
@@ -80,6 +95,7 @@ func main() {
 }
 `,
 			expectedModule: map[string]string{
+				"github.com/yiiilin/harness-core/adapters":             companionVersion,
 				"github.com/yiiilin/harness-core":                      "dev",
 				"github.com/yiiilin/harness-core/modules":              companionVersion,
 				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
@@ -88,6 +104,7 @@ func main() {
 		{
 			name:       "modules-shell-package",
 			modulePath: "github.com/yiiilin/harness-core/modules/shell",
+			build:      true,
 			mainSource: `package main
 
 import (
@@ -108,6 +125,7 @@ func main() {
 		{
 			name:       "builtins-package",
 			modulePath: "github.com/yiiilin/harness-core/pkg/harness/builtins",
+			build:      true,
 			mainSource: `package main
 
 import (
@@ -127,8 +145,31 @@ func main() {
 			},
 		},
 		{
+			name:       "adapters-http-package",
+			modulePath: "github.com/yiiilin/harness-core/adapters/http",
+			build:      true,
+			mainSource: `package main
+
+import (
+	httpadapter "github.com/yiiilin/harness-core/adapters/http"
+	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
+)
+
+func main() {
+	_ = httpadapter.New(hruntime.New(hruntime.Options{}))
+}
+`,
+			expectedModule: map[string]string{
+				"github.com/yiiilin/harness-core":                      rootVersion,
+				"github.com/yiiilin/harness-core/adapters":             "dev",
+				"github.com/yiiilin/harness-core/modules":              companionVersion,
+				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
+			},
+		},
+		{
 			name:       "adapters-websocket-package",
 			modulePath: "github.com/yiiilin/harness-core/adapters/websocket",
+			build:      true,
 			mainSource: `package main
 
 import (
@@ -157,10 +198,12 @@ func main() {
 
 			env := externalConsumerEnv(t, workDir, snapshotRepo)
 			runCommand(t, workDir, env, "go", "get", tc.modulePath+"@dev")
-			if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte(tc.mainSource), 0o644); err != nil {
-				t.Fatalf("write main.go: %v", err)
+			if tc.build {
+				if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte(tc.mainSource), 0o644); err != nil {
+					t.Fatalf("write main.go: %v", err)
+				}
+				runCommand(t, workDir, env, "go", "build", "./...")
 			}
-			runCommand(t, workDir, env, "go", "build", "./...")
 
 			modules := listedModules(t, workDir, env)
 			for modulePath, want := range tc.expectedModule {
@@ -258,8 +301,28 @@ func snapshotRepository(t *testing.T, repoRoot string) string {
 	runCommand(t, cloneDir, nil, "git", "config", "user.email", "release-test@example.com")
 	runCommand(t, cloneDir, nil, "git", "config", "user.name", "release-test")
 	runCommand(t, cloneDir, nil, "git", "add", "-A")
-	runCommand(t, cloneDir, nil, "git", "commit", "--quiet", "-m", "release test snapshot")
+	if hasStagedChanges(t, cloneDir) {
+		runCommand(t, cloneDir, nil, "git", "commit", "--quiet", "-m", "release test snapshot")
+	}
 	return cloneDir
+}
+
+func hasStagedChanges(t *testing.T, repoRoot string) bool {
+	t.Helper()
+
+	cmd := exec.Command("git", "diff", "--cached", "--quiet")
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+	err := cmd.Run()
+	if err == nil {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true
+	}
+	t.Fatalf("git diff --cached --quiet failed: %v", err)
+	return false
 }
 
 func externalConsumerEnv(t *testing.T, workDir, snapshotRepo string) []string {

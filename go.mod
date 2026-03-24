@@ -7,8 +7,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
-	github.com/yiiilin/harness-core/modules v0.0.0-20260324054047-5c8a6cc67f4b
-	github.com/yiiilin/harness-core/pkg/harness/builtins v0.0.0-20260324054047-5c8a6cc67f4b
+	github.com/yiiilin/harness-core/adapters v0.0.0-20260324065650-154bedafd634
+	github.com/yiiilin/harness-core/modules v0.0.0-20260324065650-154bedafd634
+	github.com/yiiilin/harness-core/pkg/harness/builtins v0.0.0-20260324065650-154bedafd634
 )
 
 require github.com/creack/pty v1.1.24 // indirect

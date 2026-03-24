@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -63,6 +64,7 @@ func updates(rootVersion, companionVersion string) []fileUpdate {
 		{
 			Path: "go.mod",
 			Requirements: map[string]string{
+				"github.com/yiiilin/harness-core/adapters":             companionVersion,
 				"github.com/yiiilin/harness-core/modules":              companionVersion,
 				"github.com/yiiilin/harness-core/pkg/harness/builtins": companionVersion,
 			},
@@ -173,11 +175,43 @@ func rewriteFile(path string, requirements map[string]string) ([]byte, error) {
 		return nil, err
 	}
 	out := string(data)
-	for modulePath, version := range requirements {
-		re := regexp.MustCompile(regexp.QuoteMeta(modulePath) + `\s+v[^\s]+`)
-		out = re.ReplaceAllString(out, modulePath+" "+version)
+	keys := make([]string, 0, len(requirements))
+	for modulePath := range requirements {
+		keys = append(keys, modulePath)
+	}
+	sort.Strings(keys)
+	for _, modulePath := range keys {
+		version := requirements[modulePath]
+		re := regexp.MustCompile(`(?m)^(\s*)` + regexp.QuoteMeta(modulePath) + `\s+v[^\s]+(?:\s*//.*)?$`)
+		if re.MatchString(out) {
+			out = re.ReplaceAllString(out, "\t"+modulePath+" "+version)
+			continue
+		}
+		var inserted bool
+		out, inserted = insertRequireLine(out, modulePath, version)
+		if !inserted {
+			return nil, fmt.Errorf("%s: could not insert requirement for %s", path, modulePath)
+		}
 	}
 	return []byte(out), nil
+}
+
+func insertRequireLine(goMod, modulePath, version string) (string, bool) {
+	lines := strings.Split(goMod, "\n")
+	inRequire := false
+	for idx, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "require (":
+			inRequire = true
+		case inRequire && trimmed == ")":
+			inserted := append([]string{}, lines[:idx]...)
+			inserted = append(inserted, "\t"+modulePath+" "+version)
+			inserted = append(inserted, lines[idx:]...)
+			return strings.Join(inserted, "\n"), true
+		}
+	}
+	return goMod, false
 }
 
 func gitOutput(repoRoot string, args ...string) (string, error) {

@@ -136,6 +136,7 @@ Companion module requirement rule:
 - once matching companion tags are actually pushed, dev pseudo-versions may advance from the latest pushed tag
 - those pseudo-versions must point at reachable commits in this repository and must never use the old `v0.0.0` workspace placeholder form
 - published releases must rewrite repo-local dependencies back to real released versions before cutting and pushing tags
+- if the current `dev` snapshot changes a public surface, every repo-local companion reference that follows that surface must be bumped to the same compatible commit in the same change set, including root-module references to companion modules such as `adapters`
 - every referenced companion-module release version must have a matching companion-module tag, not only a root tag
 - those companion tags must be pushed, not just created locally, or downstream `go mod tidy` may fail to resolve the dependency graph cleanly
 - `v0.0.0` is a workspace-only placeholder and must never ship in a published companion module

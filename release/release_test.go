@@ -191,6 +191,34 @@ func TestCompanionModulesDoNotUseWorkspacePlaceholderVersions(t *testing.T) {
 	}
 }
 
+func TestRepoGoModsDoNotUseZeroPseudoPlaceholderVersions(t *testing.T) {
+	t.Parallel()
+
+	files := []string{
+		"go.mod",
+		"pkg/harness/builtins/go.mod",
+		"modules/go.mod",
+		"adapters/go.mod",
+		"cmd/harness-core/go.mod",
+	}
+
+	for _, rel := range files {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join("..", filepath.Clean(rel))
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", rel, err)
+			}
+			if containsZeroPseudoPlaceholderVersion(string(data)) {
+				t.Fatalf("%s still contains zero-time placeholder pseudo-versions", rel)
+			}
+		})
+	}
+}
+
 func TestCompanionModulesReferenceResolvableRepoLocalVersions(t *testing.T) {
 	t.Parallel()
 
@@ -327,8 +355,22 @@ var workspacePlaceholderPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core/adapters\s+v0\.0\.0\s*$`),
 }
 
+var zeroPseudoPlaceholderPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core(?:/modules|/pkg/harness/builtins|/adapters|/cmd/harness-core)?\s+v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\.00010101000000-000000000000(?:\s|$)`),
+	regexp.MustCompile(`(?m)^\s*github\.com/yiiilin/harness-core(?:/modules|/pkg/harness/builtins|/adapters|/cmd/harness-core)?\s+v[0-9]+\.[0-9]+\.[0-9]+-00010101000000-000000000000(?:\s|$)`),
+}
+
 func containsWorkspacePlaceholderVersion(goMod string) bool {
 	for _, pattern := range workspacePlaceholderPatterns {
+		if pattern.MatchString(goMod) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsZeroPseudoPlaceholderVersion(goMod string) bool {
+	for _, pattern := range zeroPseudoPlaceholderPatterns {
 		if pattern.MatchString(goMod) {
 			return true
 		}
