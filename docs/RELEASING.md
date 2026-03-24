@@ -38,9 +38,13 @@ make release-preflight
 
 That performs:
 
-- `go work sync`
 - `make test-workspace`
 - `make release-check`
+
+`release-preflight` intentionally does not run `go work sync`.
+Once manifests are rewritten to real release versions, `go work sync` can prune
+explicit companion requirements back into workspace-only shape and corrupt the
+release manifest matrix.
 
 The release gate now also includes:
 

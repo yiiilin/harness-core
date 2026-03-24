@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCompanionModulesTrackCommittedCompatibilityMatrix(t *testing.T) {
@@ -357,7 +358,7 @@ func externalConsumerEnv(t *testing.T, workDir, snapshotRepo string) []string {
 	}
 	return []string{
 		"GOWORK=off",
-		"GOPROXY=https://proxy.golang.org,direct",
+		"GOPROXY=direct",
 		"GOSUMDB=off",
 		"GONOSUMDB=github.com/yiiilin/harness-core",
 		"GOPRIVATE=github.com/yiiilin/harness-core",
@@ -395,14 +396,40 @@ func listedModules(t *testing.T, workDir string, env []string) map[string]string
 func runCommand(t *testing.T, dir string, extraEnv []string, name string, args ...string) string {
 	t.Helper()
 
-	cmd := exec.Command(name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	cmd.Env = append(os.Environ(), extraEnv...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	for attempt := 1; attempt <= 3; attempt++ {
+		cmd := exec.Command(name, args...)
+		if dir != "" {
+			cmd.Dir = dir
+		}
+		cmd.Env = append(os.Environ(), extraEnv...)
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			return string(output)
+		}
+		if name == "go" && attempt < 3 && isTransientGoFetchFailure(output) {
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+			continue
+		}
 		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, output)
 	}
-	return string(output)
+	return ""
+}
+
+func isTransientGoFetchFailure(output []byte) bool {
+	text := string(output)
+	for _, marker := range []string{
+		"unexpected EOF",
+		"TLS handshake timeout",
+		"connection reset by peer",
+		"i/o timeout",
+		"temporary failure",
+		"502 Bad Gateway",
+		"503 Service Unavailable",
+		"504 Gateway Timeout",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
