@@ -101,6 +101,21 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 			return populateSessionRunAggregates(out), nil
 		}
 
+		if roundOut, handled, err := s.tryRunFanoutRound(ctx, sessionID, leaseID, state, latest, selection.Step); err != nil {
+			return SessionRunOutput{}, err
+		} else if handled {
+			out.Executions = append(out.Executions, roundOut.Executions...)
+			out.Session = roundOut.Session
+			if roundOut.UpdatedPlan != nil {
+				out.Plan = roundOut.UpdatedPlan
+			}
+			s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
+			if isTerminalPhase(roundOut.Session.Phase) || roundOut.Session.PendingApprovalID != "" {
+				return populateSessionRunAggregates(out), nil
+			}
+			continue
+		}
+
 		stepOut, err := s.runStepWithDecision(ctx, sessionID, leaseID, selection.Step, nil, nil)
 		if err != nil {
 			if errors.Is(err, ErrStepBackoffActive) {

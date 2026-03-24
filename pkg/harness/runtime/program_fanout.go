@@ -34,11 +34,18 @@ func normalizedProgramTargetFailureStrategy(selection *execution.TargetSelection
 	return selection.OnPartialFailure
 }
 
-func applyProgramNodeAggregateMetadata(metadata map[string]any, aggregateID, programID, nodeID, title string, strategy execution.TargetFailureStrategy, expected int) map[string]any {
+func normalizedProgramTargetMaxConcurrency(selection *execution.TargetSelection, targetCount int) int {
+	if selection == nil {
+		return 0
+	}
+	return selection.EffectiveMaxConcurrency(targetCount)
+}
+
+func applyProgramNodeAggregateMetadata(metadata map[string]any, aggregateID, programID, nodeID, title string, strategy execution.TargetFailureStrategy, expected int, maxConcurrency int) map[string]any {
 	if expected <= 1 {
 		return metadata
 	}
-	return execution.ApplyAggregateMetadata(
+	metadata = execution.ApplyAggregateMetadata(
 		metadata,
 		execution.AggregateScopeTargetFanout,
 		aggregateID,
@@ -48,4 +55,5 @@ func applyProgramNodeAggregateMetadata(metadata map[string]any, aggregateID, pro
 		strategy,
 		expected,
 	)
+	return execution.ApplyAggregateConcurrencyMetadata(metadata, maxConcurrency)
 }

@@ -43,3 +43,13 @@ func (s TargetSelection) MultiTargetRequested() bool {
 		return false
 	}
 }
+
+func (s TargetSelection) EffectiveMaxConcurrency(targetCount int) int {
+	if targetCount <= 0 {
+		return 0
+	}
+	if s.MaxConcurrency <= 0 || s.MaxConcurrency > targetCount {
+		return targetCount
+	}
+	return s.MaxConcurrency
+}

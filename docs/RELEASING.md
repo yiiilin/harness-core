@@ -136,6 +136,18 @@ Companion module requirement rule:
 - `v0.0.0` is a workspace-only placeholder and must never ship in a published companion module
 - root-module `replace` directives are acceptable for local workspace development, but downstream consumers do not inherit dependency-module `replace` lines
 
+Repository guardrails now enforce the two local parts of that rule:
+
+- repo-local companion-module pseudo-versions must never use placeholder `v0.0.0`
+- repo-local companion-module pseudo-versions must stay on zero-base `v0.0.0-...` until matching companion tags exist
+
+What the repository cannot prove locally:
+
+- whether a companion tag has been pushed to the remote already
+- whether the public module proxy has indexed that tag yet
+
+That remains an explicit operator release responsibility, not a kernel API guarantee.
+
 Do not tag companion modules as a proxy for kernel semantic changes unless the
 root module also needs a release.
 

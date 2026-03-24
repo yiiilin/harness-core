@@ -37,8 +37,8 @@ These terms do **not** imply product semantics such as:
 | Durable approval pause/resume | Supported | Approval-backed blocked state is durable and restart-safe. |
 | Approval-backed blocked-runtime lookup/projection | Supported | Public reads exist for `session_id` / `approval_id` lookup, blocked-runtime listing, and blocked-runtime projection. |
 | Execution target public contracts | Partial | Typed execution-target contracts are public and the runtime now consumes explicit declared targets plus resolver-backed `fanout_all` targets for native program fan-out. Broader multi-target step semantics remain unimplemented. |
-| Attachment / artifact input public contracts | Partial | Typed attachment-input contracts are public and the runtime now consumes inline text/bytes plus artifact-ref temp-file materialization for native program execution. Broader attachment lifecycle semantics remain unimplemented. |
-| Output / artifact / attachment reference contracts | Partial | Typed refs are public and the runtime now resolves structured/text/bytes output refs, artifact refs, and temp-file attachment materialization for native program execution. Broader generalized dataflow remains unimplemented. |
+| Attachment / artifact input public contracts | Partial | Typed attachment-input contracts are public and the runtime now consumes inline text/bytes, artifact-ref temp-file materialization, and custom `AttachmentMaterializer` passthrough for native program execution. Transport-specific cleanup/lifecycle policy remains outside the kernel. |
+| Output / artifact / attachment reference contracts | Partial | Typed refs are public and the runtime now resolves structured/text/bytes output refs, artifact refs, and attachment materialization through `runtime.AttachmentMaterializer` for native program execution. Broader generalized dataflow remains unimplemented. |
 | Preplanned execution-program / tool-graph contracts | Supported | Typed program/node/input-binding contracts are public and the runtime now exposes minimal single-target program execution entry points. |
 | Target-slice / richer blocked-runtime projection contracts | Partial | Typed projection contracts are public; target slices are runtime-backed, and blocked-runtime projections are now populated for both approval-backed and generic current blocked runtimes. Broader multi-target scheduler semantics remain unimplemented. |
 | Generic blocked-runtime contract types | Supported | Typed durable blocked-runtime record/condition contracts are public and now back a generic blocked-runtime lifecycle API. |
@@ -46,7 +46,7 @@ These terms do **not** imply product semantics such as:
 | PTY backend replacement | Supported in companion module | `modules/shell` exposes `PTYBackend` and `PTYInspector`; this is companion-module surface, not kernel core. |
 | Replay/debug execution cycles | Supported | `pkg/harness/replay` projects execution cycles plus audit events. |
 | Capability unsupported reason codes | Supported | Public capability matching can return stable unsupported reason codes. |
-| Native multi-target fan-out scheduler | Partial | Explicit program fan-out across declared targets and resolver-backed `fanout_all` targets is supported through native program execution. Explicit `on_partial_failure=continue`, per-target retries, and aggregate result summaries are now supported for this path. Concurrency controls and broader multi-target step execution remain unimplemented. |
+| Native multi-target fan-out scheduler | Supported for native program execution | Explicit program fan-out across declared targets and resolver-backed `fanout_all` targets now runs through scheduler-owned fan-out rounds that consume `TargetSelection.MaxConcurrency`, preserve per-target retries / `on_partial_failure=continue`, and keep aggregate result summaries durable. Broader generic multi-target step execution outside the program path remains unimplemented. |
 | Native preplanned non-shell tool graph | Partial | `CreatePlanFromProgram(...)`, `RunProgram(...)`, `ListAggregateResults(...)`, and `execution.AttachProgram(...)` execute dependency-ordered programs with explicit or resolver-backed target fan-out, per-target retry/continue semantics, structured/artifact dataflow, and temp-file attachment materialization. Broader graph semantics remain unimplemented. |
 | Stable step-to-step output / artifact refs | Partial | Structured/text/bytes output refs, artifact refs, and temp-file attachment materialization now resolve natively for program execution. Generalized attachment/dataflow semantics outside that path remain unimplemented. |
 | First-class blocked runtime beyond approval-shaped pause | Supported | The runtime now exposes generic blocked-runtime create/respond/resume/abort APIs plus durable record lookup by `blocked_runtime_id`. Approval-backed policy pause/resume remains a dedicated path. |
@@ -102,8 +102,10 @@ Current output/artifact/attachment reference semantics:
 - `ExecutionArtifactRef` and `ExecutionAttachmentRef` are stable typed references for persisted artifacts and typed inputs
 - `ExecutionOutputRef` can point at prior structured/text/bytes output plus artifact/attachment-backed values
 - the runtime now resolves structured/text/bytes output refs and artifact refs for native program execution
-- `AttachmentInput.Materialize=temp_file` now materializes inline text/bytes and artifact-ref payloads for native program execution
-- broader attachment-backed materialization semantics remain planned vNext work
+- `runtime.AttachmentMaterializer` now owns native attachment materialization for program execution
+- the default materializer supports `AttachmentInput.Materialize=temp_file` for inline text/bytes and artifact-ref payloads
+- custom non-empty `AttachmentInput.Materialize` values are passed through to the configured materializer, and its returned value is injected into the tool action args
+- transport-specific cleanup/lifecycle policy remains materializer-owned rather than kernel-owned
 
 Current preplanned program/tool-graph semantics:
 
@@ -114,16 +116,17 @@ Current preplanned program/tool-graph semantics:
 - current native execution is intentionally minimal:
   - explicit target fan-out from declared `Targeting.Targets`
   - resolver-backed `TargetSelectionFanoutAll` target discovery through `runtime.TargetResolver`
-  - dependency-ordered execution through the existing plan/session loop
-  - literal bindings plus structured/text/bytes output refs, artifact refs, and temp-file attachment materialization
+  - dependency-ordered execution through the existing plan/session loop, with scheduler-owned concurrent fan-out rounds for ready sibling target steps
+  - literal bindings plus structured/text/bytes output refs, artifact refs, default temp-file attachment materialization, and custom materializer passthrough
   - per-target retries through `ProgramNode.OnFail`
   - partial-failure continuation through `TargetSelection.OnPartialFailure=continue`
+  - actual runtime consumption of `TargetSelection.MaxConcurrency` for native fan-out groups
   - aggregate result summaries through `SessionRunOutput.Aggregates` and `ListAggregateResults(...)`
   - verification scopes through `ProgramNode.VerifyScope`
     - `step` for ordinary single-step execution
     - `target` for per-target fan-out verification
     - `aggregate` for explicit fan-out summary verification when the group resolves
-- broader attachment lifecycle, interactive verification scopes, and broader multi-target policy semantics remain planned vNext work
+- interactive verification scopes and broader multi-target policy semantics remain planned vNext work
 
 Current target-slice / blocked-runtime projection semantics:
 
@@ -153,15 +156,20 @@ Current interactive runtime semantics:
 Current native fan-out semantics:
 
 - `CreatePlanFromProgram(...)` and `RunProgram(...)` support explicit target fan-out from `ExecutionProgramNode.Targeting.Targets`
-- fan-out is currently compiled into ordered target-scoped plan steps and reuses the existing durable plan/session loop
+- fan-out is compiled into stable target-scoped plan steps plus aggregate metadata that lets the session driver recover one concurrent fan-out round at runtime
 - target-scoped facts are persisted through stable target metadata on attempts/actions/verifications/artifacts/runtime handles
 - explicit fan-out groups also persist stable aggregate metadata so the runtime can derive aggregate result summaries durably
+- explicit fan-out groups now also persist stable `aggregate_max_concurrency` metadata so runtime execution can consume `TargetSelection.MaxConcurrency`
 - `RunProgram(...)` returns aggregate summaries on `SessionRunOutput.Aggregates`
 - `ListAggregateResults(sessionID)` exposes the current aggregate view from the latest durable plan
 - `TargetSelection.OnPartialFailure=continue` now means:
   - each target step still respects retry budgets independently
   - exhausted failed targets no longer block the rest of the explicit fan-out group
   - the logical fan-out group still fails when every target exhausts as failed
+- `TargetSelection.MaxConcurrency` now means:
+  - the runtime executes ready sibling target steps in one scheduler-owned fan-out round
+  - fan-out rounds cap concurrent target execution at the declared limit
+  - approval-gated steps still fall back to the serial path so approval governance remains on the existing kernel chain
 - `TargetSelectionFanoutAll` now resolves through the embedder-supplied `runtime.TargetResolver`
 - the kernel still does not own target discovery strategy itself; the embedder provides that policy through the resolver hook
 - aggregate verification is now supported for explicit program fan-out groups through `ProgramNode.VerifyScope=aggregate`

@@ -40,8 +40,9 @@ type AttachmentMaterializeRequest struct {
 	Artifact  *execution.Artifact       `json:"artifact,omitempty"`
 }
 
-// AttachmentMaterializer turns typed attachment inputs into concrete runtime
-// values such as temp-file paths.
+// AttachmentMaterializer turns typed attachment inputs plus an explicit
+// materialization hint into concrete runtime values such as temp-file paths or
+// embedder-defined opaque handles.
 type AttachmentMaterializer interface {
 	Materialize(ctx context.Context, request AttachmentMaterializeRequest) (any, error)
 }

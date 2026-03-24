@@ -187,6 +187,7 @@ func compileAttachedProgramNodeStep(parent plan.StepSpec, program execution.Prog
 		firstNonEmptyProgramValue(node.Title, node.Action.ToolName, node.NodeID),
 		normalizedProgramTargetFailureStrategy(node.Targeting),
 		total,
+		normalizedProgramTargetMaxConcurrency(node.Targeting, total),
 	)
 	compiled.Metadata = applyProgramVerifyMetadata(compiled.Metadata, node, total)
 	if target != nil {

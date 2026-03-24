@@ -30,6 +30,7 @@ It already has:
 - a public `pkg/harness/worker` helper for claim/renew/run-or-recover/release loops
 - a public `pkg/harness/replay` helper for execution-cycle/audit replay projections
 - a public `runtime.TargetResolver` hook for resolver-backed `fanout_all` execution
+- scheduler-owned concurrent fan-out rounds that consume `TargetSelection.MaxConcurrency` for native program execution
 - a public `runtime.AttachmentMaterializer` hook plus default temp-file materialization
 - a public generic blocked-runtime lifecycle with durable blocked-runtime records
 - a dedicated `./release` test package for Tier 1 compatibility and durable upgrade/restart gates
@@ -57,7 +58,7 @@ That pass closed the remaining correctness-oriented kernel gaps that were still 
 This does not mean `v1` is ready today.
 The remaining blockers are now primarily release-discipline items from `docs/V1_RELEASE_CHECKLIST.md`, not an open pure-kernel correctness checklist.
 The active consolidated follow-up checklist now lives in `docs/plans/2026-03-24-master-kernel-gap-checklist.md`.
-At the execution-model layer, the generic blocked-runtime lifecycle and transport-neutral interactive control plane are now part of the baseline; the largest remaining redesign item is true concurrent multi-target scheduling.
+At the execution-model layer, the generic blocked-runtime lifecycle, transport-neutral interactive control plane, native concurrent program fan-out scheduling, and transport-neutral attachment materialization hook are now part of the baseline; the largest remaining follow-up item is companion-module release hygiene.
 
 For Postgres-backed embedding, platforms no longer need `internal/postgresruntime`.
 The recommended public path is `pkg/harness/postgres`, especially `OpenServiceWithConfig(...)` plus `postgres.Config`; the WebSocket adapter remains a reference transport layer.

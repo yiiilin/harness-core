@@ -19,11 +19,12 @@ const (
 )
 
 const (
-	AggregateMetadataKeyID       = "aggregate_id"
-	AggregateMetadataKeyScope    = "aggregate_scope"
-	AggregateMetadataKeyStrategy = "aggregate_strategy"
-	AggregateMetadataKeyExpected = "aggregate_expected"
-	AggregateMetadataKeyTitle    = "aggregate_title"
+	AggregateMetadataKeyID             = "aggregate_id"
+	AggregateMetadataKeyScope          = "aggregate_scope"
+	AggregateMetadataKeyStrategy       = "aggregate_strategy"
+	AggregateMetadataKeyExpected       = "aggregate_expected"
+	AggregateMetadataKeyTitle          = "aggregate_title"
+	AggregateMetadataKeyMaxConcurrency = "aggregate_max_concurrency"
 )
 
 type AggregateTargetResult struct {
@@ -35,18 +36,19 @@ type AggregateTargetResult struct {
 }
 
 type AggregateResult struct {
-	AggregateID string                  `json:"aggregate_id"`
-	Scope       AggregateScope          `json:"scope"`
-	Strategy    TargetFailureStrategy   `json:"strategy,omitempty"`
-	ProgramID   string                  `json:"program_id,omitempty"`
-	NodeID      string                  `json:"node_id,omitempty"`
-	Title       string                  `json:"title,omitempty"`
-	Status      AggregateStatus         `json:"status"`
-	Expected    int                     `json:"expected,omitempty"`
-	Completed   int                     `json:"completed,omitempty"`
-	Failed      int                     `json:"failed,omitempty"`
-	Pending     int                     `json:"pending,omitempty"`
-	Targets     []AggregateTargetResult `json:"targets,omitempty"`
+	AggregateID    string                  `json:"aggregate_id"`
+	Scope          AggregateScope          `json:"scope"`
+	Strategy       TargetFailureStrategy   `json:"strategy,omitempty"`
+	ProgramID      string                  `json:"program_id,omitempty"`
+	NodeID         string                  `json:"node_id,omitempty"`
+	Title          string                  `json:"title,omitempty"`
+	MaxConcurrency int                     `json:"max_concurrency,omitempty"`
+	Status         AggregateStatus         `json:"status"`
+	Expected       int                     `json:"expected,omitempty"`
+	Completed      int                     `json:"completed,omitempty"`
+	Failed         int                     `json:"failed,omitempty"`
+	Pending        int                     `json:"pending,omitempty"`
+	Targets        []AggregateTargetResult `json:"targets,omitempty"`
 }
 
 func ApplyAggregateMetadata(metadata map[string]any, scope AggregateScope, aggregateID, programID, nodeID, title string, strategy TargetFailureStrategy, expected int) map[string]any {
@@ -77,6 +79,17 @@ func ApplyAggregateMetadata(metadata map[string]any, scope AggregateScope, aggre
 	return metadata
 }
 
+func ApplyAggregateConcurrencyMetadata(metadata map[string]any, maxConcurrency int) map[string]any {
+	if maxConcurrency <= 0 {
+		return metadata
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata[AggregateMetadataKeyMaxConcurrency] = maxConcurrency
+	return metadata
+}
+
 func AggregateRefFromMetadata(metadata map[string]any) (aggregateID string, scope AggregateScope, ok bool) {
 	if len(metadata) == 0 {
 		return "", "", false
@@ -87,6 +100,26 @@ func AggregateRefFromMetadata(metadata map[string]any) (aggregateID string, scop
 	}
 	scopeValue, _ := metadata[AggregateMetadataKeyScope].(string)
 	return aggregateID, AggregateScope(scopeValue), true
+}
+
+func AggregateMaxConcurrencyFromMetadata(metadata map[string]any) (int, bool) {
+	if len(metadata) == 0 {
+		return 0, false
+	}
+	value, ok := metadata[AggregateMetadataKeyMaxConcurrency]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
 }
 
 func AggregateResultsFromPlan(spec plan.Spec) []AggregateResult {
@@ -109,14 +142,15 @@ func AggregateResultsFromSteps(steps []plan.StepSpec) []AggregateResult {
 		bucket, exists := buckets[aggregateID]
 		if !exists {
 			result := AggregateResult{
-				AggregateID: aggregateID,
-				Scope:       scope,
-				Status:      AggregateStatusPending,
-				ProgramID:   stringFromMetadata(step.Metadata, ProgramMetadataKeyID),
-				NodeID:      stringFromMetadata(step.Metadata, ProgramMetadataKeyNodeID),
-				Title:       stringFromMetadata(step.Metadata, AggregateMetadataKeyTitle),
-				Strategy:    TargetFailureStrategy(stringFromMetadata(step.Metadata, AggregateMetadataKeyStrategy)),
-				Expected:    intFromMetadata(step.Metadata, AggregateMetadataKeyExpected),
+				AggregateID:    aggregateID,
+				Scope:          scope,
+				Status:         AggregateStatusPending,
+				ProgramID:      stringFromMetadata(step.Metadata, ProgramMetadataKeyID),
+				NodeID:         stringFromMetadata(step.Metadata, ProgramMetadataKeyNodeID),
+				Title:          stringFromMetadata(step.Metadata, AggregateMetadataKeyTitle),
+				Strategy:       TargetFailureStrategy(stringFromMetadata(step.Metadata, AggregateMetadataKeyStrategy)),
+				MaxConcurrency: intFromMetadata(step.Metadata, AggregateMetadataKeyMaxConcurrency),
+				Expected:       intFromMetadata(step.Metadata, AggregateMetadataKeyExpected),
 			}
 			bucket = &aggregateBucket{result: result, order: idx}
 			buckets[aggregateID] = bucket

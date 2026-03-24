@@ -194,6 +194,7 @@ func stepFromProgramNode(program execution.Program, node execution.ProgramNode, 
 		firstNonEmptyProgramValue(node.Title, node.Action.ToolName, node.NodeID),
 		normalizedProgramTargetFailureStrategy(node.Targeting),
 		total,
+		normalizedProgramTargetMaxConcurrency(node.Targeting, total),
 	)
 	step.Metadata = applyProgramVerifyMetadata(step.Metadata, node, total)
 	if target != nil {

@@ -82,8 +82,9 @@ The runtime now resolves later-step bindings from earlier-step results for:
 Important precision:
 
 - attachment-input contracts are public and usable as input bindings
-- temp-file materialization now works for inline text / bytes attachments and artifact-ref payloads
-- that does **not** mean generalized attachment materialization is complete
+- the default materializer now supports temp-file materialization for inline text / bytes attachments and artifact-ref payloads
+- custom non-empty materialization modes are now delegated to `runtime.AttachmentMaterializer`, and its returned value is passed through to the tool action
+- transport-specific cleanup/lifecycle policy still belongs to the configured materializer
 
 ### Target-scoped aggregate / replay / projection slices
 
@@ -168,22 +169,22 @@ concrete targets without teaching the kernel product-specific discovery policy.
 
 ## Still Only Partial Today
 
-### Multi-target execution is still logical fan-out, not a true concurrent scheduler
+### Multi-target execution now has a real concurrent fan-out scheduler for native program execution
 
-Current fan-out works by compiling one logical node into multiple target-scoped steps.
+Current native program fan-out still compiles one logical node into multiple target-scoped steps,
+but the runtime no longer executes those sibling steps only through a purely serial step loop.
 
-The session driver still selects and executes steps sequentially through the normal plan/session loop.
+When a compiled fan-out group carries stable aggregate metadata plus `max_concurrency > 1`, the session driver now runs a scheduler-owned fan-out round that:
 
-That means the current kernel provides:
+- executes ready sibling target steps concurrently
+- actually consumes `TargetSelection.MaxConcurrency`
+- preserves durable per-target attempts/actions/verifications/artifacts/runtime handles
+- preserves current retry / partial-failure / aggregate-verification semantics
+- falls back to the serial step path when a round cannot safely run concurrently, such as approval-gated execution
 
-- native logical fan-out
-- durable target-scoped facts
-- aggregate summaries
+This means the native program fan-out path is now materially real as a concurrent scheduler.
 
-It does **not** yet provide:
-
-- a true concurrent multi-target scheduler
-- actual runtime consumption of `TargetSelection.MaxConcurrency`
+What is still **not** implemented is a broader generic multi-target step model outside the current program/fan-out path.
 
 ### Blocked runtime is now generic, but still intentionally session-scoped
 
@@ -214,41 +215,27 @@ What still stays outside the kernel is backend-specific behavior such as:
 - stream transport protocol details
 - remote backend connection policy
 
-### Attachment materialization is still incomplete
+### Attachment materialization is now explicit, while lifecycle policy remains materializer-owned
 
 `AttachmentInput.Materialize` exists as a public contract.
 
-The runtime now provides a real temp-file materialization path for:
+The runtime now provides a real transport-neutral attachment materialization hook for native program execution:
 
-- inline text attachments
-- inline bytes attachments
-- artifact-ref payloads
+- the default materializer supports temp-file materialization for:
+  - inline text attachments
+  - inline bytes attachments
+  - artifact-ref payloads
+- custom non-empty materialization modes are delegated to `runtime.AttachmentMaterializer`
+- the materializer return value is injected into the action args without the kernel forcing it to be only a filesystem path
 
-It does **not** yet provide a fully generalized attachment materialization model across all transports and lifecycle policies.
-
-So this area is still partial.
+The kernel still does **not** own transport-specific cleanup or lifecycle policy for those materialized values.
+That policy remains with the configured materializer by design.
 
 ## Still Missing From The Kernel
 
 These are the most important pure-kernel or embedder-surface gaps that remain after the current vNext checklist work:
 
-### 1. True concurrent multi-target scheduling
-
-Needed to upgrade from step expansion to a real fan-out scheduler:
-
-- target-parallel execution
-- actual `MaxConcurrency` consumption
-- cancellation and retry semantics at the scheduler layer
-
-### 2. Generalized attachment materialization semantics
-
-Needed to make attachment input fully kernel-native:
-
-- text / bytes / artifact-backed materialization behavior
-- temp-file or other materialization lifecycle
-- durable reference semantics across execution and replay
-
-### 3. Release/module-consumption hygiene for companion modules
+### 1. Release/module-consumption hygiene for companion modules
 
 This is not a runtime semantics gap, but it is still a real embedder problem.
 
@@ -277,7 +264,7 @@ These are platform-layer responsibilities, not kernel gaps.
 If maintainers want to close the most meaningful remaining gaps without expanding kernel scope incorrectly, the best next priorities are:
 
 1. upgrade multi-target execution from sequential step expansion to a true concurrent scheduler
-2. finish generic attachment materialization semantics if attachment input is intended to be kernel-native
+2. keep hardening companion-module consumption and publishing hygiene so `@dev` and released companion versions stay externally resolvable
 3. clean up companion-module release tags so `go mod tidy` succeeds for downstream users without local exclusions or workarounds
 
 ## Bottom Line

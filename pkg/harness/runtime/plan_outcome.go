@@ -20,13 +20,6 @@ func planExecutionOutcomeForSpec(spec plan.Spec, budgets LoopBudgets) planExecut
 	aggregateByID := make(map[string]execution.AggregateResult, len(aggregates))
 	for _, aggregate := range aggregates {
 		aggregateByID[aggregate.AggregateID] = aggregate
-		if aggregate.Status == execution.AggregateStatusFailed {
-			return planExecutionOutcome{
-				Aggregates: aggregates,
-				Fail:       true,
-				Reason:     "fan-out aggregate failed",
-			}
-		}
 	}
 
 	hasPending := false
@@ -57,6 +50,10 @@ func planExecutionOutcomeForSpec(spec plan.Spec, budgets LoopBudgets) planExecut
 				aggregate := aggregateByID[aggregateID]
 				switch aggregate.Status {
 				case execution.AggregateStatusFailed:
+					if !aggregateExhaustedAsFailed(spec, aggregateID, budgets) {
+						hasRecoverableFailure = true
+						continue
+					}
 					return planExecutionOutcome{
 						Aggregates: aggregates,
 						Fail:       true,
@@ -85,7 +82,36 @@ func planExecutionOutcomeForSpec(spec plan.Spec, budgets LoopBudgets) planExecut
 			Reason:     "plan contains recoverable failed steps",
 		}
 	}
+	for _, aggregate := range aggregates {
+		if aggregate.Status == execution.AggregateStatusFailed && aggregateExhaustedAsFailed(spec, aggregate.AggregateID, budgets) {
+			return planExecutionOutcome{
+				Aggregates: aggregates,
+				Fail:       true,
+				Reason:     "fan-out aggregate failed",
+			}
+		}
+	}
 	return planExecutionOutcome{Aggregates: aggregates}
+}
+
+func aggregateExhaustedAsFailed(spec plan.Spec, aggregateID string, budgets LoopBudgets) bool {
+	found := false
+	for _, step := range spec.Steps {
+		id, _, ok := execution.AggregateRefFromMetadata(step.Metadata)
+		if !ok || id != aggregateID {
+			continue
+		}
+		found = true
+		switch step.Status {
+		case "", plan.StepPending, plan.StepRunning, plan.StepBlocked, plan.StepCompleted:
+			return false
+		case plan.StepFailed:
+			if step.Attempt < allowedAttempts(step, budgets) {
+				return false
+			}
+		}
+	}
+	return found
 }
 
 func planStatusForSpec(spec plan.Spec, budgets LoopBudgets) plan.Status {

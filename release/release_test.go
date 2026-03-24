@@ -99,6 +99,7 @@ func TestTier1StablePackagesExposeExpectedEntryPoints(t *testing.T) {
 	var _ = harness.ExecutionAggregateMetadataKeyID
 	var _ = harness.ExecutionAggregateMetadataKeyScope
 	var _ = harness.ExecutionAggregateMetadataKeyStrategy
+	var _ = harness.ExecutionAggregateMetadataKeyMaxConcurrency
 	var _ = harness.ExecutionInteractiveMetadataKeyEnabled
 	var _ = harness.ExecutionInteractiveMetadataKeySupportsReopen
 	var _ = harness.ExecutionInteractiveMetadataKeySupportsView
@@ -238,6 +239,52 @@ func TestCompanionModulesReferenceResolvableRepoLocalVersions(t *testing.T) {
 					if !tags[expected] {
 						t.Fatalf("%s references %s %s but local tag %q is missing", rel, fields[0], version, expected)
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestCompanionModulePseudoVersionsStayZeroBaseUntilTagged(t *testing.T) {
+	t.Parallel()
+
+	files := []string{
+		"pkg/harness/builtins/go.mod",
+		"modules/go.mod",
+		"adapters/go.mod",
+		"cmd/harness-core/go.mod",
+	}
+	companionModules := map[string]struct{}{
+		"github.com/yiiilin/harness-core/pkg/harness/builtins": {},
+		"github.com/yiiilin/harness-core/modules":              {},
+		"github.com/yiiilin/harness-core/adapters":             {},
+		"github.com/yiiilin/harness-core/cmd/harness-core":     {},
+	}
+
+	for _, rel := range files {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join("..", filepath.Clean(rel))
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", rel, err)
+			}
+			for _, line := range strings.Split(string(data), "\n") {
+				fields := strings.Fields(strings.TrimSpace(line))
+				if len(fields) < 2 {
+					continue
+				}
+				if _, ok := companionModules[fields[0]]; !ok {
+					continue
+				}
+				version := fields[1]
+				if !isPseudoVersion(version) {
+					continue
+				}
+				if !strings.HasPrefix(version, "v0.0.0-") {
+					t.Fatalf("%s references companion module %s with pseudo-version %s; use zero-base v0.0.0-... until a matching companion tag is published", rel, fields[0], version)
 				}
 			}
 		})

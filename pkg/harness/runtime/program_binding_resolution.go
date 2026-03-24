@@ -61,9 +61,6 @@ func (s *Service) resolveProgramBindingValue(ctx context.Context, sessionID stri
 }
 
 func (s *Service) materializeProgramAttachment(ctx context.Context, sessionID string, step plan.StepSpec, input execution.AttachmentInput) (any, error) {
-	if input.Materialize != execution.AttachmentMaterializeTempFile {
-		return nil, fmt.Errorf("%w: attachment materialization %q", ErrProgramAttachmentUnsupported, input.Materialize)
-	}
 	var artifact *execution.Artifact
 	if input.Kind == execution.AttachmentInputArtifactRef {
 		record, err := s.findProgramAttachmentArtifact(ctx, sessionID, input.ArtifactID)

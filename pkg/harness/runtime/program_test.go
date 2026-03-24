@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
@@ -498,6 +499,64 @@ func TestRunProgramFanoutContinueRetriesEachTargetIndependently(t *testing.T) {
 	}
 }
 
+func TestRunProgramFanoutConsumesMaxConcurrency(t *testing.T) {
+	handler := newConcurrencyProbeHandler(2)
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.concurrent-target", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		handler,
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+	})
+
+	sess := mustCreateSession(t, rt, "program max concurrency", "consume target max concurrency")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "consume target max concurrency"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go func() {
+		select {
+		case <-handler.concurrent:
+			close(handler.release)
+		case <-ctx.Done():
+		}
+	}()
+
+	out, err := rt.RunProgram(ctx, attached.SessionID, execution.Program{
+		ProgramID: "prog_concurrent_fanout",
+		Nodes: []execution.ProgramNode{{
+			NodeID: "node_apply",
+			Action: action.Spec{ToolName: "demo.concurrent-target"},
+			Targeting: &execution.TargetSelection{
+				Mode:           execution.TargetSelectionFanoutExplicit,
+				MaxConcurrency: 2,
+				Targets: []execution.Target{
+					{TargetID: "host-a", Kind: "host"},
+					{TargetID: "host-b", Kind: "host"},
+					{TargetID: "host-c", Kind: "host"},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected complete session, got %#v", out.Session)
+	}
+	if got := handler.maxObserved(); got != 2 {
+		t.Fatalf("expected runtime to cap concurrent target execution at 2, got %d", got)
+	}
+}
+
 func TestRunProgramResolvesStructuredOutputRefsIntoLaterStepArgs(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "demo.structured", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, structuredProducerHandler{})
@@ -984,6 +1043,54 @@ func TestRunProgramMaterializesInlineAttachmentToTempFile(t *testing.T) {
 	}
 }
 
+func TestRunProgramMaterializesInlineBytesAttachmentToTempFile(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.read_file", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, fileReaderHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+	})
+
+	sess := mustCreateSession(t, rt, "program materialize inline bytes attachment", "materialize inline bytes attachment")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "materialize inline bytes attachment"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_inline_bytes_attachment",
+		Nodes: []execution.ProgramNode{{
+			NodeID: "node_read",
+			Action: action.Spec{ToolName: "demo.read_file"},
+			InputBinds: []execution.ProgramInputBinding{{
+				Name: "path",
+				Kind: execution.ProgramInputBindingAttachment,
+				Attachment: &execution.AttachmentInput{
+					Kind:        execution.AttachmentInputBytes,
+					Bytes:       []byte("hello-inline-bytes-attachment"),
+					Materialize: execution.AttachmentMaterializeTempFile,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected 1 execution, got %#v", out.Executions)
+	}
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 1 {
+		t.Fatalf("expected 1 action, got %#v", actions)
+	}
+	if got, _ := actions[0].Result.Data["stdout"].(string); got != "hello-inline-bytes-attachment" {
+		t.Fatalf("expected materialized inline bytes payload, got %#v", actions[0].Result.Data)
+	}
+}
+
 func TestRunProgramMaterializesArtifactAttachmentToTempFile(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "demo.read_file", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, fileReaderHandler{})
@@ -1043,6 +1150,67 @@ func TestRunProgramMaterializesArtifactAttachmentToTempFile(t *testing.T) {
 	}
 	if got, _ := actions[0].Result.Data["stdout"].(string); got != "hello-artifact-attachment" {
 		t.Fatalf("expected materialized artifact payload, got %#v", actions[0].Result.Data)
+	}
+}
+
+func TestRunProgramSupportsCustomAttachmentMaterializationMode(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.echo-payload", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, echoPayloadHandler{})
+	materializer := &recordingAttachmentMaterializer{
+		value: map[string]any{
+			"kind":  "opaque_handle",
+			"value": "mem://payload/demo",
+		},
+	}
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:                  tools,
+		Verifiers:              verify.NewRegistry(),
+		Policy:                 permission.DefaultEvaluator{},
+		AttachmentMaterializer: materializer,
+	})
+
+	sess := mustCreateSession(t, rt, "program custom attachment materialization", "support custom attachment materialization")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "support custom attachment materialization"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_custom_attachment_materialization",
+		Nodes: []execution.ProgramNode{{
+			NodeID: "node_echo",
+			Action: action.Spec{ToolName: "demo.echo-payload"},
+			InputBinds: []execution.ProgramInputBinding{{
+				Name: "payload",
+				Kind: execution.ProgramInputBindingAttachment,
+				Attachment: &execution.AttachmentInput{
+					Kind:        execution.AttachmentInputBytes,
+					Bytes:       []byte("abc"),
+					Materialize: execution.AttachmentMaterialization("opaque_handle"),
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if len(out.Executions) != 1 {
+		t.Fatalf("expected 1 execution, got %#v", out.Executions)
+	}
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 1 {
+		t.Fatalf("expected 1 action, got %#v", actions)
+	}
+	if got, ok := actions[0].Result.Data["payload"].(map[string]any); !ok || got["kind"] != "opaque_handle" || got["value"] != "mem://payload/demo" {
+		t.Fatalf("expected custom materializer passthrough value, got %#v", actions[0].Result.Data["payload"])
+	}
+	if len(materializer.requests) != 1 {
+		t.Fatalf("expected one materializer request, got %#v", materializer.requests)
+	}
+	if materializer.requests[0].Input.Materialize != execution.AttachmentMaterialization("opaque_handle") {
+		t.Fatalf("expected custom materialization mode to reach materializer, got %#v", materializer.requests[0].Input)
 	}
 }
 
@@ -1186,6 +1354,30 @@ func (fileReaderHandler) Invoke(_ context.Context, args map[string]any) (action.
 	}, nil
 }
 
+type echoPayloadHandler struct{}
+
+func (echoPayloadHandler) Invoke(_ context.Context, args map[string]any) (action.Result, error) {
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"payload": args["payload"],
+		},
+	}, nil
+}
+
+type recordingAttachmentMaterializer struct {
+	mu       sync.Mutex
+	value    any
+	requests []hruntime.AttachmentMaterializeRequest
+}
+
+func (m *recordingAttachmentMaterializer) Materialize(_ context.Context, request hruntime.AttachmentMaterializeRequest) (any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests = append(m.requests, request)
+	return m.value, nil
+}
+
 func TestCreatePlanFromProgramExpandsExplicitFanoutTargetsIntoTargetScopedSteps(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{})
 	sess := mustCreateSession(t, rt, "program fanout", "expand explicit targets")
@@ -1222,6 +1414,72 @@ func TestCreatePlanFromProgramExpandsExplicitFanoutTargetsIntoTargetScopedSteps(
 	if !ok || secondTarget.TargetID != "host-b" {
 		t.Fatalf("expected second compiled target host-b, got %#v", created.Steps[1])
 	}
+}
+
+type concurrencyProbeHandler struct {
+	mu         sync.Mutex
+	active     int
+	maxActive  int
+	threshold  int
+	concurrent chan struct{}
+	release    chan struct{}
+}
+
+func newConcurrencyProbeHandler(threshold int) *concurrencyProbeHandler {
+	return &concurrencyProbeHandler{
+		threshold:  threshold,
+		concurrent: make(chan struct{}),
+		release:    make(chan struct{}),
+	}
+}
+
+func (h *concurrencyProbeHandler) Invoke(ctx context.Context, args map[string]any) (action.Result, error) {
+	h.mu.Lock()
+	h.active++
+	if h.active > h.maxActive {
+		h.maxActive = h.active
+		if h.maxActive >= h.threshold {
+			select {
+			case <-h.concurrent:
+			default:
+				close(h.concurrent)
+			}
+		}
+	}
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		h.active--
+		h.mu.Unlock()
+	}()
+
+	select {
+	case <-h.release:
+	case <-ctx.Done():
+		return action.Result{
+			OK: false,
+			Error: &action.Error{
+				Code:    "CONCURRENCY_TIMEOUT",
+				Message: ctx.Err().Error(),
+			},
+		}, ctx.Err()
+	}
+
+	target, _ := args[execution.TargetArgKey].(map[string]any)
+	targetID, _ := target[execution.TargetMetadataKeyID].(string)
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"target_id": targetID,
+			"stdout":    targetID,
+		},
+	}, nil
+}
+
+func (h *concurrencyProbeHandler) maxObserved() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.maxActive
 }
 
 func TestRunProgramPersistsTargetScopedFactsForFanoutSteps(t *testing.T) {

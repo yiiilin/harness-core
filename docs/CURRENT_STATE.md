@@ -34,7 +34,8 @@ It is no longer just a minimal runtime skeleton:
 - replay/debug reads are public
 - reusable worker orchestration is public
 - resolver-backed `fanout_all` target discovery is public
-- temp-file attachment materialization is now real for native program execution
+- native program fan-out now consumes `TargetSelection.MaxConcurrency` through scheduler-owned concurrent target rounds
+- attachment materialization is now a real kernel hook for native program execution, with default temp-file support plus custom materializer passthrough
 - generic blocked-runtime lifecycle is now real for external, confirmation, and interactive waits
 - transport-neutral interactive start / reopen / view / write / close is now real in core through a public controller contract
 - shell PTY execution is extensible enough for external platforms
@@ -163,7 +164,7 @@ These areas are now in good shape and should be treated as current strengths:
 - control-plane audit coverage for attach / lease / recovery / runtime-handle control
 - runtime-handle persistence and lifecycle control
 - resolver-backed `fanout_all` target discovery
-- temp-file attachment materialization for native program execution
+- attachment materialization for native program execution through `runtime.AttachmentMaterializer`
 - generic blocked-runtime records, lifecycle control, and projection reads
 - transport-neutral interactive control plus durable runtime-handle persistence
 - shell PTY execution extensibility
@@ -227,8 +228,7 @@ This is not a core-runtime problem. It is an adapter/documentation maturity prob
 The biggest remaining kernel work is no longer a collection of small correctness bugs.
 It is a short list of larger semantic gaps:
 
-- true concurrent multi-target scheduling with actual `MaxConcurrency` consumption
-- more generalized attachment materialization semantics beyond the current temp-file subset
+- companion-module external-consumption and release-track hygiene beyond the current local guardrails
 
 ## What Should Not Be Mistaken For Kernel Gaps
 

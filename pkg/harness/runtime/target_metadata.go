@@ -44,6 +44,7 @@ func copyExecutionFactMetadata(dst, src map[string]any) {
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyStrategy)
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyExpected)
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyTitle)
+	copyIfPresent(dst, src, execution.AggregateMetadataKeyMaxConcurrency)
 	copyIfPresent(dst, src, execution.TargetMetadataKeyID)
 	copyIfPresent(dst, src, execution.TargetMetadataKeyKind)
 	copyIfPresent(dst, src, execution.TargetMetadataKeyName)

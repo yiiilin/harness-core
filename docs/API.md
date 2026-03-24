@@ -335,8 +335,10 @@ Current scope:
 
 - they let embedders and runtime slices refer to prior structured output, text output, bytes output, artifacts, and attachment inputs using stable typed references
 - the runtime now resolves structured/text/bytes `OutputRef` values and artifact refs for native preplanned program execution
-- the runtime now also supports `AttachmentInput.Materialize=temp_file` for inline text/bytes inputs and artifact-ref payloads
-- broader attachment materialization semantics remain later work
+- the runtime now supports attachment materialization for native preplanned program execution through `runtime.AttachmentMaterializer`
+  - the default materializer supports `AttachmentInput.Materialize=temp_file` for inline text/bytes inputs and artifact-ref payloads
+  - custom materializers may also consume other non-empty `AttachmentInput.Materialize` values and return opaque runtime values that are passed through to the tool action
+- transport-specific cleanup/lifecycle policy remains owned by the configured materializer rather than the kernel
 
 This is a partial runtime slice, not the full generalized dataflow engine.
 
@@ -362,17 +364,18 @@ Current scope:
 - current runtime execution is intentionally minimal:
   - explicit target fan-out from `ExecutionProgramNode.Targeting.Targets` is supported
   - resolver-backed `ExecutionTargetSelectionFanoutAll` is supported through `runtime.TargetResolver`
-  - dependency-ordered execution through the existing plan/session loop
-  - literal, output-ref, artifact-ref, and temp-file attachment bindings are supported for native program execution
+  - dependency-ordered execution through the existing plan/session loop, with scheduler-owned concurrent fan-out rounds for ready sibling target steps
+  - literal, output-ref, artifact-ref, default temp-file attachment materialization, and custom materializer passthrough are supported for native program execution
   - explicit fan-out can now use:
     - per-target retries through `ExecutionProgramNode.OnFail`
     - partial-failure continuation through `ExecutionTargetSelection.OnPartialFailure=continue`
+    - actual concurrent target execution through `ExecutionTargetSelection.MaxConcurrency`
     - aggregate results through `RunProgram(...).Aggregates` and `ListAggregateResults(...)`
     - verification scopes through `ExecutionProgramNode.VerifyScope`
       - `step` for ordinary single-step verification
       - `target` for per-target fan-out verification
       - `aggregate` for explicit fan-out summary verification when the group resolves
-- broader attachment materialization semantics and richer aggregate replay/projection remain planned later slices
+- transport-specific attachment cleanup/lifecycle policy and richer aggregate replay/projection remain later slices
 
 This is a partial native runtime slice, not the full vNext tool-graph engine.
 

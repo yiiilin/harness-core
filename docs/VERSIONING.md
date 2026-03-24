@@ -39,6 +39,8 @@ Important implication:
 - module root, not directory prefix alone, defines the release boundary
 - release tags remain the source of truth for published releases
 - active development branches may temporarily use resolvable pseudo-versions between companion modules so external consumers can follow `@dev` without waiting for a fresh companion tag cut
+- until a companion module has a matching published companion tag on the remote, repo-local companion-module pseudo-versions should stay on the zero-base `v0.0.0-...` form
+- the root kernel module may still use its normal `v1.x.y-0...` pseudo-version flow because it already has a stable root tag lineage
 
 For local repository verification:
 
@@ -156,6 +158,12 @@ If you are building on `harness-core`:
 - treat `pkg/harness/builtins`, `modules/*`, `adapters/*`, and `cmd/harness-core` as companion modules, not the kernel itself
 - avoid importing `internal/*`
 - prefer local wrappers around public APIs instead of patching the runtime unless a true public-gap exists
+
+External-consumption rule of thumb:
+
+- following `@dev` is supported when companion modules reference resolvable pseudo-versions at reachable commits
+- companion-module pseudo-versions should remain zero-base `v0.0.0-...` until the corresponding companion tags are actually published
+- released companion versions require matching published companion tags, not only a root-module tag
 
 If you find yourself patching:
 
