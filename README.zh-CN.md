@@ -77,6 +77,7 @@
 - `docs/RUNTIME.md`
 - `docs/POLICY.md`
 - `docs/API.zh-CN.md`
+- `docs/architecture-tour.html`（本地浏览器直接打开的中英双语架构总览页）
 - `docs/MODULES.md`
 - `docs/EXTENSIBILITY.md`
 - `docs/ADAPTERS.md`

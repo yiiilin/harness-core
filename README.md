@@ -83,6 +83,7 @@ Implemented today:
 - `docs/MODULES.md`
 - `docs/EXTENSIBILITY.md`
 - `docs/ADAPTERS.md`
+- `docs/architecture-tour.html` (open locally in a browser for a bilingual visual architecture tour)
 - `docs/API.zh-CN.md` (中文快速理解与接入说明)
 - `README.zh-CN.md` (中文仓库说明)
 - `CONTRIBUTING.md`

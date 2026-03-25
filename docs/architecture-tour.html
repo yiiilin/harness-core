@@ -1,0 +1,2366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>harness-core Architecture Tour</title>
+  <style>
+    :root {
+      --bg: #f3eee2;
+      --bg-2: #f8f5ee;
+      --panel: rgba(255, 252, 246, 0.88);
+      --panel-strong: rgba(255, 250, 242, 0.97);
+      --ink: #182126;
+      --muted: #56656d;
+      --line: rgba(24, 33, 38, 0.12);
+      --line-strong: rgba(24, 33, 38, 0.22);
+      --blueprint: #0c5f73;
+      --accent: #df6f3e;
+      --accent-2: #0f7a63;
+      --shadow: 0 18px 48px rgba(31, 39, 44, 0.13);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      --body: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--body);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15, 122, 99, 0.09), transparent 32%),
+        radial-gradient(circle at top right, rgba(223, 111, 62, 0.12), transparent 30%),
+        linear-gradient(180deg, var(--bg-2), var(--bg));
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto;
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(42px);
+      opacity: 0.5;
+    }
+
+    body::before {
+      width: 20rem;
+      height: 20rem;
+      top: -5rem;
+      right: -2rem;
+      background: rgba(12, 95, 115, 0.16);
+      border-radius: 999px;
+    }
+
+    body::after {
+      width: 24rem;
+      height: 24rem;
+      bottom: -8rem;
+      left: -4rem;
+      background: rgba(223, 111, 62, 0.14);
+      border-radius: 999px;
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero,
+    .section-card,
+    .inspector,
+    .footer-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 34px;
+      padding: 28px 28px 30px;
+      margin-bottom: 22px;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(12, 95, 115, 0.08), transparent 45%),
+        linear-gradient(300deg, rgba(223, 111, 62, 0.12), transparent 40%);
+      pointer-events: none;
+    }
+
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      position: relative;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 11px;
+      color: var(--blueprint);
+      font-weight: 700;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 44px;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.6;
+    }
+
+    .lang-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.68);
+    }
+
+    .lang-switch button {
+      border: 0;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+    }
+
+    .lang-switch button.active {
+      color: #fff;
+      background: linear-gradient(135deg, var(--blueprint), #0a4554);
+      transform: translateY(-1px);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.95fr);
+      gap: 22px;
+      align-items: end;
+      margin-top: 24px;
+      position: relative;
+    }
+
+    .hero-copy h1 {
+      margin: 10px 0 14px;
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: clamp(2.7rem, 5vw, 5rem);
+      line-height: 0.94;
+      letter-spacing: -0.04em;
+      max-width: 12ch;
+    }
+
+    .hero-copy p {
+      margin: 0;
+      max-width: 64ch;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.75;
+    }
+
+    .pill-row,
+    .hero-links,
+    .legend-row,
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill-row {
+      margin-top: 16px;
+    }
+
+    .pill,
+    .legend-chip,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink);
+      padding: 9px 12px;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .pill::before,
+    .legend-chip::before,
+    .tag::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--blueprint);
+    }
+
+    .pill.orange::before,
+    .legend-chip.orange::before,
+    .tag.orange::before {
+      background: var(--accent);
+    }
+
+    .pill.green::before,
+    .legend-chip.green::before,
+    .tag.green::before {
+      background: var(--accent-2);
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 16px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      padding: 16px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px solid var(--line);
+      min-height: 110px;
+    }
+
+    .stat-card .value {
+      font-family: var(--display);
+      font-size: 2rem;
+      line-height: 1;
+      margin-bottom: 10px;
+    }
+
+    .stat-card .label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .stat-card .note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .hero-links {
+      margin-top: 14px;
+    }
+
+    .hero-links a {
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 700;
+      border-bottom: 1px solid transparent;
+      transition: border-color 160ms ease, color 160ms ease;
+    }
+
+    .hero-links a:hover {
+      color: var(--blueprint);
+      border-color: currentColor;
+    }
+
+    .section-card {
+      border-radius: var(--radius-xl);
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(1.7rem, 3vw, 2.4rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .section-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 70ch;
+    }
+
+    .architecture-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+      gap: 18px;
+    }
+
+    .architecture-board {
+      position: relative;
+      padding: 18px;
+      border-radius: 26px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(250, 246, 239, 0.92)),
+        repeating-linear-gradient(90deg, rgba(12, 95, 115, 0.06) 0, rgba(12, 95, 115, 0.06) 1px, transparent 1px, transparent 72px),
+        repeating-linear-gradient(180deg, rgba(12, 95, 115, 0.04) 0, rgba(12, 95, 115, 0.04) 1px, transparent 1px, transparent 72px);
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .architecture-board::before {
+      content: "";
+      position: absolute;
+      inset: 8% 5%;
+      border: 1px dashed rgba(12, 95, 115, 0.18);
+      border-radius: 24px;
+      pointer-events: none;
+    }
+
+    .legend-row {
+      margin-bottom: 16px;
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      align-items: start;
+      position: relative;
+    }
+
+    .layer-grid::before {
+      content: "";
+      position: absolute;
+      left: 11%;
+      right: 11%;
+      top: 58px;
+      height: 1px;
+      background:
+        linear-gradient(90deg, rgba(12, 95, 115, 0.08), rgba(12, 95, 115, 0.28), rgba(223, 111, 62, 0.22), rgba(12, 95, 115, 0.08));
+      pointer-events: none;
+    }
+
+    .layer-column {
+      position: relative;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .layer-column::before {
+      content: "";
+      position: absolute;
+      left: calc(50% - 0.5px);
+      top: 58px;
+      bottom: 10px;
+      width: 1px;
+      background: linear-gradient(180deg, rgba(12, 95, 115, 0.28), rgba(12, 95, 115, 0.06));
+      pointer-events: none;
+    }
+
+    .layer-head {
+      position: relative;
+      z-index: 1;
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      min-height: 112px;
+    }
+
+    .layer-label {
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--blueprint);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .layer-title {
+      font-family: var(--display);
+      font-size: 1.35rem;
+      line-height: 1.02;
+      margin-bottom: 6px;
+    }
+
+    .layer-note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .node-card {
+      position: relative;
+      z-index: 1;
+      text-align: left;
+      width: 100%;
+      padding: 16px 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      min-height: 126px;
+    }
+
+    .node-card:hover,
+    .node-card.active {
+      transform: translateY(-2px);
+      border-color: rgba(12, 95, 115, 0.34);
+      box-shadow: 0 14px 24px rgba(21, 31, 35, 0.08);
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .node-card.outside {
+      border-style: dashed;
+      background: rgba(255, 246, 241, 0.78);
+    }
+
+    .node-group {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--blueprint);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .node-title {
+      font-family: var(--display);
+      font-size: 1.2rem;
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+
+    .node-subtitle {
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .node-mini {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .mini-chip {
+      font-size: 11px;
+      line-height: 1;
+      padding: 7px 9px;
+      border-radius: 999px;
+      background: rgba(12, 95, 115, 0.08);
+      color: var(--blueprint);
+      border: 1px solid rgba(12, 95, 115, 0.09);
+      font-weight: 700;
+    }
+
+    .inspector {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      border-radius: 26px;
+      padding: 20px;
+      background: var(--panel-strong);
+    }
+
+    .inspector-head {
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 16px;
+    }
+
+    .inspector-path {
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      color: var(--blueprint);
+      word-break: break-word;
+    }
+
+    .inspector-title {
+      margin: 10px 0 8px;
+      font-family: var(--display);
+      font-size: 2rem;
+      line-height: 0.98;
+    }
+
+    .inspector-summary {
+      color: var(--muted);
+      line-height: 1.75;
+      margin: 0;
+    }
+
+    .inspector-block {
+      margin-top: 18px;
+    }
+
+    .inspector-block h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--blueprint);
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+      padding-left: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .list li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--ink);
+      line-height: 1.62;
+    }
+
+    .list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 9px;
+      height: 1px;
+      background: var(--accent);
+    }
+
+    .inspector-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .inspector-links a,
+    .nav-link,
+    .matrix-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 10px 12px;
+      background: rgba(12, 95, 115, 0.08);
+      border: 1px solid rgba(12, 95, 115, 0.08);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .cap-card,
+    .matrix-card,
+    .journey-card,
+    .boundary-card {
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      padding: 18px;
+    }
+
+    .cap-card h3,
+    .matrix-card h3,
+    .journey-card h3,
+    .boundary-card h3 {
+      margin: 0 0 10px;
+      font-family: var(--display);
+      font-size: 1.35rem;
+      line-height: 1.05;
+    }
+
+    .cap-card p,
+    .matrix-card p,
+    .journey-card p,
+    .boundary-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .matrix-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .matrix-path {
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      color: var(--blueprint);
+    }
+
+    .matrix-meta {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .journey-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .journey-step {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--blueprint);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .boundary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .boundary-card.outside {
+      background: rgba(255, 246, 241, 0.82);
+    }
+
+    .footer-card {
+      border-radius: 26px;
+      padding: 18px 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-copy {
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 72ch;
+    }
+
+    .footer-copy strong {
+      color: var(--ink);
+    }
+
+    .footer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    @media (max-width: 1160px) {
+      .hero-grid,
+      .architecture-shell,
+      .matrix-grid,
+      .journey-grid,
+      .boundary-grid,
+      .grid-two {
+        grid-template-columns: 1fr;
+      }
+
+      .layer-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .inspector {
+        position: static;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        padding: 18px 12px 44px;
+      }
+
+      .hero,
+      .section-card,
+      .footer-card {
+        border-radius: 22px;
+      }
+
+      .hero {
+        padding: 18px;
+      }
+
+      .hero-top,
+      .section-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .stat-grid,
+      .layer-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .layer-grid::before,
+      .layer-column::before {
+        display: none;
+      }
+
+      .hero-copy h1 {
+        font-size: clamp(2.2rem, 11vw, 3.2rem);
+        line-height: 0.9;
+        letter-spacing: -0.05em;
+        max-width: none;
+      }
+
+      .hero-copy p {
+        line-height: 1.62;
+      }
+
+      .lang-switch {
+        align-self: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-top">
+        <div>
+          <div class="eyebrow" id="hero-eyebrow"></div>
+        </div>
+        <div class="lang-switch" aria-label="Language switch">
+          <button type="button" data-lang="zh">中文</button>
+          <button type="button" data-lang="en">EN</button>
+        </div>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <h1 id="hero-title"></h1>
+          <p id="hero-subtitle"></p>
+          <div class="pill-row" id="hero-pills"></div>
+          <div class="hero-links" id="hero-links"></div>
+        </div>
+        <aside class="hero-side">
+          <div class="stat-grid" id="stat-grid"></div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section-card" id="atlas">
+      <div class="section-head">
+        <div>
+          <h2 id="atlas-title"></h2>
+          <p id="atlas-subtitle"></p>
+        </div>
+      </div>
+      <div class="architecture-shell">
+        <div class="architecture-board">
+          <div class="legend-row" id="legend-row"></div>
+          <div class="layer-grid" id="layer-grid"></div>
+        </div>
+        <aside class="inspector" id="inspector"></aside>
+      </div>
+    </section>
+
+    <section class="section-card" id="capabilities">
+      <div class="section-head">
+        <div>
+          <h2 id="cap-title"></h2>
+          <p id="cap-subtitle"></p>
+        </div>
+      </div>
+      <div class="grid-two" id="cap-grid"></div>
+    </section>
+
+    <section class="section-card" id="modules">
+      <div class="section-head">
+        <div>
+          <h2 id="module-title"></h2>
+          <p id="module-subtitle"></p>
+        </div>
+      </div>
+      <div class="matrix-grid" id="module-grid"></div>
+    </section>
+
+    <section class="section-card" id="journeys">
+      <div class="section-head">
+        <div>
+          <h2 id="journey-title"></h2>
+          <p id="journey-subtitle"></p>
+        </div>
+      </div>
+      <div class="journey-grid" id="journey-grid"></div>
+    </section>
+
+    <section class="section-card" id="boundary">
+      <div class="section-head">
+        <div>
+          <h2 id="boundary-title"></h2>
+          <p id="boundary-subtitle"></p>
+        </div>
+      </div>
+      <div class="boundary-grid" id="boundary-grid"></div>
+    </section>
+
+    <footer class="footer-card">
+      <div class="footer-copy" id="footer-copy"></div>
+      <div class="footer-actions" id="footer-actions"></div>
+    </footer>
+  </div>
+
+  <script>
+    const state = {
+      lang: localStorage.getItem("architecture-tour-lang") || "zh",
+      activeNode: "pkg_harness",
+    };
+
+    const ui = {
+      zh: {
+        title: "harness-core · 双语架构展板",
+        heroEyebrow: "Execution Kernel For Harness Engineering",
+        heroTitle: "把执行语义放进内核，把产品语义留在外层。",
+        heroSubtitle: "这是一张给 embedder 和维护者同时看的项目地图。它先解释 harness-core 到底是什么，再解释哪些能力已经内建、哪些能力通过 modules / adapters 暴露，以及哪些概念被明确挡在 kernel 之外。",
+        heroPills: [
+          { text: "单文件浏览器页面", tone: "green" },
+          { text: "中英双语切换", tone: "orange" },
+          { text: "适合接入方与维护者共读", tone: "" },
+        ],
+        heroLinks: [
+          { href: "#atlas", text: "先看关系图" },
+          { href: "#capabilities", text: "看支持的能力" },
+          { href: "#modules", text: "看模块与入口" },
+          { href: "#boundary", text: "看内核边界" },
+        ],
+        atlasTitle: "项目关系图",
+        atlasSubtitle: "左到右看：稳定接入面 -> 核心运行时语义 -> companion modules -> transport / platform 外层。点击卡片，右侧会展开职责、边界和推荐阅读路径。",
+        capTitle: "当前支持的核心能力",
+        capSubtitle: "这些能力不是散落的 feature 列表，而是已经可以组合成真实 harness workflow 的执行模型。",
+        moduleTitle: "模块与公开入口",
+        moduleSubtitle: "如果你是在接入，重点看 path、责任和何时使用；如果你在维护，重点看它属于哪一层，不要越层塞概念。",
+        journeyTitle: "建议的阅读 / 接入路径",
+        journeySubtitle: "同一个仓库服务两类读者：第一次接入的人，需要先跑示例；维护内核的人，需要先守住边界。",
+        boundaryTitle: "Kernel Boundary",
+        boundarySubtitle: "这部分很关键。harness-core 现在刻意只做执行内核，不把 user / tenant / auth / UI / billing 之类的外层概念带进来。",
+        footerCopy: "当前页面对应的理解基线：<strong>main @ v1.0.2</strong>。如果你要开始接入，优先从 <strong>pkg/harness</strong>、<strong>pkg/harness/postgres</strong>、<strong>pkg/harness/worker</strong>、<strong>pkg/harness/replay</strong> 开始，而不是直接依赖 adapter 的 transport 细节。",
+        footerActions: [
+          { href: "./API.md", text: "读 API.md" },
+          { href: "./STATUS.md", text: "读 STATUS.md" },
+          { href: "./KERNEL_SCOPE.md", text: "读 KERNEL_SCOPE.md" },
+          { href: "../examples/README.md", text: "看 Examples" },
+        ],
+        legend: [
+          { text: "稳定嵌入面", tone: "green" },
+          { text: "内核运行时", tone: "" },
+          { text: "companion modules", tone: "orange" },
+          { text: "明确在 kernel 外", tone: "orange" },
+        ],
+        stats: [
+          { value: "4", label: "Stable Public Paths", note: "pkg/harness, postgres, worker, replay" },
+          { value: "3", label: "Built-in Capability Packs", note: "shell / filesystem / http" },
+          { value: "2", label: "Reference Adapters", note: "WebSocket 与 HTTP" },
+          { value: "12", label: "Runnable Examples", note: "从 minimal 到 durable workers" },
+        ],
+      },
+      en: {
+        title: "harness-core · Bilingual Architecture Tour",
+        heroEyebrow: "Execution Kernel For Harness Engineering",
+        heroTitle: "Keep execution semantics in the kernel. Keep product semantics outside.",
+        heroSubtitle: "This page is a shared map for embedders and maintainers. It explains what harness-core is, which capabilities are already real, how modules and adapters fit around the kernel, and which concepts are intentionally kept out.",
+        heroPills: [
+          { text: "Single-file browser page", tone: "green" },
+          { text: "Chinese / English toggle", tone: "orange" },
+          { text: "For embedders and maintainers", tone: "" },
+        ],
+        heroLinks: [
+          { href: "#atlas", text: "Start with the map" },
+          { href: "#capabilities", text: "See capabilities" },
+          { href: "#modules", text: "See modules" },
+          { href: "#boundary", text: "See kernel boundary" },
+        ],
+        atlasTitle: "Project Relationship Map",
+        atlasSubtitle: "Read left to right: stable embedding surface -> core runtime semantics -> companion modules -> transport and outer platform. Click any card to inspect its role, boundary, and recommended docs.",
+        capTitle: "Core Capabilities Available Today",
+        capSubtitle: "These are not isolated features. Together they form a reusable execution model for real governed harness workflows.",
+        moduleTitle: "Modules And Public Entry Points",
+        moduleSubtitle: "Embedders should focus on path, responsibility, and when to use it. Maintainers should focus on layer ownership and avoid leaking concepts across layers.",
+        journeyTitle: "Suggested Reading / Adoption Paths",
+        journeySubtitle: "The same repository serves two audiences: first-time embedders who need runnable paths, and kernel maintainers who need boundary discipline.",
+        boundaryTitle: "Kernel Boundary",
+        boundarySubtitle: "This is the contract that keeps harness-core small. User, tenant, auth, UI, billing, and similar product concerns stay outside the kernel.",
+        footerCopy: "This page reflects the current baseline at <strong>main @ v1.0.2</strong>. If you are embedding the project, start from <strong>pkg/harness</strong>, <strong>pkg/harness/postgres</strong>, <strong>pkg/harness/worker</strong>, and <strong>pkg/harness/replay</strong> before depending on transport-specific adapter behavior.",
+        footerActions: [
+          { href: "./API.md", text: "Open API.md" },
+          { href: "./STATUS.md", text: "Open STATUS.md" },
+          { href: "./KERNEL_SCOPE.md", text: "Open KERNEL_SCOPE.md" },
+          { href: "../examples/README.md", text: "Open Examples" },
+        ],
+        legend: [
+          { text: "Stable embedder surface", tone: "green" },
+          { text: "Kernel runtime semantics", tone: "" },
+          { text: "Companion modules", tone: "orange" },
+          { text: "Explicitly outside kernel", tone: "orange" },
+        ],
+        stats: [
+          { value: "4", label: "Stable Public Paths", note: "pkg/harness, postgres, worker, replay" },
+          { value: "3", label: "Built-in Capability Packs", note: "shell / filesystem / http" },
+          { value: "2", label: "Reference Adapters", note: "WebSocket and HTTP" },
+          { value: "12", label: "Runnable Examples", note: "from minimal to durable workers" },
+        ],
+      },
+    };
+
+    const layers = [
+      {
+        key: "stable_surface",
+        nodes: ["pkg_harness", "pkg_postgres", "pkg_worker", "pkg_replay"],
+        zh: {
+          label: "Layer 1",
+          title: "稳定嵌入面",
+          note: "建议接入方优先依赖的公开路径。",
+        },
+        en: {
+          label: "Layer 1",
+          title: "Stable Embedder Surface",
+          note: "The public paths embedders should depend on first.",
+        },
+      },
+      {
+        key: "runtime_core",
+        nodes: ["runtime_loop", "execution_facts", "interactive_blocked", "program_fanout"],
+        zh: {
+          label: "Layer 2",
+          title: "内核运行时语义",
+          note: "真正决定执行正确性、恢复、回放稳定性的那部分。",
+        },
+        en: {
+          label: "Layer 2",
+          title: "Kernel Runtime Semantics",
+          note: "The part that owns execution correctness, recovery, and replay stability.",
+        },
+      },
+      {
+        key: "companions",
+        nodes: ["builtins", "module_shell", "module_filesystem", "module_http", "cli"],
+        zh: {
+          label: "Layer 3",
+          title: "Companion Modules",
+          note: "能力包、装配助手和 ops convenience，不等于 kernel 自身。",
+        },
+        en: {
+          label: "Layer 3",
+          title: "Companion Modules",
+          note: "Capability packs, composition helpers, and ops convenience. Not the kernel itself.",
+        },
+      },
+      {
+        key: "transport_platform",
+        nodes: ["adapter_ws", "adapter_http", "examples", "outer_platform"],
+        zh: {
+          label: "Layer 4",
+          title: "Transport / Platform 外层",
+          note: "把 kernel 暴露给宿主，或者围绕 kernel 形成完整平台。",
+        },
+        en: {
+          label: "Layer 4",
+          title: "Transport / Outer Platform",
+          note: "How the kernel is exposed to hosts or embedded inside a larger platform.",
+        },
+      },
+    ];
+
+    const nodes = {
+      pkg_harness: {
+        category: { zh: "Stable Public Surface", en: "Stable Public Surface" },
+        tone: "green",
+        path: "pkg/harness",
+        chips: {
+          zh: ["主 facade", "最稳定入口", "类型重导出"],
+          en: ["primary facade", "most stable path", "type re-exports"],
+        },
+        links: [
+          { href: "./API.md", label: { zh: "API.md", en: "API.md" } },
+          { href: "../pkg/harness/harness.go", label: { zh: "harness.go", en: "harness.go" } },
+        ],
+        zh: {
+          title: "pkg/harness",
+          subtitle: "所有接入方的首选入口。",
+          summary: "它把运行时服务、核心执行类型、blocked runtime、interactive、worker、replay 等公开对象统一暴露出来，目标是让接入方不必先钻进 runtime 内部目录。",
+          highlights: [
+            "公开构造器：New / NewDefault",
+            "重导出 task、session、plan、approval、execution、interactive 等核心类型",
+            "是推荐的 Tier 1 稳定接入面",
+          ],
+          relations: [
+            "向下连到 runtime 内核语义",
+            "向外配合 postgres / worker / replay",
+            "不直接扩张为 builtins 工具全集",
+          ],
+        },
+        en: {
+          title: "pkg/harness",
+          subtitle: "The primary entry point for embedders.",
+          summary: "This facade exposes the runtime service plus the main execution, blocked-runtime, interactive, worker, and replay types so embedders do not need to start from deep runtime internals.",
+          highlights: [
+            "Constructors: New / NewDefault",
+            "Re-exports task, session, plan, approval, execution, and interactive types",
+            "Recommended Tier 1 stability surface",
+          ],
+          relations: [
+            "Sits above the runtime kernel semantics",
+            "Works with postgres / worker / replay helpers",
+            "Intentionally does not become a giant built-in tool bundle",
+          ],
+        },
+      },
+      pkg_postgres: {
+        category: { zh: "Stable Public Surface", en: "Stable Public Surface" },
+        tone: "green",
+        path: "pkg/harness/postgres",
+        chips: {
+          zh: ["durable bootstrap", "schema-aware", "migrations"],
+          en: ["durable bootstrap", "schema-aware", "migrations"],
+        },
+        links: [
+          { href: "./EMBEDDING.md", label: { zh: "EMBEDDING.md", en: "EMBEDDING.md" } },
+          { href: "../pkg/harness/postgres/runtime.go", label: { zh: "runtime.go", en: "runtime.go" } },
+        ],
+        zh: {
+          title: "pkg/harness/postgres",
+          subtitle: "公开 durable bootstrap 路径。",
+          summary: "接入方现在可以只依赖公开包完成 Postgres schema、migration、OpenServiceWithConfig(...)、status/pending/drift 检查，而不必再复制 internal wiring。",
+          highlights: [
+            "Config / EnsureSchema / OpenDBWithConfig / OpenServiceWithConfig",
+            "公开 migration status / pending / drift helpers",
+            "是 durable embedding 的推荐接入面",
+          ],
+          relations: [
+            "承接 runtime 的持久化仓储与事务边界",
+            "服务于 durable session / approval / execution facts",
+            "WebSocket adapter 不再是 durable 接入的必经之路",
+          ],
+        },
+        en: {
+          title: "pkg/harness/postgres",
+          subtitle: "Public durable bootstrap path.",
+          summary: "Embedders can now rely on a public package for schema handling, migrations, OpenServiceWithConfig(...), and status/pending/drift checks without copying internal wiring.",
+          highlights: [
+            "Config / EnsureSchema / OpenDBWithConfig / OpenServiceWithConfig",
+            "Public migration status / pending / drift helpers",
+            "Recommended path for durable embedding",
+          ],
+          relations: [
+            "Connects runtime semantics to durable repositories and transactions",
+            "Backs durable sessions, approvals, and execution facts",
+            "WebSocket is no longer required for durable integration",
+          ],
+        },
+      },
+      pkg_worker: {
+        category: { zh: "Stable Public Surface", en: "Stable Public Surface" },
+        tone: "green",
+        path: "pkg/harness/worker",
+        chips: {
+          zh: ["claim / lease", "RunOnce", "RunLoop"],
+          en: ["claim / lease", "RunOnce", "RunLoop"],
+        },
+        links: [
+          { href: "./API.md", label: { zh: "API.md", en: "API.md" } },
+          { href: "../examples/postgres-workers/README.md", label: { zh: "postgres-workers", en: "postgres-workers" } },
+        ],
+        zh: {
+          title: "pkg/harness/worker",
+          subtitle: "可复用的 worker helper。",
+          summary: "它把 claim / renew / run / recover / release 这套常见 outer loop 做成公开 helper，适合 durable 多 worker 或 accepted-first 平台接入。",
+          highlights: [
+            "RunOnce(...) 与 RunLoop(...)",
+            "支持 idle/error backoff、观察回调、worker naming",
+            "依赖的是窄接口，不强绑具体 runtime.Service",
+          ],
+          relations: [
+            "向下使用 claim / lease / recovery primitives",
+            "向上服务于 platform-side worker loop",
+            "不变成 fleet orchestration 平台本身",
+          ],
+        },
+        en: {
+          title: "pkg/harness/worker",
+          subtitle: "Reusable worker helper.",
+          summary: "It packages the common claim / renew / run / recover / release outer loop into a public helper for durable multi-worker setups and accepted-first embedding flows.",
+          highlights: [
+            "RunOnce(...) and RunLoop(...)",
+            "Idle/error backoff, observation hooks, worker naming",
+            "Depends on a narrow worker-facing runtime interface, not a concrete service",
+          ],
+          relations: [
+            "Uses the kernel claim / lease / recovery primitives",
+            "Feeds platform-side worker loops",
+            "Does not become a fleet orchestration product",
+          ],
+        },
+      },
+      pkg_replay: {
+        category: { zh: "Stable Public Surface", en: "Stable Public Surface" },
+        tone: "green",
+        path: "pkg/harness/replay",
+        chips: {
+          zh: ["execution cycles", "projection", "audit replay"],
+          en: ["execution cycles", "projection", "audit replay"],
+        },
+        links: [
+          { href: "./EVENTS.md", label: { zh: "EVENTS.md", en: "EVENTS.md" } },
+          { href: "../examples/workflow-scenarios/README.md", label: { zh: "workflow-scenarios", en: "workflow-scenarios" } },
+        ],
+        zh: {
+          title: "pkg/harness/replay",
+          subtitle: "回放与调试投影视图。",
+          summary: "它不是日志浏览器，而是把 attempts、actions、verifications、artifacts、audit events 重组成对 embedder 有用的 session / cycle 投影。",
+          highlights: [
+            "SessionProjection(...) / ExecutionCycleProjection(...)",
+            "便于调试、审计、UI projection、恢复分析",
+            "建立在 execution facts 已持久化的前提上",
+          ],
+          relations: [
+            "消费内核 execution facts 和 audit events",
+            "适合外层平台构造 timeline / replay UI",
+            "不把 UI 形态带回 kernel",
+          ],
+        },
+        en: {
+          title: "pkg/harness/replay",
+          subtitle: "Replay and debugging projections.",
+          summary: "This is not a raw log reader. It reshapes attempts, actions, verifications, artifacts, and audit events into session and cycle projections that embedders can actually use.",
+          highlights: [
+            "SessionProjection(...) / ExecutionCycleProjection(...)",
+            "Useful for debugging, audit, UI projections, and recovery analysis",
+            "Built on top of persisted execution facts",
+          ],
+          relations: [
+            "Consumes kernel execution facts and audit events",
+            "Helps outer platforms build timeline and replay views",
+            "Does not drag UI semantics back into the kernel",
+          ],
+        },
+      },
+      runtime_loop: {
+        category: { zh: "Kernel Runtime", en: "Kernel Runtime" },
+        tone: "",
+        path: "runtime loop",
+        chips: {
+          zh: ["plan -> policy -> approval -> execute -> verify -> recover"],
+          en: ["plan -> policy -> approval -> execute -> verify -> recover"],
+        },
+        links: [
+          { href: "./RUNTIME.md", label: { zh: "RUNTIME.md", en: "RUNTIME.md" } },
+          { href: "./STATUS.md", label: { zh: "STATUS.md", en: "STATUS.md" } },
+        ],
+        zh: {
+          title: "Governed Runtime Loop",
+          subtitle: "这就是 harness-core 的主脊梁。",
+          summary: "内核拥有任务生命周期、状态迁移、预算、审批、恢复和取消等全局语义。它不是简单的 tool runner，而是一个可恢复、可审计、可治理的执行状态机。",
+          highlights: [
+            "共享 session / plan / step 状态机",
+            "支持 approval gating、resume、abort、recover",
+            "runner-aware read / write consistency 已打通",
+          ],
+          relations: [
+            "所有 companion modules 都挂在这条执行主链上",
+            "外层平台可以接入，但不能重定义这条语义链",
+            "这是 kernel 与 adapter 的真正边界",
+          ],
+        },
+        en: {
+          title: "Governed Runtime Loop",
+          subtitle: "This is the spine of harness-core.",
+          summary: "The kernel owns task lifecycle, state transitions, budgets, approval, recovery, and cancellation semantics. It is not just a tool runner; it is a recoverable, auditable, governed execution state machine.",
+          highlights: [
+            "Shared session / plan / step state machine",
+            "Approval gating, resume, abort, and recover",
+            "Runner-aware read / write consistency is already wired",
+          ],
+          relations: [
+            "All companion modules hang off this core execution chain",
+            "Outer platforms can embed it but should not redefine it",
+            "This is the true kernel / adapter boundary",
+          ],
+        },
+      },
+      execution_facts: {
+        category: { zh: "Kernel Runtime", en: "Kernel Runtime" },
+        tone: "",
+        path: "execution facts",
+        chips: {
+          zh: ["attempts", "actions", "verifications", "artifacts"],
+          en: ["attempts", "actions", "verifications", "artifacts"],
+        },
+        links: [
+          { href: "./PERSISTENCE.md", label: { zh: "PERSISTENCE.md", en: "PERSISTENCE.md" } },
+          { href: "./EVENTS.md", label: { zh: "EVENTS.md", en: "EVENTS.md" } },
+        ],
+        zh: {
+          title: "Execution Facts",
+          subtitle: "执行事实现在是内核一等记录。",
+          summary: "attempt、action、verification、artifact、runtime handle、capability snapshot、context summary 都能持久化，目的是支持 replay、debug、恢复、审计，而不是只给日志看。",
+          highlights: [
+            "first-class attempts / actions / verifications / artifacts / handles",
+            "带 trace/correlation 的 audit envelope",
+            "可供 replay helper 和 adapter 读模型消费",
+          ],
+          relations: [
+            "向上支撑 replay / observability / projection",
+            "向下依赖 durable stores 和 runner transaction",
+            "是 durable debugging 的基础设施",
+          ],
+        },
+        en: {
+          title: "Execution Facts",
+          subtitle: "Execution facts are first-class kernel records now.",
+          summary: "Attempts, actions, verifications, artifacts, runtime handles, capability snapshots, and context summaries are persisted for replay, debugging, recovery, and audit rather than existing only as logs.",
+          highlights: [
+            "First-class attempts / actions / verifications / artifacts / handles",
+            "Audit envelopes with trace and correlation identifiers",
+            "Feeds replay helpers and adapter read models",
+          ],
+          relations: [
+            "Supports replay, observability, and projections",
+            "Depends on durable stores and runner transactions",
+            "Forms the base of durable debugging",
+          ],
+        },
+      },
+      interactive_blocked: {
+        category: { zh: "Kernel Runtime", en: "Kernel Runtime" },
+        tone: "",
+        path: "blocked runtime + interactive",
+        chips: {
+          zh: ["approval / external waits", "interactive start/view/write/close"],
+          en: ["approval / external waits", "interactive start/view/write/close"],
+        },
+        links: [
+          { href: "./EMBEDDER_VNEXT.md", label: { zh: "EMBEDDER_VNEXT.md", en: "EMBEDDER_VNEXT.md" } },
+          { href: "../pkg/harness/runtime/interactive_control.go", label: { zh: "interactive_control.go", en: "interactive_control.go" } },
+        ],
+        zh: {
+          title: "Blocked Runtime + Interactive",
+          subtitle: "暂停与交互不再只是 shell 特例。",
+          summary: "blocked runtime 已被泛化成 approval / confirmation / external / interactive waits。interactive control plane 也已经进入 kernel：start、reopen、view、write、close 都是公开 API。",
+          highlights: [
+            "generic blocked-runtime lifecycle",
+            "transport-neutral interactive controller contract",
+            "runtime-handle 持久化与状态投影",
+          ],
+          relations: [
+            "shell PTY 是它的一个实现，不是它的全部",
+            "adapter 负责 transport action 名称，kernel 负责 handle 语义",
+            "平台可围绕它实现 attach / consoles / human approval UI",
+          ],
+        },
+        en: {
+          title: "Blocked Runtime + Interactive",
+          subtitle: "Paused and interactive flows are no longer shell-only special cases.",
+          summary: "Blocked runtime is generalized into approval, confirmation, external, and interactive waits. The interactive control plane is also in core now: start, reopen, view, write, and close are public APIs.",
+          highlights: [
+            "Generic blocked-runtime lifecycle",
+            "Transport-neutral interactive controller contract",
+            "Durable runtime-handle persistence and projections",
+          ],
+          relations: [
+            "Shell PTY is one implementation, not the whole concept",
+            "Adapters own action names while the kernel owns handle semantics",
+            "Platforms can build attach flows, consoles, and human approval UI around it",
+          ],
+        },
+      },
+      program_fanout: {
+        category: { zh: "Kernel Runtime", en: "Kernel Runtime" },
+        tone: "",
+        path: "programs + fanout",
+        chips: {
+          zh: ["program graph", "target fanout", "aggregate verify"],
+          en: ["program graph", "target fanout", "aggregate verify"],
+        },
+        links: [
+          { href: "../examples/program-graph/README.md", label: { zh: "program-graph example", en: "program-graph example" } },
+          { href: "./CURRENT_STATE.md", label: { zh: "CURRENT_STATE.md", en: "CURRENT_STATE.md" } },
+        ],
+        zh: {
+          title: "Programs + Target Fanout",
+          subtitle: "内核已经不只擅长单步 shell plan。",
+          summary: "现在支持 preplanned execution programs、step 间输出引用、attachment materialization，以及原生并发 target fanout。内核会持久化 target slices 与 aggregate results。",
+          highlights: [
+            "Program / ProgramNode / InputBinding",
+            "TargetSelection 与 MaxConcurrency",
+            "output refs / artifact refs / aggregate verification",
+          ],
+          relations: [
+            "适合结构化 workflow，不依赖 planner 临场拼装",
+            "TargetResolver 支持 resolver-backed fanout_all",
+            "是 embedder-vNext 执行模型的关键基线",
+          ],
+        },
+        en: {
+          title: "Programs + Target Fanout",
+          subtitle: "The kernel is no longer only good at single-step shell plans.",
+          summary: "It now supports preplanned execution programs, step-to-step output references, attachment materialization, and native concurrent target fanout with persisted target slices and aggregate results.",
+          highlights: [
+            "Program / ProgramNode / InputBinding",
+            "TargetSelection and MaxConcurrency",
+            "Output refs / artifact refs / aggregate verification",
+          ],
+          relations: [
+            "Fits structured workflows without a planner improvising every step",
+            "TargetResolver enables resolver-backed fanout_all",
+            "Forms a key baseline for the embedder-vNext execution model",
+          ],
+        },
+      },
+      builtins: {
+        category: { zh: "Companion", en: "Companion" },
+        tone: "orange",
+        path: "pkg/harness/builtins",
+        chips: {
+          zh: ["装配助手", "shell + fs + http", "默认 policy"],
+          en: ["composition helper", "shell + fs + http", "default policy"],
+        },
+        links: [
+          { href: "../pkg/harness/builtins/builtins.go", label: { zh: "builtins.go", en: "builtins.go" } },
+          { href: "./VERSIONING.md", label: { zh: "VERSIONING.md", en: "VERSIONING.md" } },
+        ],
+        zh: {
+          title: "pkg/harness/builtins",
+          subtitle: "默认能力组合助手，不是 bare kernel。",
+          summary: "它会把 shell / filesystem / http modules 和默认 verifiers、默认 policy 规则装进 runtime.Options。方便本地起步，但不代表内核稳定面本身扩张了。",
+          highlights: [
+            "Register(&opts) / New()",
+            "默认接入 shell、filesystem、http",
+            "保留自定义 PolicyEvaluator 的覆盖能力",
+          ],
+          relations: [
+            "在 kernel 之上做 mechanical composition",
+            "是 public companion module，不是 root module 的一部分",
+            "适合快速接入与参考实现",
+          ],
+        },
+        en: {
+          title: "pkg/harness/builtins",
+          subtitle: "Default capability composition helper, not the bare kernel.",
+          summary: "It wires shell, filesystem, and http modules plus default verifiers and policy rules into runtime.Options. Useful for quick starts, but it does not enlarge the kernel stability contract itself.",
+          highlights: [
+            "Register(&opts) / New()",
+            "Wires shell, filesystem, and http by default",
+            "Still allows a custom PolicyEvaluator to override",
+          ],
+          relations: [
+            "Mechanical composition layer on top of the kernel",
+            "Public companion module, not part of the root module",
+            "Useful for quick starts and reference setups",
+          ],
+        },
+      },
+      module_shell: {
+        category: { zh: "Companion", en: "Companion" },
+        tone: "orange",
+        path: "modules/shell",
+        chips: {
+          zh: ["pipe shell", "PTY", "interactive controller"],
+          en: ["pipe shell", "PTY", "interactive controller"],
+        },
+        links: [
+          { href: "../modules/shell/README.md", label: { zh: "shell README", en: "shell README" } },
+          { href: "../modules/shell/interactive_controller.go", label: { zh: "interactive controller", en: "interactive controller" } },
+        ],
+        zh: {
+          title: "modules/shell",
+          subtitle: "当前最完整的能力包，也是 PTY/interactive 的主证明点。",
+          summary: "它支持 pipe shell、PTY、attach、PTY verifier、PTY inspector、可替换 PTY backend，以及 kernel interactive controller 的典型实现。",
+          highlights: [
+            "shell executor 与 PTY manager",
+            "interactive controller / PTY inspector / verifiers",
+            "支持 remote-style extensibility，而不强绑本地 manager",
+          ],
+          relations: [
+            "向下接 kernel interactive / blocked-runtime / runtime-handle 语义",
+            "向上服务于 builtins、examples、adapters",
+            "模块实现细节仍留在 module 层，不进 kernel",
+          ],
+        },
+        en: {
+          title: "modules/shell",
+          subtitle: "The most complete capability pack and the clearest PTY / interactive proof point.",
+          summary: "It supports pipe shell, PTY, attach, PTY verifiers, PTY inspection, replaceable PTY backends, and a concrete implementation of the kernel interactive controller.",
+          highlights: [
+            "Shell executor and PTY manager",
+            "Interactive controller / PTY inspector / verifiers",
+            "Remote-style extensibility without forcing a local manager",
+          ],
+          relations: [
+            "Builds on kernel interactive, blocked-runtime, and runtime-handle semantics",
+            "Feeds builtins, examples, and adapters",
+            "Module-specific implementation details still stay out of the kernel",
+          ],
+        },
+      },
+      module_filesystem: {
+        category: { zh: "Companion", en: "Companion" },
+        tone: "orange",
+        path: "modules/filesystem",
+        chips: {
+          zh: ["文件读写", "默认 policy", "verifiers"],
+          en: ["file I/O", "default policy", "verifiers"],
+        },
+        links: [
+          { href: "../modules/filesystem/README.md", label: { zh: "filesystem README", en: "filesystem README" } },
+        ],
+        zh: {
+          title: "modules/filesystem",
+          subtitle: "文件系统能力包。",
+          summary: "提供文件读写类工具与默认 policy 规则，适合本地编辑、读取、验证等典型 harness workflow。",
+          highlights: [
+            "作为 builtins 的默认组成部分",
+            "配套 verifier 与 default policy rules",
+            "能力逻辑留在 module，不污染 kernel 类型",
+          ],
+          relations: [
+            "由 builtins 装配",
+            "通过 kernel tool / verifier registry 接入",
+            "适合作为更多 capability pack 的模板参照",
+          ],
+        },
+        en: {
+          title: "modules/filesystem",
+          subtitle: "Filesystem capability pack.",
+          summary: "Provides file-oriented tools plus default policy rules for local read/write/edit/verify flows common in harness workflows.",
+          highlights: [
+            "Part of the builtins default composition",
+            "Ships with companion verifiers and default policy rules",
+            "Capability logic stays in the module layer instead of leaking into kernel types",
+          ],
+          relations: [
+            "Composed by builtins",
+            "Connected through the kernel tool / verifier registries",
+            "A useful pattern reference for future capability packs",
+          ],
+        },
+      },
+      module_http: {
+        category: { zh: "Companion", en: "Companion" },
+        tone: "orange",
+        path: "modules/http",
+        chips: {
+          zh: ["HTTP request", "JSON", "默认 policy"],
+          en: ["HTTP request", "JSON", "default policy"],
+        },
+        links: [
+          { href: "../modules/http/README.md", label: { zh: "http README", en: "http README" } },
+        ],
+        zh: {
+          title: "modules/http",
+          subtitle: "结构化网络请求能力包。",
+          summary: "用来支撑非 shell 的预编排工具图、外部接口调用和验证读取，适合 program graph 和结构化 action。",
+          highlights: [
+            "HTTP / JSON 型工具",
+            "适合 preplanned tool graph",
+            "与 shell 能力包并列，而不是被 shell 吞掉",
+          ],
+          relations: [
+            "builtins 默认装配它",
+            "支撑更结构化的 execution model",
+            "说明内核并非 shell-centric only",
+          ],
+        },
+        en: {
+          title: "modules/http",
+          subtitle: "Structured network-request capability pack.",
+          summary: "Supports non-shell preplanned tool graphs, external API calls, and structured verification reads. This is useful for program graphs and structured actions.",
+          highlights: [
+            "HTTP / JSON oriented tools",
+            "Fits preplanned tool graphs",
+            "Lives beside shell instead of being hidden under shell-centric workflows",
+          ],
+          relations: [
+            "Wired by builtins by default",
+            "Supports a more structured execution model",
+            "Shows that the kernel is not shell-only",
+          ],
+        },
+      },
+      cli: {
+        category: { zh: "Companion", en: "Companion" },
+        tone: "orange",
+        path: "cmd/harness-core",
+        chips: {
+          zh: ["reference server", "migrate", "ops convenience"],
+          en: ["reference server", "migrate", "ops convenience"],
+        },
+        links: [
+          { href: "../cmd/harness-core", label: { zh: "cmd/harness-core", en: "cmd/harness-core" } },
+          { href: "./RELEASING.md", label: { zh: "RELEASING.md", en: "RELEASING.md" } },
+        ],
+        zh: {
+          title: "cmd/harness-core",
+          subtitle: "参考 CLI，不是 embedder API。",
+          summary: "它提供参考 WebSocket server 启动和 migration 运维命令，方便本地开发和运维，但公开 durable 接入面仍然是 pkg/harness/postgres。",
+          highlights: [
+            "run server",
+            "migrate status / version / up",
+            "reference-layer wiring，不定义 kernel 语义",
+          ],
+          relations: [
+            "依赖 adapters 与 builtins",
+            "服务于本地操作与演示",
+            "不应被误当成唯一接入方式",
+          ],
+        },
+        en: {
+          title: "cmd/harness-core",
+          subtitle: "Reference CLI, not the embedder API.",
+          summary: "It provides a reference server launcher and migration operations for local development and ops. The public durable embedder path is still pkg/harness/postgres.",
+          highlights: [
+            "Run the reference server",
+            "migrate status / version / up",
+            "Reference-layer wiring, not kernel semantics",
+          ],
+          relations: [
+            "Depends on adapters and builtins",
+            "Useful for local ops and demos",
+            "Should not be mistaken for the only integration path",
+          ],
+        },
+      },
+      adapter_ws: {
+        category: { zh: "Transport", en: "Transport" },
+        tone: "orange",
+        path: "adapters/websocket",
+        chips: {
+          zh: ["request/response/event", "approval", "interactive"],
+          en: ["request/response/event", "approval", "interactive"],
+        },
+        links: [
+          { href: "./ADAPTER_PROTOCOL.md", label: { zh: "ADAPTER_PROTOCOL.md", en: "ADAPTER_PROTOCOL.md" } },
+          { href: "../adapters/websocket/server.go", label: { zh: "server.go", en: "server.go" } },
+        ],
+        zh: {
+          title: "adapters/websocket",
+          subtitle: "当前最完整的参考 transport。",
+          summary: "它把 runtime lifecycle、approval、blocked runtime、interactive、audit replay 暴露成 WebSocket action 面。action 名称属于 adapter，但对象语义仍然属于 kernel。",
+          highlights: [
+            "runtime.info / session.create / step.run / action.invoke",
+            "approval.respond / blocked_runtime.* / interactive.* / event.replay",
+            "适合 remote client 与平台接入验证",
+          ],
+          relations: [
+            "复用 kernel 对象，不重定义它们",
+            "是 reference transport，不是 Tier 1 kernel API",
+            "适合作为自定义 transport 的实现蓝本",
+          ],
+        },
+        en: {
+          title: "adapters/websocket",
+          subtitle: "The richest reference transport today.",
+          summary: "It exposes lifecycle, approval, blocked runtime, interactive control, and audit replay as WebSocket actions. Action names belong to the adapter, while object semantics still belong to the kernel.",
+          highlights: [
+            "runtime.info / session.create / step.run / action.invoke",
+            "approval.respond / blocked_runtime.* / interactive.* / event.replay",
+            "Useful for remote clients and platform integration testing",
+          ],
+          relations: [
+            "Reuses kernel objects instead of redefining them",
+            "Reference transport, not Tier 1 kernel API",
+            "Good blueprint for custom transport implementations",
+          ],
+        },
+      },
+      adapter_http: {
+        category: { zh: "Transport", en: "Transport" },
+        tone: "orange",
+        path: "adapters/http",
+        chips: {
+          zh: ["minimal control plane", "claim / lease", "JSON"],
+          en: ["minimal control plane", "claim / lease", "JSON"],
+        },
+        links: [
+          { href: "../adapters/http/README.md", label: { zh: "http adapter README", en: "http adapter README" } },
+          { href: "../adapters/http/server.go", label: { zh: "server.go", en: "server.go" } },
+        ],
+        zh: {
+          title: "adapters/http",
+          subtitle: "更克制的 HTTP 参考 adapter。",
+          summary: "它主打最小 lifecycle/control-plane：session/task/plan/create、run step、claim / lease / claimed run / recover / resume-claimed，更适合展示 accepted-first 或 worker-control 模式。",
+          highlights: [
+            "healthz / runtime/info",
+            "claim runnable / recoverable session",
+            "renew / release lease / run-claimed / recover-claimed",
+          ],
+          relations: [
+            "强调控制面而不是富客户端事件流",
+            "适合展示平台后端如何包裹 kernel",
+            "与 WebSocket adapter 并行，不替代 kernel API",
+          ],
+        },
+        en: {
+          title: "adapters/http",
+          subtitle: "A more restrained reference HTTP adapter.",
+          summary: "It focuses on a minimal lifecycle and control-plane surface: create session/task/plan, run step, and claim / lease / claimed run / recover / resume-claimed flows. This fits accepted-first or worker-control modes well.",
+          highlights: [
+            "healthz / runtime/info",
+            "claim runnable / recoverable session",
+            "renew / release lease / run-claimed / recover-claimed",
+          ],
+          relations: [
+            "Emphasizes control plane more than rich client event streaming",
+            "Shows how a platform backend can wrap the kernel",
+            "Lives beside the WebSocket adapter instead of replacing kernel APIs",
+          ],
+        },
+      },
+      examples: {
+        category: { zh: "Reference Usage", en: "Reference Usage" },
+        tone: "orange",
+        path: "examples/*",
+        chips: {
+          zh: ["12 runnable examples", "learning paths", "embedding shapes"],
+          en: ["12 runnable examples", "learning paths", "embedding shapes"],
+        },
+        links: [
+          { href: "../examples/README.md", label: { zh: "examples/README.md", en: "examples/README.md" } },
+        ],
+        zh: {
+          title: "examples/*",
+          subtitle: "从最小内嵌到 durable multi-worker 的学习路径。",
+          summary: "仓库已经有一整套 example map：minimal-agent、program-graph、platform-reference、postgres-workers、postgres-websocket-embedding 等，分别对应不同接入形态。",
+          highlights: [
+            "最小内嵌、planner、program graph、durable、multi-worker、transport",
+            "示例明确区分 kernel、companion、adapter、platform wrapping",
+            "是当前最快理解项目边界和推荐路径的方式",
+          ],
+          relations: [
+            "不是稳定 API，但非常适合学习和验证",
+            "把 docs 里的抽象落成 runnable shape",
+            "帮助接入方选择正确起点",
+          ],
+        },
+        en: {
+          title: "examples/*",
+          subtitle: "Learning paths from minimal embedding to durable multi-worker flows.",
+          summary: "The repository already has an example map: minimal-agent, program-graph, platform-reference, postgres-workers, postgres-websocket-embedding, and more. Each shows a different integration shape.",
+          highlights: [
+            "Minimal embedding, planner, program graph, durable, multi-worker, and transport examples",
+            "Examples clearly separate kernel, companions, adapters, and platform wrapping",
+            "Currently the fastest way to internalize project boundaries and recommended paths",
+          ],
+          relations: [
+            "Not a stable API surface, but excellent for learning and validation",
+            "Turns doc abstractions into runnable shapes",
+            "Helps embedders choose the right starting point",
+          ],
+        },
+      },
+      outer_platform: {
+        category: { zh: "Outside Kernel", en: "Outside Kernel" },
+        tone: "orange",
+        outside: true,
+        path: "embedding platform",
+        chips: {
+          zh: ["user / tenant", "auth", "UI / billing / provider routing"],
+          en: ["user / tenant", "auth", "UI / billing / provider routing"],
+        },
+        links: [
+          { href: "./KERNEL_SCOPE.md", label: { zh: "KERNEL_SCOPE.md", en: "KERNEL_SCOPE.md" } },
+          { href: "./CURRENT_STATE.md", label: { zh: "CURRENT_STATE.md", en: "CURRENT_STATE.md" } },
+        ],
+        zh: {
+          title: "Outer Platform",
+          subtitle: "这里是 harness-core 故意不接手的部分。",
+          summary: "多用户、多会话、多组织的平台完全可以围绕 kernel 搭起来，但 kernel 不需要知道谁是用户、谁属于哪个 tenant、审批 UI 怎么做、provider 如何路由。",
+          highlights: [
+            "user / tenant / org ownership",
+            "auth / gateway / visibility",
+            "approval UI / dashboards / billing / provider routing",
+          ],
+          relations: [
+            "平台嵌入 kernel，而不是把这些概念塞进 kernel",
+            "adapter 与 module 可以服务平台，但不等于平台本身",
+            "这是维持 kernel 小而精的核心纪律",
+          ],
+        },
+        en: {
+          title: "Outer Platform",
+          subtitle: "This is the part harness-core intentionally does not own.",
+          summary: "A multi-user, multi-session platform can absolutely be built around the kernel, but the kernel does not need to know who the users are, which tenant owns a session, how approval UI works, or how providers are routed.",
+          highlights: [
+            "user / tenant / org ownership",
+            "auth / gateway / visibility",
+            "approval UI / dashboards / billing / provider routing",
+          ],
+          relations: [
+            "The platform embeds the kernel instead of pushing these concepts into it",
+            "Adapters and modules can serve the platform but are not the platform itself",
+            "This discipline is what keeps the kernel small and sharp",
+          ],
+        },
+      },
+    };
+
+    const capabilities = [
+      {
+        tone: "green",
+        zh: {
+          title: "Governed Execution Loop",
+          body: "共享状态机已经具备 plan、approval、resume、execute、verify、recover、abort 语义，重点不是“能跑一下工具”，而是“能在治理与恢复约束下持续运行”。",
+          points: ["plan -> policy -> approval -> execute -> verify -> recover", "abort / cancel", "runtime budget anchored at first real activity"],
+        },
+        en: {
+          title: "Governed Execution Loop",
+          body: "The shared state machine already owns planning, approval, resume, execute, verify, recover, and abort semantics. The goal is not just “run a tool once”, but “keep running under governance and recovery constraints.”",
+          points: ["plan -> policy -> approval -> execute -> verify -> recover", "abort / cancel", "runtime budget anchored at first real activity"],
+        },
+      },
+      {
+        tone: "",
+        zh: {
+          title: "Durability And Bootstrap",
+          body: "Postgres-backed repositories、runner wiring、schema-aware bootstrap、migration inspection 都已经是公开接入面。durable embedding 不再需要 internal wiring。",
+          points: ["public postgres.Config", "OpenServiceWithConfig(...)", "migration status / pending / drift helpers"],
+        },
+        en: {
+          title: "Durability And Bootstrap",
+          body: "Postgres repositories, runner wiring, schema-aware bootstrap, and migration inspection are already public embedder surfaces. Durable embedding no longer requires internal wiring.",
+          points: ["public postgres.Config", "OpenServiceWithConfig(...)", "migration status / pending / drift helpers"],
+        },
+      },
+      {
+        tone: "orange",
+        zh: {
+          title: "Execution Facts And Replay",
+          body: "attempts、actions、verifications、artifacts、runtime handles、audit envelopes 都能被读出来并重组为 projection。debug 与 replay 已经是产品可消费的数据面。",
+          points: ["first-class execution facts", "public replay reader", "trace / correlation ids in audit envelopes"],
+        },
+        en: {
+          title: "Execution Facts And Replay",
+          body: "Attempts, actions, verifications, artifacts, runtime handles, and audit envelopes can all be read back and reshaped into projections. Debugging and replay are now product-consumable data planes.",
+          points: ["first-class execution facts", "public replay reader", "trace / correlation ids in audit envelopes"],
+        },
+      },
+      {
+        tone: "green",
+        zh: {
+          title: "Worker Coordination",
+          body: "claim / lease / renew / recover / release 语义已经闭环，适合多 worker 协同处理 runnable 与 recoverable sessions。",
+          points: ["ClaimRunnableSession / ClaimRecoverableSession", "worker helper with RunLoop(...)", "control-plane audit for lease mutations"],
+        },
+        en: {
+          title: "Worker Coordination",
+          body: "Claim / lease / renew / recover / release semantics are already closed, which makes the kernel suitable for multiple workers coordinating around runnable and recoverable sessions.",
+          points: ["ClaimRunnableSession / ClaimRecoverableSession", "worker helper with RunLoop(...)", "control-plane audit for lease mutations"],
+        },
+      },
+      {
+        tone: "",
+        zh: {
+          title: "Programs, Targets, And Attachments",
+          body: "内核已经支持预编排 program graph、step 间数据流、native concurrent fanout、attachment materialization。这让它不再只是 shell planner 的承载体。",
+          points: ["Program / ProgramNode / InputBinding", "TargetSelection + MaxConcurrency", "attachment materializer + output refs"],
+        },
+        en: {
+          title: "Programs, Targets, And Attachments",
+          body: "The kernel supports preplanned program graphs, step-to-step data flow, native concurrent fanout, and attachment materialization. This means it is no longer only a shell-planner host.",
+          points: ["Program / ProgramNode / InputBinding", "TargetSelection + MaxConcurrency", "attachment materializer + output refs"],
+        },
+      },
+      {
+        tone: "orange",
+        zh: {
+          title: "Interactive Runtime",
+          body: "interactive 已经是内核控制面而不是 module hack。PTY 只是其中一个强实现；blocked runtime、handle persistence、stream offsets、close / reopen 语义都在 core。",
+          points: ["StartInteractive / ViewInteractive / WriteInteractive / CloseInteractive", "transport-neutral controller contract", "shell PTY as reference implementation"],
+        },
+        en: {
+          title: "Interactive Runtime",
+          body: "Interactive flow is now part of the kernel control plane rather than a module hack. PTY is one strong implementation, while blocked runtime, handle persistence, stream offsets, and close / reopen semantics live in core.",
+          points: ["StartInteractive / ViewInteractive / WriteInteractive / CloseInteractive", "transport-neutral controller contract", "shell PTY as reference implementation"],
+        },
+      },
+    ];
+
+    const moduleCards = [
+      {
+        path: "github.com/yiiilin/harness-core",
+        layer: { zh: "Kernel", en: "Kernel" },
+        link: "./API.md",
+        zh: {
+          title: "Root Kernel Module",
+          body: "包含 bare kernel、本体 runtime 语义、公开 facade，以及 postgres / worker / replay 等 Tier 1 路径。",
+          tags: ["推荐首选", "最稳定", "transport-neutral"],
+        },
+        en: {
+          title: "Root Kernel Module",
+          body: "Contains the bare kernel, runtime semantics, the public facade, and Tier 1 helper paths such as postgres / worker / replay.",
+          tags: ["recommended first", "most stable", "transport-neutral"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/pkg/harness/builtins",
+        layer: { zh: "Companion", en: "Companion" },
+        link: "../pkg/harness/builtins/builtins.go",
+        zh: {
+          title: "builtins",
+          body: "默认能力组合助手。适合快速起步，不代表把所有 module 语义并入 kernel。",
+          tags: ["composition", "defaults", "policy helper"],
+        },
+        en: {
+          title: "builtins",
+          body: "Default capability composition helper. Good for fast starts without merging all module semantics into the kernel itself.",
+          tags: ["composition", "defaults", "policy helper"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/modules/shell",
+        layer: { zh: "Companion", en: "Companion" },
+        link: "../modules/shell/README.md",
+        zh: {
+          title: "modules/shell",
+          body: "当前最成熟的 capability pack，覆盖 pipe、PTY、interactive controller、PTY verifier 与 attach-oriented flows。",
+          tags: ["shell", "pty", "interactive"],
+        },
+        en: {
+          title: "modules/shell",
+          body: "The most mature capability pack today, covering pipe, PTY, interactive controller, PTY verification, and attach-oriented flows.",
+          tags: ["shell", "pty", "interactive"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/modules/filesystem",
+        layer: { zh: "Companion", en: "Companion" },
+        link: "../modules/filesystem/README.md",
+        zh: {
+          title: "modules/filesystem",
+          body: "面向本地文件读写与验证的能力包，常作为 edit/read/verify 型 workflow 的基础能力。",
+          tags: ["filesystem", "read/write", "verify"],
+        },
+        en: {
+          title: "modules/filesystem",
+          body: "Filesystem capability pack for local read/write/verify workflows, often used as the base of edit/read/verify execution flows.",
+          tags: ["filesystem", "read/write", "verify"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/modules/http",
+        layer: { zh: "Companion", en: "Companion" },
+        link: "../modules/http/README.md",
+        zh: {
+          title: "modules/http",
+          body: "结构化 HTTP / JSON 能力包，支撑 preplanned tool graph 与更偏 API 的 workflow。",
+          tags: ["http", "json", "tool graph"],
+        },
+        en: {
+          title: "modules/http",
+          body: "Structured HTTP / JSON capability pack for preplanned tool graphs and API-oriented workflows.",
+          tags: ["http", "json", "tool graph"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/adapters/websocket",
+        layer: { zh: "Adapter", en: "Adapter" },
+        link: "./ADAPTER_PROTOCOL.md",
+        zh: {
+          title: "adapters/websocket",
+          body: "最完整的参考 transport。支持 lifecycle、approval、blocked runtime、interactive control、audit replay。",
+          tags: ["websocket", "event/replay", "interactive"],
+        },
+        en: {
+          title: "adapters/websocket",
+          body: "The richest reference transport, exposing lifecycle, approval, blocked runtime, interactive control, and audit replay.",
+          tags: ["websocket", "event/replay", "interactive"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/adapters/http",
+        layer: { zh: "Adapter", en: "Adapter" },
+        link: "../adapters/http/README.md",
+        zh: {
+          title: "adapters/http",
+          body: "更偏控制面的最小 HTTP adapter，适合平台后端包裹 kernel 的 accepted-first 模式。",
+          tags: ["http", "control plane", "claimed execution"],
+        },
+        en: {
+          title: "adapters/http",
+          body: "A smaller HTTP adapter focused on control-plane routes, suitable for accepted-first platform backends wrapping the kernel.",
+          tags: ["http", "control plane", "claimed execution"],
+        },
+      },
+      {
+        path: "github.com/yiiilin/harness-core/cmd/harness-core",
+        layer: { zh: "Companion", en: "Companion" },
+        link: "../cmd/harness-core",
+        zh: {
+          title: "cmd/harness-core",
+          body: "参考 CLI 与 server wrapper，负责 run / migrate 等运维便利层，不替代公开 embedder API。",
+          tags: ["ops", "migrate", "reference server"],
+        },
+        en: {
+          title: "cmd/harness-core",
+          body: "Reference CLI and server wrapper for run / migrate operations. Useful for ops convenience, not a substitute for the public embedder API.",
+          tags: ["ops", "migrate", "reference server"],
+        },
+      },
+      {
+        path: "examples/*",
+        layer: { zh: "Reference Usage", en: "Reference Usage" },
+        link: "../examples/README.md",
+        zh: {
+          title: "examples/*",
+          body: "从最小内嵌到 durable multi-worker、program graph、websocket embedding 的完整学习路径。",
+          tags: ["learning path", "integration shapes", "runnable"],
+        },
+        en: {
+          title: "examples/*",
+          body: "A full learning path from minimal embedding to durable multi-worker, program graph, and websocket embedding flows.",
+          tags: ["learning path", "integration shapes", "runnable"],
+        },
+      },
+    ];
+
+    const journeys = [
+      {
+        step: { zh: "Path 1", en: "Path 1" },
+        link: "../examples/minimal-agent/README.md",
+        zh: {
+          title: "先看 minimal-agent",
+          body: "如果你想先理解 bare kernel 的最小形态，从 in-process、无 transport、无 durable 的最小例子开始。",
+          tags: ["最小路径", "先理解 facade", "本地内嵌"],
+        },
+        en: {
+          title: "Start with minimal-agent",
+          body: "If you want the smallest possible picture of the bare kernel, start with the in-process, no-transport, no-durable example.",
+          tags: ["minimal path", "learn the facade first", "local embedding"],
+        },
+      },
+      {
+        step: { zh: "Path 2", en: "Path 2" },
+        link: "../examples/planner-context/README.md",
+        zh: {
+          title: "再看 planner-context / planner-replan",
+          body: "如果你关心 planning 与 context assembly，这两例子能帮你理解 runtime 如何和 planner 配合。",
+          tags: ["planning", "context", "replan"],
+        },
+        en: {
+          title: "Then planner-context / planner-replan",
+          body: "If you care about planning and context assembly, these examples show how runtime semantics fit around a planner.",
+          tags: ["planning", "context", "replan"],
+        },
+      },
+      {
+        step: { zh: "Path 3", en: "Path 3" },
+        link: "../examples/program-graph/README.md",
+        zh: {
+          title: "想走结构化 workflow 就看 program-graph",
+          body: "它展示 preplanned execution program、target fanout、aggregate verification、artifact/output refs。",
+          tags: ["program graph", "fanout", "aggregate verify"],
+        },
+        en: {
+          title: "Use program-graph for structured workflows",
+          body: "It shows preplanned execution programs, target fanout, aggregate verification, and artifact/output references.",
+          tags: ["program graph", "fanout", "aggregate verify"],
+        },
+      },
+      {
+        step: { zh: "Path 4", en: "Path 4" },
+        link: "../examples/platform-reference/README.md",
+        zh: {
+          title: "要看 worker / PTY / claimed execution 就看 platform-reference",
+          body: "这是维护者和平台接入方最该读的例子之一，能看到 claim / lease / PTY / interactive 的平台外层组织方式。",
+          tags: ["worker", "pty", "claimed execution"],
+        },
+        en: {
+          title: "Use platform-reference for worker / PTY / claimed execution",
+          body: "This is one of the best examples for maintainers and platform embedders because it shows claim / lease / PTY / interactive orchestration outside the kernel.",
+          tags: ["worker", "pty", "claimed execution"],
+        },
+      },
+      {
+        step: { zh: "Path 5", en: "Path 5" },
+        link: "../examples/postgres-embedded/README.md",
+        zh: {
+          title: "要 durable 就看 postgres-embedded / postgres-workers",
+          body: "这里能看到公开 Postgres bootstrap、多 worker 协同、recoverable session 竞争、lease 协调。",
+          tags: ["durable", "postgres", "multi-worker"],
+        },
+        en: {
+          title: "Use postgres-embedded / postgres-workers for durable flows",
+          body: "These examples show public Postgres bootstrap, multi-worker coordination, recoverable session contention, and lease handling.",
+          tags: ["durable", "postgres", "multi-worker"],
+        },
+      },
+      {
+        step: { zh: "Path 6", en: "Path 6" },
+        link: "../examples/postgres-websocket-embedding/README.md",
+        zh: {
+          title: "要 transport + durable + interactive 一起看，就看 postgres-websocket-embedding",
+          body: "这是最接近真实平台接入的全链路示例之一：public bootstrap + builtins + adapter + interactive control。",
+          tags: ["adapter", "interactive", "durable"],
+        },
+        en: {
+          title: "Use postgres-websocket-embedding for transport + durable + interactive",
+          body: "This is one of the closest end-to-end examples to a realistic platform embedding: public bootstrap + builtins + adapter + interactive control.",
+          tags: ["adapter", "interactive", "durable"],
+        },
+      },
+    ];
+
+    const boundaries = {
+      kernel: {
+        tone: "green",
+        zh: {
+          title: "Kernel Owns",
+          body: "只有那些会改变全局执行语义、恢复正确性、回放稳定性、治理闭环的概念，才应该进入 kernel。",
+          items: [
+            "task / session / plan / step lifecycle semantics",
+            "plan -> policy -> approval -> execute -> verify -> recover",
+            "loop budgets、retry / replan accounting",
+            "attempts / actions / verifications / artifacts / runtime handles",
+            "blocked runtime、interactive control、target resolution、attachment materialization",
+            "capability resolution、snapshots、audit、metrics / trace hooks",
+          ],
+        },
+        en: {
+          title: "Kernel Owns",
+          body: "Only concepts that change global execution semantics, recovery correctness, replay stability, or governed execution should enter the kernel.",
+          items: [
+            "task / session / plan / step lifecycle semantics",
+            "plan -> policy -> approval -> execute -> verify -> recover",
+            "loop budgets, retry / replan accounting",
+            "attempts / actions / verifications / artifacts / runtime handles",
+            "blocked runtime, interactive control, target resolution, attachment materialization",
+            "capability resolution, snapshots, audit, metrics / trace hooks",
+          ],
+        },
+      },
+      outside: {
+        tone: "orange",
+        zh: {
+          title: "Must Stay Outside",
+          body: "这些东西不是没价值，而是不该定义成 kernel 概念。它们属于 adapter、module 或 embedding platform。",
+          items: [
+            "user / tenant / org / ownership / ACL / RBAC",
+            "auth / gateway / token / OIDC / session login state",
+            "approval UI、operator dashboards、search projections",
+            "billing、quota、provider routing、business policy inheritance",
+            "deployment topology、worker fleet orchestration、queue product logic",
+            "transport envelopes、business-specific protocol semantics",
+          ],
+        },
+        en: {
+          title: "Must Stay Outside",
+          body: "These concepts matter, but they should not become kernel concepts. They belong in adapters, modules, or the embedding platform.",
+          items: [
+            "user / tenant / org / ownership / ACL / RBAC",
+            "auth / gateway / token / OIDC / session login state",
+            "approval UI, operator dashboards, search projections",
+            "billing, quota, provider routing, and business policy inheritance",
+            "deployment topology, worker fleet orchestration, queue product logic",
+            "transport envelopes and business-specific protocol semantics",
+          ],
+        },
+      },
+    };
+
+    function render() {
+      const lang = state.lang;
+      const text = ui[lang];
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.title = text.title;
+
+      document.getElementById("hero-eyebrow").textContent = text.heroEyebrow;
+      document.getElementById("hero-title").textContent = text.heroTitle;
+      document.getElementById("hero-subtitle").textContent = text.heroSubtitle;
+      document.getElementById("atlas-title").textContent = text.atlasTitle;
+      document.getElementById("atlas-subtitle").textContent = text.atlasSubtitle;
+      document.getElementById("cap-title").textContent = text.capTitle;
+      document.getElementById("cap-subtitle").textContent = text.capSubtitle;
+      document.getElementById("module-title").textContent = text.moduleTitle;
+      document.getElementById("module-subtitle").textContent = text.moduleSubtitle;
+      document.getElementById("journey-title").textContent = text.journeyTitle;
+      document.getElementById("journey-subtitle").textContent = text.journeySubtitle;
+      document.getElementById("boundary-title").textContent = text.boundaryTitle;
+      document.getElementById("boundary-subtitle").textContent = text.boundarySubtitle;
+      document.getElementById("footer-copy").innerHTML = text.footerCopy;
+
+      document.querySelectorAll("[data-lang]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.lang === lang);
+      });
+
+      renderHero(text);
+      renderLayers(lang);
+      renderInspector(lang);
+      renderCapabilities(lang);
+      renderModules(lang);
+      renderJourneys(lang);
+      renderBoundary(lang);
+      renderFooter(text);
+    }
+
+    function renderHero(text) {
+      document.getElementById("hero-pills").innerHTML = text.heroPills
+        .map((item) => `<span class="pill ${item.tone}">${item.text}</span>`)
+        .join("");
+
+      document.getElementById("hero-links").innerHTML = text.heroLinks
+        .map((link) => `<a href="${link.href}">${link.text}</a>`)
+        .join("");
+
+      document.getElementById("stat-grid").innerHTML = text.stats
+        .map((stat) => `
+          <article class="stat-card">
+            <div class="label">${stat.label}</div>
+            <div class="value">${stat.value}</div>
+            <div class="note">${stat.note}</div>
+          </article>
+        `)
+        .join("");
+
+      document.getElementById("legend-row").innerHTML = text.legend
+        .map((item) => `<span class="legend-chip ${item.tone}">${item.text}</span>`)
+        .join("");
+    }
+
+    function renderLayers(lang) {
+      const layerGrid = document.getElementById("layer-grid");
+      layerGrid.innerHTML = layers
+        .map((layer) => {
+          const layerText = layer[lang];
+          return `
+            <section class="layer-column">
+              <header class="layer-head">
+                <div class="layer-label">${layerText.label}</div>
+                <div class="layer-title">${layerText.title}</div>
+                <div class="layer-note">${layerText.note}</div>
+              </header>
+              ${layer.nodes.map((nodeId) => renderNodeCard(nodeId, lang)).join("")}
+            </section>
+          `;
+        })
+        .join("");
+
+      layerGrid.querySelectorAll(".node-card").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.activeNode = button.dataset.node;
+          renderInspector(lang);
+          renderLayers(lang);
+        });
+      });
+    }
+
+    function renderNodeCard(nodeId, lang) {
+      const node = nodes[nodeId];
+      const copy = node[lang];
+      const chips = node.chips[lang];
+      const classes = ["node-card"];
+      if (nodeId === state.activeNode) classes.push("active");
+      if (node.outside) classes.push("outside");
+
+      return `
+        <button type="button" class="${classes.join(" ")}" data-node="${nodeId}">
+          <div class="node-group">${node.category[lang]}</div>
+          <div class="node-title">${copy.title}</div>
+          <div class="node-subtitle">${copy.subtitle}</div>
+          <div class="node-mini">
+            ${chips.map((chip) => `<span class="mini-chip">${chip}</span>`).join("")}
+          </div>
+        </button>
+      `;
+    }
+
+    function renderInspector(lang) {
+      const node = nodes[state.activeNode];
+      const copy = node[lang];
+      const inspector = document.getElementById("inspector");
+      inspector.innerHTML = `
+        <div class="inspector-head">
+          <div class="inspector-path">${node.path}</div>
+          <h3 class="inspector-title">${copy.title}</h3>
+          <p class="inspector-summary">${copy.summary}</p>
+        </div>
+        <div class="chip-row">
+          ${node.chips[lang].map((chip) => `<span class="tag ${node.tone || ""}">${chip}</span>`).join("")}
+        </div>
+        <div class="inspector-block">
+          <h3>${lang === "zh" ? "Highlights" : "Highlights"}</h3>
+          <ul class="list">${copy.highlights.map((item) => `<li>${item}</li>`).join("")}</ul>
+        </div>
+        <div class="inspector-block">
+          <h3>${lang === "zh" ? "Relations" : "Relations"}</h3>
+          <ul class="list">${copy.relations.map((item) => `<li>${item}</li>`).join("")}</ul>
+        </div>
+        <div class="inspector-block">
+          <h3>${lang === "zh" ? "Read Next" : "Read Next"}</h3>
+          <div class="inspector-links">
+            ${node.links.map((link) => `<a href="${link.href}">${link.label[lang]}</a>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCapabilities(lang) {
+      document.getElementById("cap-grid").innerHTML = capabilities
+        .map((card) => {
+          const copy = card[lang];
+          return `
+            <article class="cap-card">
+              <div class="chip-row" style="margin-bottom: 12px;">
+                <span class="tag ${card.tone}">${lang === "zh" ? "Capability" : "Capability"}</span>
+              </div>
+              <h3>${copy.title}</h3>
+              <p>${copy.body}</p>
+              <ul class="list" style="margin-top: 14px;">
+                ${copy.points.map((point) => `<li>${point}</li>`).join("")}
+              </ul>
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    function renderModules(lang) {
+      document.getElementById("module-grid").innerHTML = moduleCards
+        .map((card) => {
+          const copy = card[lang];
+          return `
+            <article class="matrix-card">
+              <div class="matrix-head">
+                <div>
+                  <div class="matrix-meta">${card.layer[lang]}</div>
+                  <div class="matrix-path">${card.path}</div>
+                </div>
+              </div>
+              <h3>${copy.title}</h3>
+              <p>${copy.body}</p>
+              <div class="chip-row" style="margin-top: 14px;">
+                ${copy.tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
+              </div>
+              <div style="margin-top: 14px;">
+                <a class="matrix-link" href="${card.link}">${lang === "zh" ? "打开对应文件" : "Open related file"}</a>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    function renderJourneys(lang) {
+      document.getElementById("journey-grid").innerHTML = journeys
+        .map((item) => {
+          const copy = item[lang];
+          return `
+            <article class="journey-card">
+              <div class="journey-step">${item.step[lang]}</div>
+              <h3>${copy.title}</h3>
+              <p>${copy.body}</p>
+              <div class="chip-row" style="margin-top: 14px;">
+                ${copy.tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
+              </div>
+              <div style="margin-top: 14px;">
+                <a class="matrix-link" href="${item.link}">${lang === "zh" ? "打开示例说明" : "Open example guide"}</a>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    function renderBoundary(lang) {
+      const kernel = boundaries.kernel[lang];
+      const outside = boundaries.outside[lang];
+      document.getElementById("boundary-grid").innerHTML = `
+        <article class="boundary-card">
+          <div class="chip-row" style="margin-bottom: 12px;">
+            <span class="tag green">${lang === "zh" ? "Inside Kernel" : "Inside Kernel"}</span>
+          </div>
+          <h3>${kernel.title}</h3>
+          <p>${kernel.body}</p>
+          <ul class="list" style="margin-top: 14px;">
+            ${kernel.items.map((item) => `<li>${item}</li>`).join("")}
+          </ul>
+        </article>
+        <article class="boundary-card outside">
+          <div class="chip-row" style="margin-bottom: 12px;">
+            <span class="tag orange">${lang === "zh" ? "Outside Kernel" : "Outside Kernel"}</span>
+          </div>
+          <h3>${outside.title}</h3>
+          <p>${outside.body}</p>
+          <ul class="list" style="margin-top: 14px;">
+            ${outside.items.map((item) => `<li>${item}</li>`).join("")}
+          </ul>
+        </article>
+      `;
+    }
+
+    function renderFooter(text) {
+      document.getElementById("footer-actions").innerHTML = text.footerActions
+        .map((item) => `<a class="nav-link" href="${item.href}">${item.text}</a>`)
+        .join("");
+    }
+
+    document.querySelectorAll("[data-lang]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.lang = button.dataset.lang;
+        localStorage.setItem("architecture-tour-lang", state.lang);
+        render();
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>
