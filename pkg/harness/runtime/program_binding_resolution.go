@@ -16,7 +16,7 @@ import (
 func (s *Service) resolveProgramBindings(ctx context.Context, sessionID string, step plan.StepSpec) (plan.StepSpec, error) {
 	bindings, ok := execution.ProgramInputBindingsFromStep(step)
 	if !ok || len(bindings) == 0 {
-		return step, nil
+		return normalizeResolvedProgramActionArgs(step), nil
 	}
 	step.Action.Args = cloneAnyMap(step.Action.Args)
 	for _, binding := range bindings {
@@ -26,7 +26,26 @@ func (s *Service) resolveProgramBindings(ctx context.Context, sessionID string, 
 		}
 		step.Action.Args[binding.Name] = value
 	}
-	return step, nil
+	return normalizeResolvedProgramActionArgs(step), nil
+}
+
+func normalizeResolvedProgramActionArgs(step plan.StepSpec) plan.StepSpec {
+	if !isNativeProgramActionToolName(step.Action.ToolName) || step.Action.ToolName == ProgramInteractiveStartToolName {
+		return step
+	}
+	if step.Action.Args == nil {
+		return step
+	}
+	if handleID := strings.TrimSpace(programStringArg(step.Action.Args, "handle_id")); handleID != "" {
+		return step
+	}
+	handleID, err := programInteractiveHandleID(step.Action.Args)
+	if err != nil || strings.TrimSpace(handleID) == "" {
+		return step
+	}
+	step.Action.Args = cloneAnyMap(step.Action.Args)
+	step.Action.Args["handle_id"] = handleID
+	return step
 }
 
 func (s *Service) resolveProgramBindingValue(ctx context.Context, sessionID string, step plan.StepSpec, binding execution.ProgramInputBinding) (any, error) {
@@ -55,6 +74,11 @@ func (s *Service) resolveProgramBindingValue(ctx context.Context, sessionID stri
 		default:
 			return nil, fmt.Errorf("%w: attachment kind %q", ErrProgramAttachmentUnsupported, binding.Attachment.Kind)
 		}
+	case execution.ProgramInputBindingRuntimeHandleRef:
+		if binding.RuntimeHandle == nil {
+			return nil, fmt.Errorf("%w: missing runtime handle ref for binding %q", ErrProgramBindingResolveFailed, binding.Name)
+		}
+		return s.resolveProgramRuntimeHandleRef(ctx, sessionID, step, *binding.RuntimeHandle)
 	default:
 		return nil, fmt.Errorf("%w: binding kind %q", ErrProgramInputBindingUnsupported, binding.Kind)
 	}
@@ -264,6 +288,117 @@ func (s *Service) resolveProgramArtifactHandle(ctx context.Context, sessionID st
 	}, nil
 }
 
+func (s *Service) resolveProgramRuntimeHandleRef(ctx context.Context, sessionID string, step plan.StepSpec, ref execution.RuntimeHandleRef) (execution.RuntimeHandleRef, error) {
+	if strings.TrimSpace(ref.HandleID) == "" && strings.TrimSpace(ref.StepID) == "" && strings.TrimSpace(ref.ActionID) == "" {
+		return execution.RuntimeHandleRef{}, fmt.Errorf("%w: runtime handle ref %+v", ErrProgramBindingResolveFailed, ref)
+	}
+
+	handles, err := s.listRuntimeHandleRecords(ctx, sessionID)
+	if err != nil {
+		return execution.RuntimeHandleRef{}, err
+	}
+
+	currentTarget, hasCurrentTarget := execution.TargetFromStep(step)
+	attemptsByID := map[string]execution.Attempt{}
+	if ref.StepID != "" || hasCurrentTarget {
+		attempts, err := s.listAttemptRecords(ctx, sessionID)
+		if err != nil {
+			return execution.RuntimeHandleRef{}, err
+		}
+		for _, attempt := range attempts {
+			attemptsByID[attempt.AttemptID] = attempt
+		}
+	}
+
+	type candidate struct {
+		handle     execution.RuntimeHandle
+		attempt    execution.Attempt
+		hasAttempt bool
+		actionID   string
+		score      int
+	}
+
+	candidates := make([]candidate, 0, len(handles))
+	for _, handle := range handles {
+		if ref.HandleID != "" && handle.HandleID != ref.HandleID {
+			continue
+		}
+		if ref.Kind != "" && handle.Kind != ref.Kind {
+			continue
+		}
+		if ref.Status != "" && handle.Status != ref.Status {
+			continue
+		}
+		if ref.Version > 0 && handle.Version != ref.Version {
+			continue
+		}
+		actionID := runtimeHandleActionID(handle)
+		if ref.ActionID != "" && actionID != ref.ActionID {
+			continue
+		}
+		attempt, hasAttempt := attemptsByID[handle.AttemptID]
+		if ref.StepID != "" && !programRuntimeHandleMatchesStep(attempt, hasAttempt, ref.StepID) {
+			continue
+		}
+
+		score := 0
+		if ref.HandleID != "" && handle.HandleID == ref.HandleID {
+			score += 100
+		}
+		if ref.ActionID != "" && actionID == ref.ActionID {
+			score += 20
+		}
+		if ref.StepID != "" {
+			score += 5
+		}
+		if hasCurrentTarget && hasAttempt {
+			if target, ok := execution.TargetFromStep(attempt.Step); ok {
+				if target.TargetID != currentTarget.TargetID {
+					continue
+				}
+				score += 10
+			}
+		}
+		if isRuntimeHandleActive(handle) {
+			score++
+		}
+
+		candidates = append(candidates, candidate{
+			handle:     handle,
+			attempt:    attempt,
+			hasAttempt: hasAttempt,
+			actionID:   actionID,
+			score:      score,
+		})
+	}
+	if len(candidates) == 0 {
+		return execution.RuntimeHandleRef{}, fmt.Errorf("%w: runtime handle ref %+v", ErrProgramBindingResolveFailed, ref)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].score != candidates[j].score {
+			return candidates[i].score > candidates[j].score
+		}
+		if candidates[i].handle.UpdatedAt != candidates[j].handle.UpdatedAt {
+			return candidates[i].handle.UpdatedAt > candidates[j].handle.UpdatedAt
+		}
+		if candidates[i].handle.Version != candidates[j].handle.Version {
+			return candidates[i].handle.Version > candidates[j].handle.Version
+		}
+		return candidates[i].handle.HandleID > candidates[j].handle.HandleID
+	})
+
+	selected := candidates[0]
+	resolved := execution.RuntimeHandleRefFromHandle(selected.handle)
+	if selected.actionID != "" {
+		resolved.ActionID = selected.actionID
+	}
+	if selected.hasAttempt {
+		resolved.StepID = firstNonEmptyString(selected.attempt.StepID, selected.attempt.Step.StepID)
+	}
+	return resolved, nil
+}
+
 func programOutputRefMatchesStep(record execution.ActionRecord, stepID string) bool {
 	if record.StepID == stepID {
 		return true
@@ -278,6 +413,25 @@ func programOutputRefMatchesArtifact(record execution.Artifact, stepID string) b
 	}
 	nodeID, _ := record.Metadata[execution.ProgramMetadataKeyNodeID].(string)
 	return nodeID == stepID
+}
+
+func programRuntimeHandleMatchesStep(attempt execution.Attempt, hasAttempt bool, stepID string) bool {
+	if !hasAttempt {
+		return false
+	}
+	if attempt.StepID == stepID || attempt.Step.StepID == stepID {
+		return true
+	}
+	nodeID, _ := attempt.Step.Metadata[execution.ProgramMetadataKeyNodeID].(string)
+	return nodeID == stepID
+}
+
+func runtimeHandleActionID(handle execution.RuntimeHandle) string {
+	if handle.Metadata == nil {
+		return ""
+	}
+	actionID, _ := handle.Metadata["action_id"].(string)
+	return actionID
 }
 
 func resolveProgramResultPath(result action.Result, path string) (any, bool) {

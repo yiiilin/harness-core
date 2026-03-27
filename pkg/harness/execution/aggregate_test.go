@@ -54,3 +54,30 @@ func TestAggregateResultsFromPlanMarksAllFailedFanoutAsFailed(t *testing.T) {
 		t.Fatalf("expected failed aggregate, got %#v", aggregates[0])
 	}
 }
+
+func TestApplyAggregateTargetOutcomeMetadataClonesInputMap(t *testing.T) {
+	original := map[string]any{
+		execution.AggregateMetadataKeyID: "agg_apply",
+		"existing":                       "value",
+	}
+
+	updated := execution.ApplyAggregateTargetOutcomeMetadata(original, plan.StepFailed, "target failed")
+	if updated == nil {
+		t.Fatalf("expected updated metadata map")
+	}
+	if updated[execution.AggregateMetadataKeyTargetStatus] != string(plan.StepFailed) {
+		t.Fatalf("expected updated metadata to include target status, got %#v", updated)
+	}
+	if updated[execution.AggregateMetadataKeyTargetReason] != "target failed" {
+		t.Fatalf("expected updated metadata to include target reason, got %#v", updated)
+	}
+	if _, ok := original[execution.AggregateMetadataKeyTargetStatus]; ok {
+		t.Fatalf("expected original metadata map to remain untouched, got %#v", original)
+	}
+	if _, ok := original[execution.AggregateMetadataKeyTargetReason]; ok {
+		t.Fatalf("expected original metadata map to remain untouched, got %#v", original)
+	}
+	if got, _ := original["existing"].(string); got != "value" {
+		t.Fatalf("expected original metadata to retain existing values, got %#v", original)
+	}
+}

@@ -15,8 +15,9 @@ var ErrProgramFanoutUnsupported = ErrProgramMultiTargetUnsupported
 
 const (
 	programCompiledMetadataKey   = "program_compiled"
-	programParentStepMetadataKey = "program_parent_step_id"
-	programDependsOnMetadataKey  = "program_depends_on"
+	programGroupMetadataKey      = execution.ProgramMetadataKeyGroupID
+	programParentStepMetadataKey = execution.ProgramMetadataKeyParentStepID
+	programDependsOnMetadataKey  = execution.ProgramMetadataKeyDependsOn
 )
 
 func normalizePlanStepsForStorage(steps []plan.StepSpec) ([]plan.StepSpec, error) {
@@ -69,6 +70,7 @@ func expandProgramStep(step plan.StepSpec, view capability.View) ([]plan.StepSpe
 
 func orderedProgramNodes(program execution.Program) ([]execution.ProgramNode, error) {
 	index := make(map[string]int, len(program.Nodes))
+	knownNodes := make(map[string]struct{}, len(program.Nodes))
 	dependents := make(map[string][]string, len(program.Nodes))
 	indegree := make(map[string]int, len(program.Nodes))
 
@@ -80,6 +82,7 @@ func orderedProgramNodes(program execution.Program) ([]execution.ProgramNode, er
 			return nil, fmt.Errorf("%w %q", ErrProgramDuplicateNodeID, node.NodeID)
 		}
 		index[node.NodeID] = i
+		knownNodes[node.NodeID] = struct{}{}
 	}
 
 	for _, node := range program.Nodes {
@@ -90,6 +93,9 @@ func orderedProgramNodes(program execution.Program) ([]execution.ProgramNode, er
 			}
 			dependents[dep] = append(dependents[dep], node.NodeID)
 		}
+	}
+	if err := validateProgramBindingDependencies(program.Nodes, knownNodes); err != nil {
+		return nil, err
 	}
 
 	queue := make([]string, 0, len(program.Nodes))
@@ -162,6 +168,7 @@ func compileAttachedProgramNodeStep(parent plan.StepSpec, program execution.Prog
 		OnFail:   compileAttachedProgramNodeOnFail(parent.OnFail, node, total),
 		Metadata: cloneProgramMetadata(parent.Metadata),
 	}
+	delete(compiled.Metadata, execution.StepMetadataProgramKey)
 	if view.ViewID != "" {
 		var err error
 		compiled, err = pinStepToCapabilityView(compiled, view)
@@ -173,12 +180,15 @@ func compileAttachedProgramNodeStep(parent plan.StepSpec, program execution.Prog
 		compiled.Metadata = map[string]any{}
 	}
 	compiled.Metadata[programCompiledMetadataKey] = true
-	compiled.Metadata[execution.ProgramMetadataKeyID] = compiledProgramID(parent, program)
-	compiled.Metadata[programParentStepMetadataKey] = parent.StepID
-	compiled.Metadata[execution.ProgramMetadataKeyNodeID] = node.NodeID
-	if len(node.DependsOn) > 0 {
-		compiled.Metadata[programDependsOnMetadataKey] = append([]string(nil), node.DependsOn...)
-	}
+	compiled.Metadata = applyProgramLineageMetadata(
+		compiled.Metadata,
+		compiledProgramID(parent, program),
+		compiledProgramGroupID(parent, program),
+		parent.StepID,
+		node.NodeID,
+		node.DependsOn,
+	)
+	compiled.Metadata = applyProgramConcurrencyMetadata(compiled.Metadata, program.Concurrency, node.Concurrency)
 	compiled.Metadata = applyProgramNodeAggregateMetadata(
 		compiled.Metadata,
 		aggregateID,
@@ -222,6 +232,33 @@ func cloneProgramMetadata(in map[string]any) map[string]any {
 	return out
 }
 
+func applyProgramLineageMetadata(metadata map[string]any, programID, groupID, parentStepID, nodeID string, dependsOn []string) map[string]any {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	delete(metadata, execution.ProgramMetadataKeyID)
+	delete(metadata, execution.ProgramMetadataKeyGroupID)
+	delete(metadata, execution.ProgramMetadataKeyParentStepID)
+	delete(metadata, execution.ProgramMetadataKeyNodeID)
+	delete(metadata, execution.ProgramMetadataKeyDependsOn)
+	if programID != "" {
+		metadata[execution.ProgramMetadataKeyID] = programID
+	}
+	if groupID != "" {
+		metadata[execution.ProgramMetadataKeyGroupID] = groupID
+	}
+	if parentStepID != "" {
+		metadata[execution.ProgramMetadataKeyParentStepID] = parentStepID
+	}
+	if nodeID != "" {
+		metadata[execution.ProgramMetadataKeyNodeID] = nodeID
+	}
+	if len(dependsOn) > 0 {
+		metadata[execution.ProgramMetadataKeyDependsOn] = append([]string(nil), dependsOn...)
+	}
+	return metadata
+}
+
 func compiledAttachedProgramNodeStepID(parentStepID string, program execution.Program, nodeID string, target *execution.Target) string {
 	base := parentStepID + "__" + nodeID
 	if program.ProgramID != "" {
@@ -263,6 +300,13 @@ func compiledAttachedProgramNodeTitle(parentTitle string, node execution.Program
 func compiledProgramID(step plan.StepSpec, program execution.Program) string {
 	if program.ProgramID != "" {
 		return program.ProgramID
+	}
+	return step.StepID
+}
+
+func compiledProgramGroupID(step plan.StepSpec, program execution.Program) string {
+	if program.ProgramID != "" {
+		return step.StepID + "__" + program.ProgramID
 	}
 	return step.StepID
 }

@@ -60,6 +60,7 @@ type InteractiveOperation struct {
 
 type InteractiveRuntime struct {
 	Handle        RuntimeHandle           `json:"handle"`
+	Lineage       *RuntimeHandleLineage   `json:"lineage,omitempty"`
 	Target        TargetRef               `json:"target,omitempty"`
 	Capabilities  InteractiveCapabilities `json:"capabilities,omitempty"`
 	Observation   InteractiveObservation  `json:"observation,omitempty"`
@@ -81,6 +82,10 @@ func InteractiveRuntimeFromHandle(handle RuntimeHandle) (InteractiveRuntime, boo
 	}
 	if ref, ok := TargetRefFromMetadata(handle.Metadata); ok {
 		out.Target = ref
+	}
+	if lineage, ok := RuntimeHandleLineageFromHandle(handle); ok {
+		lineageCopy := lineage
+		out.Lineage = &lineageCopy
 	}
 
 	out.Capabilities = InteractiveCapabilities{

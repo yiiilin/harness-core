@@ -51,6 +51,8 @@ type SessionProjection struct {
 // audit events.
 type ExecutionCycleProjection struct {
 	Cycle               execution.ExecutionCycle       `json:"cycle"`
+	Program             *execution.ProgramLineage      `json:"program,omitempty"`
+	ApprovalLinkage     *execution.ApprovalLinkage     `json:"approval_linkage,omitempty"`
 	TargetSlices        []execution.TargetSlice        `json:"target_slices,omitempty"`
 	InteractiveRuntimes []execution.InteractiveRuntime `json:"interactive_runtimes,omitempty"`
 	Events              []audit.Event                  `json:"events,omitempty"`

@@ -43,6 +43,10 @@ type recordingCompactor struct {
 	calls int
 }
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func (c *recordingCompactor) Compact(_ context.Context, pkg hruntime.ContextPackage, state session.State, spec task.Spec, budgets hruntime.LoopBudgets) (hruntime.ContextPackage, *hruntime.ContextSummary, error) {
 	c.calls++
 	if pkg.Derived == nil {
@@ -82,6 +86,74 @@ func TestWithDefaultsSetsLoopBudgetAndCompactionDefaults(t *testing.T) {
 	}
 	if opts.ContextSummaries == nil {
 		t.Fatalf("expected default context summary store")
+	}
+}
+
+func TestWithDefaultsPreservesExplicitZeroRetryBudgetOverride(t *testing.T) {
+	opts := hruntime.WithDefaults(hruntime.Options{
+		LoopBudgetMaxRetriesOverride: intPtr(0),
+	})
+
+	if opts.LoopBudgets.MaxRetriesPerStep != 0 {
+		t.Fatalf("expected explicit zero retry budget to be preserved, got %#v", opts.LoopBudgets)
+	}
+	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
+		t.Fatalf("expected remaining loop budgets to be backfilled from defaults, got %#v", opts.LoopBudgets)
+	}
+}
+
+func TestWithDefaultsMergesLoopBudgetOverridesIntoExistingLoopBudgets(t *testing.T) {
+	opts := hruntime.WithDefaults(hruntime.Options{
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           2,
+			MaxPlanRevisions:   5,
+			MaxTotalRuntimeMS:  12345,
+			MaxToolOutputChars: 256,
+		},
+		LoopBudgetMaxRetriesOverride: intPtr(0),
+	})
+
+	if opts.LoopBudgets.MaxSteps != 2 || opts.LoopBudgets.MaxPlanRevisions != 5 || opts.LoopBudgets.MaxTotalRuntimeMS != 12345 || opts.LoopBudgets.MaxToolOutputChars != 256 {
+		t.Fatalf("expected existing non-zero loop budgets to survive zero-retry override merge, got %#v", opts.LoopBudgets)
+	}
+	if opts.LoopBudgets.MaxRetriesPerStep != 0 {
+		t.Fatalf("expected override to preserve explicit zero retries, got %#v", opts.LoopBudgets)
+	}
+}
+
+func TestWithDefaultsKeepsRetryBudgetWhenLoopBudgetOverridesOnlyAdjustOtherFields(t *testing.T) {
+	opts := hruntime.WithDefaults(hruntime.Options{
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxRetriesPerStep:  2,
+			MaxPlanRevisions:   4,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 1024,
+		},
+		LoopBudgetOverrides: &hruntime.LoopBudgets{
+			MaxSteps: 5,
+		},
+	})
+
+	if opts.LoopBudgets.MaxSteps != 5 {
+		t.Fatalf("expected override to replace max steps, got %#v", opts.LoopBudgets)
+	}
+	if opts.LoopBudgets.MaxRetriesPerStep != 2 {
+		t.Fatalf("expected unrelated overrides to keep retry budget intact, got %#v", opts.LoopBudgets)
+	}
+}
+
+func TestWithDefaultsFillsDefaultRetryBudgetWhenLoopBudgetOverridesOnlySetMaxSteps(t *testing.T) {
+	opts := hruntime.WithDefaults(hruntime.Options{
+		LoopBudgetOverrides: &hruntime.LoopBudgets{
+			MaxSteps: 5,
+		},
+	})
+
+	if opts.LoopBudgets.MaxSteps != 5 {
+		t.Fatalf("expected override to replace max steps, got %#v", opts.LoopBudgets)
+	}
+	if opts.LoopBudgets.MaxRetriesPerStep != hruntime.DefaultLoopBudgets().MaxRetriesPerStep {
+		t.Fatalf("expected retry budget to fall back to default when only max steps is overridden, got %#v", opts.LoopBudgets)
 	}
 }
 

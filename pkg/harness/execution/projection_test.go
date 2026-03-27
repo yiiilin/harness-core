@@ -1,6 +1,7 @@
 package execution_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
@@ -48,5 +49,15 @@ func TestBlockedRuntimeProjectionHelpers(t *testing.T) {
 	}
 	if view.Runtime.BlockedRuntimeID != "blocked-1" {
 		t.Fatalf("unexpected runtime id: %s", view.Runtime.BlockedRuntimeID)
+	}
+}
+
+func TestTargetSliceMarshalOmitsEmptyProgramLineage(t *testing.T) {
+	data, err := json.Marshal(execution.TargetSlice{})
+	if err != nil {
+		t.Fatalf("marshal target slice: %v", err)
+	}
+	if string(data) != "{\"target\":{\"target_id\":\"\"}}" {
+		t.Fatalf("unexpected target slice json: %s", data)
 	}
 }

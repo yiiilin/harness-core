@@ -64,6 +64,24 @@ Today, `harness-core` is responsible for:
 
 This is the correct kernel scope.
 
+## Current-Wave Maintainer Decision
+
+For the current workflow-runtime wave, maintainers are explicitly keeping the
+kernel on the existing `session + plan + step + execution facts` architecture.
+
+That means:
+
+- extend the current kernel where existing runtime semantics are already real
+- strengthen `Program`, approval, blocked-runtime, interactive-handle, replay,
+  and recovery behavior where that closes real kernel gaps
+- do not introduce a first-class durable workflow graph runtime in this wave
+
+In particular, this wave does **not** adopt a new public kernel architecture
+based on first-class `ExecutionGraph`, `Scope`, `Edge`, or append-patch records.
+If maintainers later decide to build that layer, it must come through a
+dedicated IR/store/scheduler design rather than incremental drift inside the
+current `Plan` runtime.
+
 ## What The Project Is Not
 
 The following should remain outside the kernel:

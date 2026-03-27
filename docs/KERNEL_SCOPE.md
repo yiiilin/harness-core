@@ -149,6 +149,45 @@ Every proposed kernel concept should pass all of the following checks:
 
 If any check fails, the concept should stay out of the kernel.
 
+## Execution-Model Request Classification
+
+When reviewing workflow-runtime requests, classify them before discussing
+implementation detail.
+
+### Program-runtime extension
+
+Treat a request as a program-runtime extension when it preserves the current
+`session + plan + step` execution model and can be expressed as one or more of:
+
+- richer `Program` compilation or scheduling over existing plan steps
+- stronger approval, blocked-runtime, or recovery semantics tied to existing
+  session/step facts
+- richer runtime-handle, artifact, attachment, target, or replay contracts that
+  still project from current execution facts
+- additive typed contracts that lower cleanly into the existing runtime loop
+
+These requests may extend the current kernel in this wave.
+
+### New workflow IR
+
+Treat a request as a new workflow IR when it requires first-class durable graph
+entities or mutation semantics that do not lower cleanly into the current plan
+runtime, such as:
+
+- first-class `ExecutionGraph`, `Scope`, `Edge`, or append-patch records
+- descendant-only graph mutation or structural patch validation
+- nested runtime ownership between `primitive`, `loop`, and `graph`
+- scope-aware failure and cancellation semantics that require graph-native
+  parent/child ownership
+- event-sourced graph reconstruction from graph-mutation history
+
+These requests must not be merged as incremental extensions to the current
+program runtime. They require a separate IR/store/scheduler design first.
+Use [FUTURE_WORKFLOW_IR.md](/usr/local/src/project/harness-core/docs/FUTURE_WORKFLOW_IR.md)
+as the required design gate before any such implementation work begins.
+That design track currently assumes any future workflow IR runs beside the
+existing `Plan` runtime rather than lowering into it.
+
 ---
 
 ## Fast rejection rules

@@ -57,6 +57,18 @@ func (s *Service) blockedRuntimeProjection(ctx context.Context, blocked executio
 			"blocked_runtime_id": blocked.BlockedRuntimeID,
 		},
 	}
+	if program, ok := execution.ProgramLineageFromMetadata(blocked.Step.Metadata); ok {
+		programCopy := program
+		view.Program = &programCopy
+	}
+	if approvalLinkage, ok := execution.ApprovalLinkageFromBlockedRuntime(blocked); ok {
+		linkageCopy := approvalLinkage
+		view.ApprovalLinkage = &linkageCopy
+	}
+	if blockedLinkage, ok := execution.BlockedRuntimeLinkageFromBlockedRuntime(blocked); ok {
+		linkageCopy := blockedLinkage
+		view.BlockedRuntimeLinkage = &linkageCopy
+	}
 	if blocked.Target.TargetID != "" {
 		view.Wait.Scope = execution.BlockedRuntimeWaitTarget
 	} else if blocked.ActionID != "" {
@@ -73,6 +85,12 @@ func (s *Service) blockedRuntimeProjection(ctx context.Context, blocked executio
 	switch {
 	case err == nil:
 		view.TargetSlices = execution.TargetSlicesFromCycle(cycle)
+		if view.Program == nil {
+			if program, ok := execution.ProgramLineageFromCycle(cycle); ok {
+				programCopy := program
+				view.Program = &programCopy
+			}
+		}
 		if len(view.InteractiveRuntimes) == 0 {
 			view.InteractiveRuntimes = execution.InteractiveRuntimesFromHandles(cycle.RuntimeHandles)
 		}

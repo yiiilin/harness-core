@@ -13,6 +13,13 @@ Use this document when an embedder asks:
 
 This document is intentionally explicit about what is **not implemented yet**.
 
+For the current workflow-runtime wave, this document must be read as an
+extension plan for the existing `session + plan + step` kernel.
+It does **not** describe a first-class durable workflow graph runtime.
+Requests that require first-class `ExecutionGraph`, `Scope`, `Edge`, or
+append-patch semantics remain outside the current implemented architecture
+unless and until maintainers approve a separate IR/store/scheduler design.
+
 ## Accepted Terminology
 
 These terms are accepted for public kernel/embedder discussion:
@@ -28,6 +35,38 @@ These terms do **not** imply product semantics such as:
 - approval TTL policy
 - user / tenant / org ownership
 - UI workflow state
+
+## Request Classification
+
+Use the following acceptance language when reviewing new execution-model
+requests.
+
+### Program-runtime extension
+
+A request is a program-runtime extension when it keeps the current
+`session + plan + step` kernel intact and can be delivered by extending:
+
+- `ExecutionProgram` compilation or scheduling
+- approval or blocked-runtime continuation semantics
+- runtime-handle, target, artifact, attachment, or replay facts
+- typed bindings or verification scopes that still lower into the existing
+  runtime loop
+
+These requests are valid for the current workflow-runtime wave.
+
+### New workflow IR
+
+A request is a new workflow IR request when it depends on first-class durable
+graph entities or graph-native mutation semantics, including:
+
+- `ExecutionGraph`, `Scope`, or `Edge`
+- append-patch or descendant-mutation records
+- nested `primitive` / `loop` / `graph` runtime ownership
+- scope-native failure/cancellation semantics
+- graph-event reconstruction as the primary execution truth
+
+These requests are not part of the current wave unless maintainers first adopt
+a separate workflow IR/store/scheduler design.
 
 ## Support Matrix
 
@@ -111,13 +150,15 @@ Current preplanned program/tool-graph semantics:
 
 - `ExecutionProgram` is a transport-neutral container for future preplanned execution graphs
 - `ExecutionProgramNode` carries a generic tool `action`, optional `verify`, optional `verify_scope`, optional `on_fail`, optional target selection, dependency edges, and stable input bindings
-- `ExecutionProgramInputBinding` can carry literal values, `OutputRef` references, or `AttachmentInput` values
+- `ExecutionProgramInputBinding` can carry literal values, `OutputRef` references, `AttachmentInput` values, or `RuntimeHandleRef` values
 - the runtime now exposes `CreatePlanFromProgram(...)`, `RunProgram(...)`, and `execution.AttachProgram(step, program)` for plan-embedded compilation
 - current native execution is intentionally minimal:
   - explicit target fan-out from declared `Targeting.Targets`
   - resolver-backed `TargetSelectionFanoutAll` target discovery through `runtime.TargetResolver`
   - dependency-ordered execution through the existing plan/session loop, with scheduler-owned concurrent fan-out rounds for ready sibling target steps
-  - literal bindings plus structured/text/bytes output refs, artifact refs, default temp-file attachment materialization, and custom materializer passthrough
+  - literal bindings plus structured/text/bytes output refs, artifact refs, attachment materialization, and typed runtime-handle refs
+  - `StepID`-based `OutputRef` / `RuntimeHandleRef` bindings must resolve through the node's declared `DependsOn` ancestry; direct kernel-owned ids such as `artifact_id`, `attachment_id`, `action_id`, or `handle_id` do not create implicit dependencies
+  - one `Program` may mix ordinary tools, `shell.exec` pipe/pty steps, artifact-ref consumers, and native interactive lifecycle steps in the same execution graph
   - per-target retries through `ProgramNode.OnFail`
   - partial-failure continuation through `TargetSelection.OnPartialFailure=continue`
   - actual runtime consumption of `TargetSelection.MaxConcurrency` for native fan-out groups
@@ -131,10 +172,15 @@ Current preplanned program/tool-graph semantics:
 Current target-slice / blocked-runtime projection semantics:
 
 - `ExecutionTargetSlice` is the public value shape for future target-scoped execution grouping
+- `ExecutionProgramLineage` is the public structured projection shape for current program ancestry facts
+- `ExecutionApprovalLinkage`, `ExecutionBlockedRuntimeLinkage`, and `ExecutionRuntimeHandleLineage` are the public structured linkage shapes for approval, blocked-runtime, and runtime-handle projections
 - `ExecutionBlockedRuntimeProjection` and `ExecutionBlockedRuntimeWait` are the public value shapes for richer blocked-runtime views
 - `pkg/harness/replay.SessionProjection` and `pkg/harness/replay.ExecutionCycleProjection` populate target slices when execution facts carry stable target metadata
+- `pkg/harness/replay.ExecutionCycleProjection.Program` and `ExecutionTargetSlice.Program` now project current program lineage from stable program metadata so restart hydration does not need to reverse-engineer raw step metadata
+- `pkg/harness/replay.ExecutionCycleProjection.ApprovalLinkage` now projects current approval linkage from stable cycle facts
 - `pkg/harness/replay.ExecutionCycleProjection` now also derives `InteractiveRuntimes` from persisted runtime handles
-- blocked-runtime projection fields are now populated through the public projection reads and replay helper for both approval-backed and generic current blocked runtimes
+- `ExecutionInteractiveRuntime.Lineage` now projects current runtime-handle lineage from stable attempt/cycle/target/program facts
+- blocked-runtime projection fields are now populated through the public projection reads and replay helper for both approval-backed and generic current blocked runtimes, including structured `Program`, `ApprovalLinkage`, and `BlockedRuntimeLinkage` fields
 
 Current interactive runtime semantics:
 

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
@@ -106,13 +107,15 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 			if err != nil {
 				return SessionRunOutput{}, err
 			}
-			out.Executions = append(out.Executions, resumed)
-			out.Session = resumed.Session
-			if resumed.UpdatedPlan != nil {
-				out.Plan = resumed.UpdatedPlan
-			}
-			if isTerminalPhase(resumed.Session.Phase) || resumed.Session.PendingApprovalID != "" {
-				return out, nil
+			if !isSessionApprovalRecord(rec) {
+				out.Executions = append(out.Executions, resumed)
+				out.Session = resumed.Session
+				if resumed.UpdatedPlan != nil {
+					out.Plan = resumed.UpdatedPlan
+				}
+				if isTerminalPhase(resumed.Session.Phase) || resumed.Session.PendingApprovalID != "" {
+					return out, nil
+				}
 			}
 		default:
 			return SessionRunOutput{}, ErrApprovalNotResolved
@@ -123,6 +126,11 @@ func (s *Service) recoverSession(ctx context.Context, sessionID, leaseID string)
 		return SessionRunOutput{}, err
 	}
 	out.Session = normalized
+	if recovered, handled, err := s.failInterruptedConcurrentRound(ctx, sessionID, leaseID, normalized, state.InFlightStepID); err != nil {
+		return SessionRunOutput{}, err
+	} else if handled {
+		return mergeSessionRunOutputs(out, recovered), nil
+	}
 	s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerRecover)
 	next, err := s.runSession(ctx, sessionID, leaseID)
 	if err != nil {
@@ -245,6 +253,139 @@ func (s *Service) normalizeSessionForRecovery(ctx context.Context, sessionID str
 		return session.State{}, err
 	}
 	return updated, nil
+}
+
+func (s *Service) failInterruptedConcurrentRound(ctx context.Context, sessionID, leaseID string, state session.State, inFlightStepID string) (SessionRunOutput, bool, error) {
+	if inFlightStepID == "" || isTerminalPhase(state.Phase) {
+		return SessionRunOutput{}, false, nil
+	}
+	latest, ok, err := s.latestPlanForSession(ctx, sessionID)
+	if err != nil {
+		return SessionRunOutput{}, false, err
+	}
+	if !ok {
+		return SessionRunOutput{}, false, nil
+	}
+	selected, ok := findPlanStepByID(latest, inFlightStepID)
+	if !ok {
+		return SessionRunOutput{}, false, nil
+	}
+	round, ok := interruptedConcurrentRoundForSelection(latest, selected, s.LoopBudgets)
+	if !ok {
+		return SessionRunOutput{}, false, nil
+	}
+	workingState, _, _ := s.advanceStateToExecuteForFanout(state, round.AnchorStepID)
+	prepared, ok, err := s.prepareFanoutRound(ctx, sessionID, workingState, round)
+	if err != nil {
+		return SessionRunOutput{}, false, err
+	}
+	if !ok || len(prepared) == 0 {
+		return SessionRunOutput{}, false, nil
+	}
+
+	now := s.nowMilli()
+	reason := "interrupted concurrent ready round"
+	failedSteps := make([]plan.StepSpec, 0, len(prepared))
+	for _, item := range prepared {
+		step := item.Original
+		step.Status = plan.StepFailed
+		step.Reason = reason
+		if step.Attempt < allowedAttempts(step, s.LoopBudgets) {
+			step.Attempt = allowedAttempts(step, s.LoopBudgets)
+		}
+		if step.StartedAt == 0 {
+			step.StartedAt = now
+		}
+		step.FinishedAt = now
+		failedSteps = append(failedSteps, step)
+	}
+
+	updatedPlan := replacePlanSteps(latest, failedSteps)
+	updatedPlan.Status = plan.StatusFailed
+	annotatedPlan := annotatePlanIdentity(updatedPlan)
+
+	attributedStepID := prepared[0].Original.StepID
+	next := setSessionPlanRef(state, plan.StepSpec{PlanID: latest.PlanID, PlanRevision: latest.Revision})
+	transition := TransitionDecision{
+		From:   next.Phase,
+		To:     TransitionFailed,
+		StepID: attributedStepID,
+		Reason: reason,
+	}
+	next = ApplyTransition(next, transition)
+	next.ExecutionState = session.ExecutionIdle
+	next.InFlightStepID = ""
+
+	event := audit.Event{
+		EventID:   "evt_" + uuid.NewString(),
+		Type:      audit.EventStateChanged,
+		SessionID: sessionID,
+		TaskID:    next.TaskID,
+		StepID:    attributedStepID,
+		Payload: map[string]any{
+			"from":   transition.From,
+			"to":     transition.To,
+			"reason": transition.Reason,
+		},
+		CreatedAt: now,
+	}
+
+	persist := func(repos persistence.RepositorySet) error {
+		if repos.Sessions == nil {
+			return session.ErrSessionNotFound
+		}
+		if repos.Plans != nil {
+			if err := repos.Plans.Update(updatedPlan); err != nil {
+				return err
+			}
+		}
+		persisted, err := persistSessionUpdate(repos.Sessions, next, leaseID)
+		if err != nil {
+			return err
+		}
+		next = persisted
+		_, err = updateTaskForTerminalInStore(repos.Tasks, next)
+		return err
+	}
+
+	if s.Runner != nil {
+		if err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
+			repoSet := s.repositoriesWithFallback(repos)
+			if err := persist(repoSet); err != nil {
+				return err
+			}
+			return s.emitEventsWithSink(ctx, s.eventSinkForRepos(repos), []audit.Event{event})
+		}); err != nil {
+			return SessionRunOutput{}, false, err
+		}
+	} else {
+		if err := persist(s.repositoriesWithFallback(persistence.RepositorySet{})); err != nil {
+			return SessionRunOutput{}, false, err
+		}
+		s.emitEventsBestEffort(ctx, []audit.Event{event})
+	}
+
+	return SessionRunOutput{
+		Session:    next,
+		Plan:       &annotatedPlan,
+		Aggregates: execution.AggregateResultsFromPlan(updatedPlan),
+	}, true, nil
+}
+
+func interruptedConcurrentRoundForSelection(latest plan.Spec, selected plan.StepSpec, budgets LoopBudgets) (fanoutRound, bool) {
+	if round, ok := programReadyRoundForSelection(latest, selected, budgets); ok {
+		return fanoutRound{
+			AnchorStepID:   round.AnchorStepID,
+			AllowSingle:    true,
+			MaxConcurrency: round.MaxConcurrency,
+			Steps:          append([]plan.StepSpec(nil), round.Steps...),
+		}, true
+	}
+	if round, ok := fanoutRoundForSelection(latest, selected, budgets); ok {
+		round.Steps = append([]plan.StepSpec(nil), round.Steps...)
+		return round, true
+	}
+	return fanoutRound{}, false
 }
 
 func (s *Service) updateRecoveryState(ctx context.Context, sessionID, leaseID, mutation string, mutate func(session.State) session.State) (session.State, error) {

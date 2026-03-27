@@ -38,7 +38,12 @@ func applyExecutionFactMetadataToHandles(handles []execution.RuntimeHandle, step
 
 func copyExecutionFactMetadata(dst, src map[string]any) {
 	copyIfPresent(dst, src, execution.ProgramMetadataKeyID)
+	copyIfPresent(dst, src, execution.ProgramMetadataKeyGroupID)
+	copyIfPresent(dst, src, execution.ProgramMetadataKeyParentStepID)
 	copyIfPresent(dst, src, execution.ProgramMetadataKeyNodeID)
+	copyIfPresent(dst, src, execution.ProgramMetadataKeyDependsOn)
+	copyIfPresent(dst, src, execution.ProgramMetadataKeyMaxConcurrency)
+	copyIfPresent(dst, src, execution.ProgramMetadataKeyNodeMaxConcurrency)
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyID)
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyScope)
 	copyIfPresent(dst, src, execution.AggregateMetadataKeyStrategy)

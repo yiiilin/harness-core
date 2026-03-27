@@ -47,6 +47,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		return StepRunOutput{}, ErrSessionAwaitingApproval
 	}
 	step = annotateStepFromSession(state, step)
+	step = cloneStepForExecution(step)
 	state = setSessionPlanRef(state, step)
 	if _, hasProgram := execution.ProgramFromStep(step); hasProgram {
 		return StepRunOutput{}, ErrProgramStepNotCompiled
@@ -68,7 +69,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	attemptRecord := execution.Attempt{}
 	reuseBlockedAttempt := false
 	if activeApproval != nil && state.PendingApprovalID != "" && state.PendingApprovalID == activeApproval.ApprovalID {
-		existingAttempt, ok, err := s.findLatestBlockedAttempt(ctx, sessionID, activeApproval.ApprovalID)
+		existingAttempt, ok, err := s.findBlockedAttemptForApproval(ctx, sessionID, *activeApproval)
 		if err != nil {
 			return StepRunOutput{}, err
 		}
@@ -157,6 +158,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 
 	if decision.Action == permission.Ask && forcedDecision == nil {
 		requestScope := s.buildApprovalReuseScope(ctx, state, step, decision)
+		resumeContext := approvalResumeContext{
+			Kind:      approvalResumeContextStepAttempt,
+			AttemptID: attemptRecord.AttemptID,
+			StepID:    step.StepID,
+			CycleID:   attemptRecord.CycleID,
+		}
 		originalStep := step
 		step.Status = plan.StepBlocked
 		state.ExecutionState = session.ExecutionAwaitingApproval
@@ -170,7 +177,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			Reason:      decision.Reason,
 			MatchedRule: decision.MatchedRule,
 			Step:        step,
-			Metadata:    approvalMetadataForRequest(requestScope),
+			Metadata:    approvalMetadataForRequest(requestScope, resumeContext),
 		}
 		appendEvent(audit.EventApprovalRequested, step.StepID, map[string]any{
 			"tool_name":    step.Action.ToolName,
@@ -394,7 +401,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		StartedAt:   s.nowMilli(),
 	}
 	applyExecutionFactMetadata(&actionRecord.Metadata, step.Metadata)
-	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, state, step)
+	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, state, step, attemptRecord, actionRecord)
 	if resolution != nil {
 		snapshot := resolution.Snapshot
 		snapshot.Scope = capability.SnapshotScopeAction
@@ -517,7 +524,7 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	appendEvent(audit.EventVerifyCompleted, step.StepID, map[string]any{"success": verifyResult.Success, "reason": verifyResult.Reason}, actionRecord.ActionID, actionRecord.ActionID)
 	events[verifyEventIndex].VerificationID = verificationRecord.VerificationID
 	verified := verifyErr == nil && verifyResult.Success
-	if verifyScope == execution.VerificationScopeAggregate && aggregateVerifyReady && !rawActionSuccess {
+	if !rawActionSuccess && !(verifyScope == execution.VerificationScopeAggregate && aggregateVerifyReady) {
 		verified = false
 		if verificationRecord.Result.Success {
 			verificationRecord.Result.Success = false
@@ -952,7 +959,10 @@ func (s *Service) repositoriesWithFallback(repos persistence.RepositorySet) pers
 	return repos
 }
 
-func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.State, step plan.StepSpec) (*capability.Resolution, action.Result, error) {
+func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.State, step plan.StepSpec, attempt execution.Attempt, actionRecord *execution.ActionRecord) (*capability.Resolution, action.Result, error) {
+	if resolution, result, handled, err := s.invokeNativeProgramAction(ctx, state, step, attempt, actionRecord); handled {
+		return resolution, result, err
+	}
 	req := capability.Request{
 		SessionID: state.SessionID,
 		TaskID:    state.TaskID,
@@ -995,6 +1005,9 @@ func trimActionResultToBudget(result action.Result, limit int) action.Result {
 }
 
 func extractRuntimeHandles(result action.Result, attempt execution.Attempt, actionRecord *execution.ActionRecord, now int64) []execution.RuntimeHandle {
+	if runtimeHandlePersistenceSkipped(result) {
+		return nil
+	}
 	out := []execution.RuntimeHandle{}
 	seen := map[string]struct{}{}
 	appendHandle := func(raw any) {
@@ -1024,12 +1037,27 @@ func extractRuntimeHandles(result action.Result, attempt execution.Attempt, acti
 	return out
 }
 
-func (s *Service) findLatestBlockedAttempt(ctx context.Context, sessionID, approvalID string) (execution.Attempt, bool, error) {
-	if approvalID == "" {
+func runtimeHandlePersistenceSkipped(result action.Result) bool {
+	if runtimeHandlePersistenceSkippedInContainer(result.Data) {
+		return true
+	}
+	return runtimeHandlePersistenceSkippedInContainer(result.Meta)
+}
+
+func runtimeHandlePersistenceSkippedInContainer(container map[string]any) bool {
+	if container == nil {
+		return false
+	}
+	skipped, _ := container[programInteractivePersistedRuntimeHandlesKey].(bool)
+	return skipped
+}
+
+func (s *Service) findBlockedAttemptForApproval(ctx context.Context, sessionID string, rec approval.Record) (execution.Attempt, bool, error) {
+	if rec.ApprovalID == "" {
 		return execution.Attempt{}, false, nil
 	}
 	if s.Runner == nil {
-		return findLatestBlockedAttemptInStore(s.Attempts, sessionID, approvalID)
+		return findBlockedAttemptForApprovalInStore(s.Attempts, sessionID, rec)
 	}
 	var (
 		attempt execution.Attempt
@@ -1037,7 +1065,7 @@ func (s *Service) findLatestBlockedAttempt(ctx context.Context, sessionID, appro
 	)
 	err := s.Runner.Within(ctx, func(repos persistence.RepositorySet) error {
 		var err error
-		attempt, ok, err = findLatestBlockedAttemptInStore(s.repositoriesWithFallback(repos).Attempts, sessionID, approvalID)
+		attempt, ok, err = findBlockedAttemptForApprovalInStore(s.repositoriesWithFallback(repos).Attempts, sessionID, rec)
 		return err
 	})
 	return attempt, ok, err
@@ -1202,6 +1230,13 @@ func mergeMaps(base map[string]any, extra map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func cloneStepForExecution(step plan.StepSpec) plan.StepSpec {
+	cloned := step
+	cloned.Metadata = cloneAnyMap(step.Metadata)
+	cloned.Action.Args = cloneAnyMap(step.Action.Args)
+	return cloned
 }
 
 func asInt64(value any) (int64, bool) {

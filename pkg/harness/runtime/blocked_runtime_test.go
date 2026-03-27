@@ -150,6 +150,106 @@ func TestListBlockedRuntimesUsesStableOrderingAndOnlyCurrentPendingApprovals(t *
 	}
 }
 
+func TestBlockedRuntimeProjectionDegradesGracefullyWhenApprovalAttemptIsMissing(t *testing.T) {
+	attempts := &bestEffortAttemptListStore{AttemptStore: execution.NewMemoryAttemptStore()}
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		&countingHandler{},
+	)
+	verifiers := verify.NewRegistry()
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verifiers,
+		Attempts:  attempts,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	attached, initial := seedApprovalBlockedSession(t, rt, "blocked runtime missing attempt", "project blocked runtime when the original blocked attempt is gone")
+	attempts.dropSessionID = attached.SessionID
+
+	view, err := rt.GetBlockedRuntimeProjection(attached.SessionID)
+	if err != nil {
+		t.Fatalf("get blocked runtime projection without blocked attempt: %v", err)
+	}
+	if view.Runtime.BlockedRuntimeID != initial.Execution.PendingApproval.ApprovalID || view.Runtime.AttemptID != "" {
+		t.Fatalf("expected best-effort blocked runtime projection without attempt linkage, got %#v", view)
+	}
+
+	items, err := rt.ListBlockedRuntimeProjections()
+	if err != nil {
+		t.Fatalf("list blocked runtime projections without blocked attempt: %v", err)
+	}
+	if len(items) != 1 || items[0].Runtime.BlockedRuntimeID != initial.Execution.PendingApproval.ApprovalID {
+		t.Fatalf("expected blocked runtime listing to keep pending approval projection, got %#v", items)
+	}
+}
+
+func TestBlockedRuntimeProjectionIgnoresShadowBlockedAttemptWhenOriginalAttemptIsMissing(t *testing.T) {
+	attempts := &bestEffortAttemptListStore{AttemptStore: execution.NewMemoryAttemptStore()}
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		&countingHandler{},
+	)
+	verifiers := verify.NewRegistry()
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verifiers,
+		Attempts:  attempts,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	attached, initial := seedApprovalBlockedSession(t, rt, "blocked runtime shadow attempt", "ignore shadow blocked attempt when the original blocked attempt is gone")
+	storedAttempts, err := attempts.AttemptStore.List(attached.SessionID)
+	if err != nil {
+		t.Fatalf("list stored attempts: %v", err)
+	}
+	if len(storedAttempts) != 1 {
+		t.Fatalf("expected one original blocked attempt, got %#v", storedAttempts)
+	}
+	attempts.dropAttemptID = storedAttempts[0].AttemptID
+	if _, err := attempts.AttemptStore.Create(execution.Attempt{
+		AttemptID:  "att_shadow_projection",
+		SessionID:  attached.SessionID,
+		TaskID:     attached.TaskID,
+		StepID:     storedAttempts[0].StepID,
+		ApprovalID: initial.Execution.PendingApproval.ApprovalID,
+		CycleID:    "cyc_shadow_projection",
+		Status:     execution.AttemptBlocked,
+		Step:       storedAttempts[0].Step,
+		Metadata: execution.ApplyTargetMetadata(map[string]any{}, execution.Target{
+			TargetID: "shadow-target",
+			Kind:     "host",
+		}, 1, 1),
+		StartedAt: storedAttempts[0].StartedAt + 1,
+	}); err != nil {
+		t.Fatalf("create shadow blocked attempt: %v", err)
+	}
+
+	view, err := rt.GetBlockedRuntimeProjection(attached.SessionID)
+	if err != nil {
+		t.Fatalf("get blocked runtime projection with shadow blocked attempt: %v", err)
+	}
+	if view.Runtime.AttemptID != "" || view.Runtime.CycleID != storedAttempts[0].CycleID || view.Runtime.Target.TargetID != "" {
+		t.Fatalf("expected projection to ignore shadow blocked attempt and fall back to step-only linkage, got %#v", view)
+	}
+
+	items, err := rt.ListBlockedRuntimeProjections()
+	if err != nil {
+		t.Fatalf("list blocked runtime projections with shadow blocked attempt: %v", err)
+	}
+	if len(items) != 1 || items[0].Runtime.AttemptID != "" || items[0].Runtime.Target.TargetID != "" {
+		t.Fatalf("expected blocked runtime listing to ignore shadow blocked attempt, got %#v", items)
+	}
+}
+
 func newBlockedRuntimeTestService() *hruntime.Service {
 	tools := tool.NewRegistry()
 	tools.Register(
@@ -165,6 +265,33 @@ func newBlockedRuntimeTestService() *hruntime.Service {
 		Tools:     tools,
 		Verifiers: verifiers,
 	}).WithPolicyEvaluator(askPolicy{})
+}
+
+type bestEffortAttemptListStore struct {
+	execution.AttemptStore
+	dropSessionID string
+	dropAttemptID string
+}
+
+func (s *bestEffortAttemptListStore) List(sessionID string) ([]execution.Attempt, error) {
+	if s.dropSessionID != "" && sessionID == s.dropSessionID {
+		return nil, nil
+	}
+	items, err := s.AttemptStore.List(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if s.dropAttemptID == "" {
+		return items, nil
+	}
+	filtered := make([]execution.Attempt, 0, len(items))
+	for _, item := range items {
+		if item.AttemptID == s.dropAttemptID {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
 }
 
 func seedApprovalBlockedSession(tb testing.TB, rt *hruntime.Service, title, goal string) (taskAttachedSession, hruntime.StepRunOutput) {

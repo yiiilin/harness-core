@@ -108,6 +108,15 @@ func mustListArtifacts(tb testing.TB, rt *hruntime.Service, sessionID string) []
 	return items
 }
 
+func mustListRuntimeHandles(tb testing.TB, rt *hruntime.Service, sessionID string) []execution.RuntimeHandle {
+	tb.Helper()
+	items, err := rt.ListRuntimeHandles(sessionID)
+	if err != nil {
+		tb.Fatalf("list runtime handles: %v", err)
+	}
+	return items
+}
+
 func mustListCapabilitySnapshots(tb testing.TB, rt *hruntime.Service, sessionID string) []capability.Snapshot {
 	tb.Helper()
 	items, err := rt.ListCapabilitySnapshots(sessionID)

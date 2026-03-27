@@ -4,6 +4,12 @@
 
 `harness-core` is a **pre-1.0 execution kernel for harness engineering**.
 
+For the current workflow-runtime wave, maintainers are explicitly continuing on
+the existing `session + plan + step` execution architecture. This wave may
+extend the current `Program`, approval, blocked-runtime, interactive-handle,
+replay, and recovery surfaces, but it does not yet adopt a first-class durable
+workflow graph runtime.
+
 For a fuller maintainers' assessment of current strengths, remaining pure-kernel gaps, and next priorities, see `docs/CURRENT_STATE.md`.
 For a stricter code-level embedder-vNext implementation matrix, see `docs/EMBEDDER_VNEXT_REALITY_CHECK.md`.
 For explicit `v1.0.0` release gates, see `docs/V1_RELEASE_CHECKLIST.md`.

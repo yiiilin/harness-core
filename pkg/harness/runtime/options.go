@@ -17,42 +17,48 @@ import (
 )
 
 type Options struct {
-	Sessions               session.Store
-	Tasks                  task.Store
-	Plans                  plan.Store
-	Approvals              approval.Store
-	Attempts               execution.AttemptStore
-	Actions                execution.ActionStore
-	Verifications          execution.VerificationStore
-	Artifacts              execution.ArtifactStore
-	BlockedRuntimes        execution.BlockedRuntimeStore
-	RuntimeHandles         execution.RuntimeHandleStore
-	CapabilitySnapshots    capability.SnapshotStore
-	PlanningRecords        planning.Store
-	CapabilityFreezer      capability.Freezer
-	ResumePolicy           approval.ResumePolicy
-	Tools                  *tool.Registry
-	CapabilityResolver     capability.Resolver
-	Verifiers              *verify.Registry
-	Audit                  audit.Store
-	Runner                 persistence.Runner
-	Policy                 permission.Evaluator
-	ContextAssembler       ContextAssembler
-	ContextSummaries       ContextSummaryStore
-	Compactor              Compactor
-	CompactionPolicy       CompactionPolicy
-	LoopBudgets            LoopBudgets
-	Planner                Planner
-	TargetResolver         TargetResolver
-	AttachmentMaterializer AttachmentMaterializer
-	InteractiveController  InteractiveController
-	EventSink              EventSink
-	Clock                  Clock
-	Metrics                Metrics
-	MetricsExporter        MetricsExporter
-	TraceExporter          TraceExporter
-	MetricsRecorder        *observability.MemoryRecorder
-	StorageMode            string
+	Sessions            session.Store
+	Tasks               task.Store
+	Plans               plan.Store
+	Approvals           approval.Store
+	Attempts            execution.AttemptStore
+	Actions             execution.ActionStore
+	Verifications       execution.VerificationStore
+	Artifacts           execution.ArtifactStore
+	BlockedRuntimes     execution.BlockedRuntimeStore
+	RuntimeHandles      execution.RuntimeHandleStore
+	CapabilitySnapshots capability.SnapshotStore
+	PlanningRecords     planning.Store
+	CapabilityFreezer   capability.Freezer
+	ResumePolicy        approval.ResumePolicy
+	Tools               *tool.Registry
+	CapabilityResolver  capability.Resolver
+	Verifiers           *verify.Registry
+	Audit               audit.Store
+	Runner              persistence.Runner
+	Policy              permission.Evaluator
+	ContextAssembler    ContextAssembler
+	ContextSummaries    ContextSummaryStore
+	Compactor           Compactor
+	CompactionPolicy    CompactionPolicy
+	LoopBudgets         LoopBudgets
+	// LoopBudgetOverrides overlays ordinary non-zero budget fields.
+	LoopBudgetOverrides *LoopBudgets
+	// LoopBudgetMaxRetriesOverride preserves explicit retry overrides,
+	// including zero, without overloading the zero value semantics of the
+	// legacy LoopBudgets struct.
+	LoopBudgetMaxRetriesOverride *int
+	Planner                      Planner
+	TargetResolver               TargetResolver
+	AttachmentMaterializer       AttachmentMaterializer
+	InteractiveController        InteractiveController
+	EventSink                    EventSink
+	Clock                        Clock
+	Metrics                      Metrics
+	MetricsExporter              MetricsExporter
+	TraceExporter                TraceExporter
+	MetricsRecorder              *observability.MemoryRecorder
+	StorageMode                  string
 }
 
 func WithDefaults(opts Options) Options {
@@ -143,24 +149,9 @@ func WithDefaults(opts Options) Options {
 			PlanningRecords:     opts.PlanningRecords,
 		})
 	}
-	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxRetriesPerStep <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
-		defaults := DefaultLoopBudgets()
-		if opts.LoopBudgets.MaxSteps <= 0 {
-			opts.LoopBudgets.MaxSteps = defaults.MaxSteps
-		}
-		if opts.LoopBudgets.MaxRetriesPerStep <= 0 {
-			opts.LoopBudgets.MaxRetriesPerStep = defaults.MaxRetriesPerStep
-		}
-		if opts.LoopBudgets.MaxPlanRevisions <= 0 {
-			opts.LoopBudgets.MaxPlanRevisions = defaults.MaxPlanRevisions
-		}
-		if opts.LoopBudgets.MaxTotalRuntimeMS <= 0 {
-			opts.LoopBudgets.MaxTotalRuntimeMS = defaults.MaxTotalRuntimeMS
-		}
-		if opts.LoopBudgets.MaxToolOutputChars <= 0 {
-			opts.LoopBudgets.MaxToolOutputChars = defaults.MaxToolOutputChars
-		}
-	}
+	opts.LoopBudgets = normalizeLoopBudgets(opts.LoopBudgets, opts.LoopBudgetOverrides, opts.LoopBudgetMaxRetriesOverride)
+	opts.LoopBudgetOverrides = nil
+	opts.LoopBudgetMaxRetriesOverride = nil
 	if opts.Planner == nil {
 		opts.Planner = NoopPlanner{}
 	}
@@ -181,4 +172,68 @@ func WithDefaults(opts Options) Options {
 		opts.StorageMode = "in-memory-dev"
 	}
 	return opts
+}
+
+func normalizeLoopBudgets(budgets LoopBudgets, override *LoopBudgets, maxRetriesOverride *int) LoopBudgets {
+	legacyRetriesExplicit := legacyRetryBudgetExplicit(budgets)
+	explicitRetries := legacyRetriesExplicit
+	if override != nil {
+		if override.MaxRetriesPerStep > 0 {
+			explicitRetries = true
+		}
+		budgets = mergeLoopBudgets(budgets, *override)
+	}
+	if maxRetriesOverride != nil {
+		explicitRetries = true
+		budgets.MaxRetriesPerStep = *maxRetriesOverride
+	}
+	if budgets.MaxSteps <= 0 || budgets.MaxRetriesPerStep < 0 || (!explicitRetries && budgets.MaxRetriesPerStep == 0) || budgets.MaxPlanRevisions <= 0 || budgets.MaxTotalRuntimeMS <= 0 || budgets.MaxToolOutputChars <= 0 {
+		defaults := DefaultLoopBudgets()
+		if budgets.MaxSteps <= 0 {
+			budgets.MaxSteps = defaults.MaxSteps
+		}
+		if budgets.MaxRetriesPerStep < 0 || (!explicitRetries && budgets.MaxRetriesPerStep == 0) {
+			budgets.MaxRetriesPerStep = defaults.MaxRetriesPerStep
+		}
+		if budgets.MaxPlanRevisions <= 0 {
+			budgets.MaxPlanRevisions = defaults.MaxPlanRevisions
+		}
+		if budgets.MaxTotalRuntimeMS <= 0 {
+			budgets.MaxTotalRuntimeMS = defaults.MaxTotalRuntimeMS
+		}
+		if budgets.MaxToolOutputChars <= 0 {
+			budgets.MaxToolOutputChars = defaults.MaxToolOutputChars
+		}
+	}
+	return budgets
+}
+
+func legacyRetryBudgetExplicit(budgets LoopBudgets) bool {
+	if budgets.MaxRetriesPerStep != 0 {
+		return true
+	}
+	defaults := DefaultLoopBudgets()
+	return budgets.MaxSteps == defaults.MaxSteps &&
+		budgets.MaxPlanRevisions == defaults.MaxPlanRevisions &&
+		budgets.MaxTotalRuntimeMS == defaults.MaxTotalRuntimeMS &&
+		budgets.MaxToolOutputChars == defaults.MaxToolOutputChars
+}
+
+func mergeLoopBudgets(base, override LoopBudgets) LoopBudgets {
+	if override.MaxSteps > 0 {
+		base.MaxSteps = override.MaxSteps
+	}
+	if override.MaxRetriesPerStep > 0 {
+		base.MaxRetriesPerStep = override.MaxRetriesPerStep
+	}
+	if override.MaxPlanRevisions > 0 {
+		base.MaxPlanRevisions = override.MaxPlanRevisions
+	}
+	if override.MaxTotalRuntimeMS > 0 {
+		base.MaxTotalRuntimeMS = override.MaxTotalRuntimeMS
+	}
+	if override.MaxToolOutputChars > 0 {
+		base.MaxToolOutputChars = override.MaxToolOutputChars
+	}
+	return base
 }

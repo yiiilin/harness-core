@@ -12,6 +12,24 @@ type AttachmentRef struct {
 	MediaType    string `json:"media_type,omitempty"`
 }
 
+type RuntimeHandleRef struct {
+	HandleID string              `json:"handle_id,omitempty"`
+	StepID   string              `json:"step_id,omitempty"`
+	ActionID string              `json:"action_id,omitempty"`
+	Kind     string              `json:"kind,omitempty"`
+	Status   RuntimeHandleStatus `json:"status,omitempty"`
+	Version  int64               `json:"version,omitempty"`
+}
+
+func RuntimeHandleRefFromHandle(handle RuntimeHandle) RuntimeHandleRef {
+	return RuntimeHandleRef{
+		HandleID: handle.HandleID,
+		Kind:     handle.Kind,
+		Status:   handle.Status,
+		Version:  handle.Version,
+	}
+}
+
 type OutputRefKind string
 
 const (

@@ -6,10 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
+	"github.com/yiiilin/harness-core/pkg/harness/tool"
+	"github.com/yiiilin/harness-core/pkg/harness/verify"
 )
 
 func TestCreateBlockedRuntimePersistsGenericBlockedSessionState(t *testing.T) {
@@ -156,6 +159,73 @@ func TestRespondAndResumeBlockedRuntimeClearsGenericBlockedState(t *testing.T) {
 	}
 }
 
+func TestRequestConfirmationUsesGenericBlockedRuntimeConfirmationModel(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{})
+
+	sess := mustCreateSession(t, rt, "typed confirmation helper", "request second confirmation through blocked runtime")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "request second confirmation through blocked runtime"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	record, updated, err := rt.RequestConfirmation(context.Background(), attached.SessionID, hruntime.ConfirmationRequest{
+		Subject: execution.BlockedRuntimeSubject{
+			StepID:  "step_second_confirmation",
+			CycleID: "cyc_second_confirmation",
+		},
+		Metadata: map[string]any{"stage": "second_confirmation"},
+	})
+	if err != nil {
+		t.Fatalf("request confirmation: %v", err)
+	}
+	if record.Kind != execution.BlockedRuntimeConfirmation || record.Condition.Kind != execution.BlockedRuntimeConditionConfirmation {
+		t.Fatalf("expected typed confirmation helper to create confirmation blocked runtime, got %#v", record)
+	}
+	if record.Condition.WaitingFor != "human_confirmation" {
+		t.Fatalf("expected default waiting_for human_confirmation, got %#v", record)
+	}
+	if updated.ExecutionState != session.ExecutionBlocked {
+		t.Fatalf("expected session to enter generic blocked state, got %#v", updated)
+	}
+
+	responded, blockedState, err := rt.RespondBlockedRuntime(context.Background(), record.BlockedRuntimeID, hruntime.BlockedRuntimeResponse{
+		Status: execution.BlockedRuntimeConfirmed,
+	})
+	if err != nil {
+		t.Fatalf("respond blocked runtime: %v", err)
+	}
+	if responded.Status != execution.BlockedRuntimeConfirmed || blockedState.ExecutionState != session.ExecutionBlocked {
+		t.Fatalf("expected confirmation response to stay on blocked-runtime path until resume, got record=%#v state=%#v", responded, blockedState)
+	}
+}
+
+func TestConfirmationBlockedRuntimeRejectsApprovalStyleResponseStatus(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{})
+
+	sess := mustCreateSession(t, rt, "confirmation status validation", "confirmation waits must only accept confirmed")
+	record, _, err := rt.RequestConfirmation(context.Background(), sess.SessionID, hruntime.ConfirmationRequest{
+		Subject: execution.BlockedRuntimeSubject{StepID: "step_confirm_only"},
+	})
+	if err != nil {
+		t.Fatalf("request confirmation: %v", err)
+	}
+
+	if _, _, err := rt.RespondBlockedRuntime(context.Background(), record.BlockedRuntimeID, hruntime.BlockedRuntimeResponse{
+		Status: execution.BlockedRuntimeApproved,
+	}); !errors.Is(err, hruntime.ErrInvalidBlockedRuntimeResponse) {
+		t.Fatalf("expected confirmation blocked runtime to reject approval-style status, got %v", err)
+	}
+
+	stored, err := rt.GetBlockedRuntimeRecord(record.BlockedRuntimeID)
+	if err != nil {
+		t.Fatalf("get blocked runtime record: %v", err)
+	}
+	if stored.Status != execution.BlockedRuntimePending {
+		t.Fatalf("expected invalid response to leave confirmation pending, got %#v", stored)
+	}
+}
+
 func TestAbortBlockedRuntimeClearsGenericBlockedState(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{})
 
@@ -195,6 +265,43 @@ func TestAbortBlockedRuntimeClearsGenericBlockedState(t *testing.T) {
 	}
 	if stored.Status != execution.BlockedRuntimeAborted {
 		t.Fatalf("expected persisted aborted record, got %#v", stored)
+	}
+}
+
+func TestApprovalDoesNotAcceptConfirmReplyValue(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		&countingHandler{},
+	)
+	verifiers := verify.NewRegistry()
+	verifiers.Register(
+		verify.Definition{Kind: "exit_code", Description: "Verify that an execution result exit code is in the allowed set."},
+		verify.ExitCodeChecker{},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verifiers,
+	}).WithPolicyEvaluator(askPolicy{})
+
+	sess := mustCreateSession(t, rt, "invalid confirm approval reply", "approval should not grow a confirm reply")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "confirm must stay on blocked runtime model"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+	pl, err := rt.CreatePlan(attached.SessionID, "confirm invalid", planStepSpecForBlockedRuntime())
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	if _, _, err := rt.RespondApproval(out.Execution.PendingApproval.ApprovalID, approval.Response{Reply: approval.Reply("confirm")}); !errors.Is(err, approval.ErrInvalidReply) {
+		t.Fatalf("expected confirm reply to stay invalid for approvals, got %v", err)
 	}
 }
 

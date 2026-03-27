@@ -98,9 +98,38 @@ func (s *Service) runSession(ctx context.Context, sessionID, leaseID string) (Se
 			continue
 		}
 		if !selection.HasStep {
+			outcome := planExecutionOutcomeForSpec(latest, s.LoopBudgets)
+			if !outcome.Fail && programPlanDependencyDeadlocked(latest, s.LoopBudgets) {
+				outcome.Fail = true
+				outcome.Continue = false
+				outcome.Reason = "program dependency failed"
+			}
+			if outcome.Fail {
+				reconciled, handled, err := s.reconcileNoSelectionPlanFailure(ctx, sessionID, leaseID, state, latest, outcome)
+				if err != nil {
+					return SessionRunOutput{}, err
+				}
+				if handled {
+					return mergeSessionRunOutputs(out, reconciled), nil
+				}
+			}
 			return populateSessionRunAggregates(out), nil
 		}
 
+		if roundOut, handled, err := s.tryRunProgramReadyRound(ctx, sessionID, leaseID, state, latest, selection.Step); err != nil {
+			return SessionRunOutput{}, err
+		} else if handled {
+			out.Executions = append(out.Executions, roundOut.Executions...)
+			out.Session = roundOut.Session
+			if roundOut.UpdatedPlan != nil {
+				out.Plan = roundOut.UpdatedPlan
+			}
+			s.compactSessionContextBestEffort(ctx, sessionID, CompactionTriggerExecute)
+			if isTerminalPhase(roundOut.Session.Phase) || roundOut.Session.PendingApprovalID != "" {
+				return populateSessionRunAggregates(out), nil
+			}
+			continue
+		}
 		if roundOut, handled, err := s.tryRunFanoutRound(ctx, sessionID, leaseID, state, latest, selection.Step); err != nil {
 			return SessionRunOutput{}, err
 		} else if handled {
@@ -147,7 +176,7 @@ func selectNextStepForSession(state session.State, pinned plan.Spec, latest plan
 	if step, ok := pinnedStepForSession(state, pinned, budgets); ok {
 		return sessionStepSelection{Step: step, HasStep: true}
 	}
-	if step, ok := firstPendingPlanStep(latest); ok {
+	if step, ok := firstPendingPlanStep(latest, budgets); ok {
 		return sessionStepSelection{Step: step, HasStep: true}
 	}
 	if step, ok := firstFailedPlanStep(latest, budgets); ok {
@@ -185,8 +214,12 @@ func executableStepByID(latest plan.Spec, stepID string, budgets LoopBudgets) (p
 	if !ok {
 		return plan.StepSpec{}, false
 	}
+	nodeStateCache := map[string]map[string]programNodeRoundState{}
 	switch step.Status {
 	case "", plan.StepPending, plan.StepRunning:
+		if step.Status != plan.StepRunning && !programStepDependenciesSatisfiedWithCache(latest, step, budgets, nodeStateCache) {
+			return plan.StepSpec{}, false
+		}
 		return step, true
 	case plan.StepFailed:
 		switch normalizedOnFailStrategy(step) {
@@ -205,11 +238,42 @@ func executableStepByID(latest plan.Spec, stepID string, budgets LoopBudgets) (p
 	}
 }
 
-func firstPendingPlanStep(latest plan.Spec) (plan.StepSpec, bool) {
+func firstPendingPlanStep(latest plan.Spec, budgets LoopBudgets) (plan.StepSpec, bool) {
+	nodeStateCache := map[string]map[string]programNodeRoundState{}
 	for _, step := range latest.Steps {
-		if step.Status == "" || step.Status == plan.StepPending {
+		if step.Status != "" && step.Status != plan.StepPending {
+			continue
+		}
+		if programStepDependenciesSatisfiedWithCache(latest, step, budgets, nodeStateCache) {
 			return step, true
 		}
+		if sibling, ok := firstReadyProgramSiblingStep(latest, step, budgets, nodeStateCache); ok {
+			return sibling, true
+		}
+		return plan.StepSpec{}, false
+	}
+	return plan.StepSpec{}, false
+}
+
+func firstReadyProgramSiblingStep(latest plan.Spec, blocked plan.StepSpec, budgets LoopBudgets, nodeStateCache map[string]map[string]programNodeRoundState) (plan.StepSpec, bool) {
+	groupID, ok := programGroupIDFromStep(blocked)
+	if !ok {
+		return plan.StepSpec{}, false
+	}
+	for _, candidate := range latest.Steps {
+		if candidate.StepID == blocked.StepID {
+			continue
+		}
+		if !programStepInGroup(candidate, groupID) {
+			continue
+		}
+		if candidate.Status != "" && candidate.Status != plan.StepPending {
+			continue
+		}
+		if !programStepDependenciesSatisfiedWithCache(latest, candidate, budgets, nodeStateCache) {
+			continue
+		}
+		return candidate, true
 	}
 	return plan.StepSpec{}, false
 }

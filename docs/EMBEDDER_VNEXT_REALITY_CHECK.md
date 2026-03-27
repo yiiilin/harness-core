@@ -14,6 +14,11 @@ Use this document when maintainers or embedders need a precise answer to:
 This document is intentionally stricter than roadmap or adaptation plans.
 It is a reality check, not a wishlist.
 
+It is also scoped to the current kernel architecture.
+Read every vNext item here as an assessment of extensions to the existing
+`session + plan + step` runtime, not as evidence that `harness-core` already
+ships a first-class durable workflow graph runtime.
+
 Use this together with:
 
 - `docs/API.md`

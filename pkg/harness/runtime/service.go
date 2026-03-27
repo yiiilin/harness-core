@@ -311,6 +311,17 @@ func (s *Service) EvaluatePolicy(ctx context.Context, state session.State, step 
 }
 
 func (s *Service) ResolveCapability(ctx context.Context, req capability.Request) (capability.Resolution, error) {
+	if isNativeProgramActionToolName(req.Action.ToolName) {
+		if req.Action.ToolVersion != "" && req.Action.ToolVersion != programInteractiveNativeVersion {
+			return capability.Resolution{}, capability.ErrCapabilityVersionNotFound
+		}
+		if err := s.nativeProgramActionAvailabilityError(req.Action.ToolName); err != nil {
+			return capability.Resolution{}, err
+		}
+		if resolution := s.nativeProgramActionResolution(req); resolution != nil {
+			return *resolution, nil
+		}
+	}
 	if s.CapabilityResolver == nil {
 		return capability.Resolution{}, capability.ErrCapabilityNotFound
 	}
@@ -318,6 +329,30 @@ func (s *Service) ResolveCapability(ctx context.Context, req capability.Request)
 }
 
 func (s *Service) MatchCapability(ctx context.Context, req capability.Request) (capability.MatchResult, error) {
+	if isNativeProgramActionToolName(req.Action.ToolName) {
+		resolution, err := s.ResolveCapability(ctx, req)
+		if err != nil {
+			reason, ok := capability.UnsupportedReasonFromError(err, req)
+			if ok {
+				return capability.MatchResult{
+					Supported: false,
+					Reasons:   []capability.UnsupportedReason{reason},
+				}, nil
+			}
+			return capability.MatchResult{}, err
+		}
+		reasons := capability.UnsupportedReasonsForDefinition(resolution.Definition, req.Requirements)
+		if len(reasons) > 0 {
+			return capability.MatchResult{
+				Supported: false,
+				Reasons:   reasons,
+			}, nil
+		}
+		return capability.MatchResult{
+			Supported:  true,
+			Resolution: &resolution,
+		}, nil
+	}
 	if matcher, ok := s.CapabilityResolver.(capability.Matcher); ok {
 		return matcher.Match(ctx, req)
 	}

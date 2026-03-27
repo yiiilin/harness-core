@@ -28,6 +28,11 @@ func applyCompiledProgramBindings(args map[string]any, bindings []execution.Prog
 			default:
 				return nil, ErrProgramAttachmentUnsupported
 			}
+		case execution.ProgramInputBindingRuntimeHandleRef:
+			if binding.RuntimeHandle == nil {
+				return nil, ErrProgramInputBindingUnsupported
+			}
+			unresolved = append(unresolved, binding)
 		default:
 			return nil, ErrProgramInputBindingUnsupported
 		}

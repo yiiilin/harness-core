@@ -65,7 +65,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 	var originalTask task.Record
 	var hadOriginalTask bool
 	if response.Reply == approval.ReplyReject {
-		originalAttempt, hadOriginalAttempt, err = findLatestBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID)
+		originalAttempt, hadOriginalAttempt, err = findBlockedAttemptForApprovalInStore(s.Attempts, rec.SessionID, rec)
 		if err != nil {
 			return approval.Record{}, session.State{}, err
 		}
@@ -119,7 +119,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 				return err
 			}
 			if response.Reply == approval.ReplyReject {
-				if err := finalizeBlockedAttemptInStore(repoSet.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
+				if err := finalizeBlockedAttemptForApprovalInStore(repoSet.Attempts, rec.SessionID, rec, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
 					return err
 				}
 			}
@@ -155,7 +155,7 @@ func (s *Service) RespondApproval(approvalID string, response approval.Response)
 		}
 		approvalUpdated = true
 		if response.Reply == approval.ReplyReject {
-			if err := finalizeBlockedAttemptInStore(s.Attempts, rec.SessionID, rec.ApprovalID, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
+			if err := finalizeBlockedAttemptForApprovalInStore(s.Attempts, rec.SessionID, rec, execution.AttemptFailed, step, string(response.Reply), now); err != nil {
 				rollbackErr := restoreApprovalRecord(s.Approvals, originalApproval)
 				return approval.Record{}, session.State{}, joinRollbackError(err, rollbackErr)
 			}
@@ -237,6 +237,9 @@ func (s *Service) resumePendingApprovalWithLease(ctx context.Context, sessionID,
 	if rec.Status != approval.StatusApproved {
 		return StepRunOutput{}, ErrApprovalNotResolved
 	}
+	if isSessionApprovalRecord(rec) {
+		return s.resumeSessionApprovalGateWithLease(ctx, st, leaseID, rec)
+	}
 	decision, ok := s.ResumePolicy.Resolve(rec, rec.Step)
 	if !ok {
 		return StepRunOutput{}, ErrApprovalNotResolved
@@ -263,6 +266,9 @@ func (s *Service) resolvePendingApprovalForSession(ctx context.Context, sessionI
 		resumed, err := s.resumePendingApprovalWithLease(ctx, sessionID, leaseID)
 		if err != nil {
 			return nil, true, err
+		}
+		if isSessionApprovalRecord(rec) {
+			return nil, false, nil
 		}
 		return &resumed, true, nil
 	default:
@@ -295,8 +301,9 @@ func (s *Service) findReusableApprovalDecision(ctx context.Context, state sessio
 }
 
 const (
-	approvalRequestScopeKey = "request_scope"
-	approvalResponseKey     = "response"
+	approvalRequestScopeKey  = "request_scope"
+	approvalResumeContextKey = "resume_context"
+	approvalResponseKey      = "response"
 )
 
 type approvalReuseScope struct {
@@ -309,6 +316,18 @@ type approvalReuseScope struct {
 	RiskLevel              string `json:"risk_level,omitempty"`
 	DefinitionMetadataJSON string `json:"definition_metadata_json,omitempty"`
 }
+
+type approvalResumeContext struct {
+	Kind      string `json:"kind"`
+	AttemptID string `json:"attempt_id,omitempty"`
+	StepID    string `json:"step_id,omitempty"`
+	CycleID   string `json:"cycle_id,omitempty"`
+}
+
+const (
+	approvalResumeContextStepAttempt = "step_attempt"
+	approvalResumeContextSessionGate = "session_entry"
+)
 
 func (s *Service) buildApprovalReuseScope(ctx context.Context, state session.State, step plan.StepSpec, decision permission.Decision) approvalReuseScope {
 	scope := approvalReuseScope{
@@ -360,10 +379,14 @@ func approvalScopeFromMetadata(metadata map[string]any) (approvalReuseScope, boo
 	return scope, true
 }
 
-func approvalMetadataForRequest(scope approvalReuseScope) map[string]any {
-	return map[string]any{
+func approvalMetadataForRequest(scope approvalReuseScope, resume approvalResumeContext) map[string]any {
+	metadata := map[string]any{
 		approvalRequestScopeKey: scope,
 	}
+	if resume.Kind != "" {
+		metadata[approvalResumeContextKey] = resume
+	}
+	return metadata
 }
 
 func mergeApprovalResponseMetadata(existing map[string]any, response approval.Response) map[string]any {
@@ -397,8 +420,104 @@ func marshalApprovalScopeValue(value any) string {
 	return string(b)
 }
 
+func approvalResumeContextFromMetadata(metadata map[string]any) (approvalResumeContext, bool) {
+	raw, ok := metadata[approvalResumeContextKey]
+	if !ok {
+		return approvalResumeContext{}, false
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return approvalResumeContext{}, false
+	}
+	var ctx approvalResumeContext
+	if err := json.Unmarshal(b, &ctx); err != nil {
+		return approvalResumeContext{}, false
+	}
+	if ctx.Kind == "" {
+		return approvalResumeContext{}, false
+	}
+	return ctx, true
+}
+
+func approvalResumeContextRequiresBlockedAttempt(rec approval.Record) bool {
+	ctx, ok := approvalResumeContextFromMetadata(rec.Metadata)
+	return ok && ctx.Kind == approvalResumeContextStepAttempt && ctx.AttemptID != ""
+}
+
+func findBlockedAttemptForApprovalInStore(store execution.AttemptStore, sessionID string, rec approval.Record) (execution.Attempt, bool, error) {
+	if store == nil || rec.ApprovalID == "" {
+		return execution.Attempt{}, false, nil
+	}
+	if resumeContext, ok := approvalResumeContextFromMetadata(rec.Metadata); ok && resumeContext.AttemptID != "" {
+		attempt, exactMatch, err := findBlockedAttemptByIDInStore(store, sessionID, rec.ApprovalID, resumeContext.AttemptID)
+		if err != nil {
+			return execution.Attempt{}, false, err
+		}
+		if exactMatch {
+			return attempt, true, nil
+		}
+		if resumeContext.Kind == approvalResumeContextStepAttempt {
+			return execution.Attempt{}, false, ErrApprovalResumeContextMissing
+		}
+	}
+	return findLatestBlockedAttemptInStore(store, sessionID, rec.ApprovalID)
+}
+
+func findBlockedAttemptForApprovalProjectionInStore(store execution.AttemptStore, sessionID string, rec approval.Record) (execution.Attempt, bool, error) {
+	if store == nil || rec.ApprovalID == "" {
+		return execution.Attempt{}, false, nil
+	}
+	if resumeContext, ok := approvalResumeContextFromMetadata(rec.Metadata); ok && resumeContext.AttemptID != "" {
+		attempt, exactMatch, err := findBlockedAttemptByIDInStore(store, sessionID, rec.ApprovalID, resumeContext.AttemptID)
+		if err != nil {
+			return execution.Attempt{}, false, err
+		}
+		if exactMatch {
+			return attempt, true, nil
+		}
+		if resumeContext.Kind == approvalResumeContextStepAttempt {
+			return execution.Attempt{}, false, nil
+		}
+	}
+	return findLatestBlockedAttemptInStore(store, sessionID, rec.ApprovalID)
+}
+
+func findBlockedAttemptByIDInStore(store execution.AttemptStore, sessionID, approvalID, attemptID string) (execution.Attempt, bool, error) {
+	if store == nil || approvalID == "" || attemptID == "" {
+		return execution.Attempt{}, false, nil
+	}
+	attempts, err := store.List(sessionID)
+	if err != nil {
+		return execution.Attempt{}, false, err
+	}
+	for _, attempt := range attempts {
+		if attempt.AttemptID != attemptID || attempt.ApprovalID != approvalID || attempt.Status != execution.AttemptBlocked {
+			continue
+		}
+		return attempt, true, nil
+	}
+	return execution.Attempt{}, false, nil
+}
+
 func finalizeBlockedAttemptInStore(store execution.AttemptStore, sessionID, approvalID string, status execution.AttemptStatus, step plan.StepSpec, reply string, now int64) error {
 	attempt, ok, err := findLatestBlockedAttemptInStore(store, sessionID, approvalID)
+	if err != nil || !ok {
+		return err
+	}
+	attempt.Status = status
+	attempt.Step = step
+	if attempt.Metadata == nil {
+		attempt.Metadata = map[string]any{}
+	}
+	attempt.Metadata["approval_reply"] = reply
+	if attempt.FinishedAt == 0 {
+		attempt.FinishedAt = now
+	}
+	return store.Update(attempt)
+}
+
+func finalizeBlockedAttemptForApprovalInStore(store execution.AttemptStore, sessionID string, rec approval.Record, status execution.AttemptStatus, step plan.StepSpec, reply string, now int64) error {
+	attempt, ok, err := findBlockedAttemptForApprovalInStore(store, sessionID, rec)
 	if err != nil || !ok {
 		return err
 	}

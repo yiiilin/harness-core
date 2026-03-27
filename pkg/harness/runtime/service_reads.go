@@ -421,7 +421,7 @@ func blockedRuntimeFromStateAndApproval(state session.State, rec approval.Record
 	if state.PendingApprovalID == "" || state.PendingApprovalID != rec.ApprovalID || rec.Status != approval.StatusPending || rec.SessionID != "" && rec.SessionID != state.SessionID {
 		return execution.BlockedRuntime{}, execution.ErrBlockedRuntimeNotFound
 	}
-	attempt, ok, err := findLatestBlockedAttemptInStore(repos.Attempts, state.SessionID, rec.ApprovalID)
+	attempt, ok, err := findBlockedAttemptForApprovalProjectionInStore(repos.Attempts, state.SessionID, rec)
 	if err != nil {
 		return execution.BlockedRuntime{}, err
 	}
@@ -431,6 +431,19 @@ func blockedRuntimeFromStateAndApproval(state session.State, rec approval.Record
 		attemptID = attempt.AttemptID
 		if attempt.CycleID != "" {
 			cycleID = attempt.CycleID
+		}
+	}
+	target := execution.TargetRef{}
+	if ok {
+		if ref, hasRef := execution.TargetRefFromMetadata(attempt.Metadata); hasRef {
+			target = ref
+		} else if ref, hasRef := execution.TargetRefFromMetadata(attempt.Step.Metadata); hasRef {
+			target = ref
+		}
+	}
+	if target.TargetID == "" {
+		if ref, hasRef := execution.TargetFromStep(rec.Step); hasRef {
+			target = ref
 		}
 	}
 	handles, err := blockedRuntimeHandlesForCycle(repos.RuntimeHandles, state.SessionID, cycleID)
@@ -448,6 +461,7 @@ func blockedRuntimeFromStateAndApproval(state session.State, rec approval.Record
 		ApprovalID:       rec.ApprovalID,
 		AttemptID:        attemptID,
 		CycleID:          cycleID,
+		Target:           target,
 		Condition: execution.BlockedRuntimeCondition{
 			Kind:        execution.BlockedRuntimeConditionApproval,
 			ReferenceID: rec.ApprovalID,

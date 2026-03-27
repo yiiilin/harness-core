@@ -34,6 +34,7 @@ func (s *Service) stepsFromProgram(ctx context.Context, sessionID string, progra
 	}
 
 	nodesByID := make(map[string]execution.ProgramNode, len(program.Nodes))
+	knownNodes := make(map[string]struct{}, len(program.Nodes))
 	nodeOrder := make(map[string]int, len(program.Nodes))
 	indegree := make(map[string]int, len(program.Nodes))
 	dependents := make(map[string][]string, len(program.Nodes))
@@ -46,6 +47,7 @@ func (s *Service) stepsFromProgram(ctx context.Context, sessionID string, progra
 			return nil, ErrProgramDuplicateNodeID
 		}
 		nodesByID[node.NodeID] = node
+		knownNodes[node.NodeID] = struct{}{}
 		nodeOrder[node.NodeID] = i
 		indegree[node.NodeID] = 0
 	}
@@ -64,6 +66,9 @@ func (s *Service) stepsFromProgram(ctx context.Context, sessionID string, progra
 			indegree[node.NodeID]++
 			dependents[depID] = append(dependents[depID], node.NodeID)
 		}
+	}
+	if err := validateProgramBindingDependencies(program.Nodes, knownNodes); err != nil {
+		return nil, err
 	}
 
 	ready := make([]string, 0, len(program.Nodes))
@@ -182,10 +187,15 @@ func stepFromProgramNode(program execution.Program, node execution.ProgramNode, 
 	if len(unresolvedBindings) > 0 {
 		step = execution.AttachProgramInputBindings(step, unresolvedBindings)
 	}
-	if program.ProgramID != "" {
-		step.Metadata[execution.ProgramMetadataKeyID] = program.ProgramID
-	}
-	step.Metadata[execution.ProgramMetadataKeyNodeID] = node.NodeID
+	step.Metadata = applyProgramLineageMetadata(
+		step.Metadata,
+		program.ProgramID,
+		runtimeProgramGroupID(program),
+		"",
+		node.NodeID,
+		node.DependsOn,
+	)
+	step.Metadata = applyProgramConcurrencyMetadata(step.Metadata, program.Concurrency, node.Concurrency)
 	step.Metadata = applyProgramNodeAggregateMetadata(
 		step.Metadata,
 		aggregateID,
@@ -258,4 +268,8 @@ func firstNonEmptyProgramValue(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func runtimeProgramGroupID(program execution.Program) string {
+	return programChangeReason(program)
 }

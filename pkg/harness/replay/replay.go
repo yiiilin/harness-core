@@ -112,6 +112,14 @@ func BuildSessionProjectionWithBlockedRuntimes(sessionID string, cycles []execut
 			TargetSlices:        execution.TargetSlicesFromCycle(cycle),
 			InteractiveRuntimes: execution.InteractiveRuntimesFromHandles(cycle.RuntimeHandles),
 		}
+		if lineage, ok := execution.ProgramLineageFromCycle(cycle); ok {
+			lineageCopy := lineage
+			projection.Cycles[i].Program = &lineageCopy
+		}
+		if approvalLinkage, ok := execution.ApprovalLinkageFromCycle(cycle); ok {
+			linkageCopy := approvalLinkage
+			projection.Cycles[i].ApprovalLinkage = &linkageCopy
+		}
 		if cycle.CycleID != "" {
 			cycleIndex[cycle.CycleID] = i
 		}
@@ -135,6 +143,14 @@ func BuildExecutionCycleProjection(cycle execution.ExecutionCycle, auditEvents [
 		Cycle:               cloneExecutionCycle(cycle),
 		TargetSlices:        execution.TargetSlicesFromCycle(cycle),
 		InteractiveRuntimes: execution.InteractiveRuntimesFromHandles(cycle.RuntimeHandles),
+	}
+	if lineage, ok := execution.ProgramLineageFromCycle(cycle); ok {
+		lineageCopy := lineage
+		projection.Program = &lineageCopy
+	}
+	if approvalLinkage, ok := execution.ApprovalLinkageFromCycle(cycle); ok {
+		linkageCopy := approvalLinkage
+		projection.ApprovalLinkage = &linkageCopy
 	}
 	for _, event := range orderedAuditEvents(auditEvents) {
 		if cycle.CycleID == "" || event.CycleID != cycle.CycleID {

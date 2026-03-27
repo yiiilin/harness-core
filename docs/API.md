@@ -120,6 +120,7 @@ Approval and coordination:
 - `RespondApproval`
 - `ResumePendingApproval`
 - `ResumeClaimedApproval`
+- `RequestConfirmation`
 - `GetBlockedRuntime`
 - `GetBlockedRuntimeByApproval`
 - `ListBlockedRuntimes`
@@ -267,6 +268,7 @@ The public blocked-runtime surface is now split into:
   - `GetBlockedRuntimeRecord(blockedRuntimeID)`
   - `ListBlockedRuntimeRecords(sessionID)`
 - generic blocked-runtime lifecycle control:
+  - `RequestConfirmation(ctx, sessionID, request)`
   - `CreateBlockedRuntime(ctx, sessionID, request)`
   - `RespondBlockedRuntime(ctx, blockedRuntimeID, response)`
   - `ResumeBlockedRuntime(ctx, blockedRuntimeID)`
@@ -277,6 +279,7 @@ Current scope:
 - approval-backed blocked runtimes remain readable by `session_id` and `approval_id`
 - generic blocked runtimes are now durable first-class records keyed by `blocked_runtime_id`
 - generic blocked runtimes drive a session-level blocked state that is non-runnable until resume or abort clears it
+- second confirmation is modeled only as a generic confirmation blocked runtime; approval replies stay `once` / `always` / `reject`
 - `ListBlockedRuntimes()` is ordered by `requested_at` ascending, with `blocked_runtime_id` as the tie-break
 - richer blocked-runtime projections now derive:
   - `ExecutionBlockedRuntimeWait` from the blocked step/action/target locus
@@ -354,7 +357,7 @@ The public facade now re-exports typed preplanned execution-program contracts:
 
 Current scope:
 
-- they define a transport-neutral graph/program value shape for non-shell preplanned execution
+- they define a transport-neutral graph/program value shape for preplanned execution, including mixed shell/tool/native-interactive programs
 - nodes compose generic `action.Spec`, optional `verify.Spec`, optional `on_fail`, optional target selection, dependency edges, and stable input bindings
 - the runtime now exposes:
   - `CreatePlanFromProgram(sessionID, changeReason, program)`
@@ -365,7 +368,9 @@ Current scope:
   - explicit target fan-out from `ExecutionProgramNode.Targeting.Targets` is supported
   - resolver-backed `ExecutionTargetSelectionFanoutAll` is supported through `runtime.TargetResolver`
   - dependency-ordered execution through the existing plan/session loop, with scheduler-owned concurrent fan-out rounds for ready sibling target steps
-  - literal, output-ref, artifact-ref, default temp-file attachment materialization, and custom materializer passthrough are supported for native program execution
+  - literal, output-ref, artifact-ref, attachment materialization, and typed runtime-handle refs are supported for native program execution
+  - `StepID`-based input bindings are structural dataflow selectors and must resolve through `ExecutionProgramNode.DependsOn` ancestry; direct kernel-owned ids such as `artifact_id`, `attachment_id`, `action_id`, or `handle_id` remain direct selectors rather than implicit dependencies
+  - one `ExecutionProgram` may mix ordinary tools, `shell.exec` pipe/pty steps, artifact-ref consumers, and native interactive lifecycle steps in the same execution graph
   - explicit fan-out can now use:
     - per-target retries through `ExecutionProgramNode.OnFail`
     - partial-failure continuation through `ExecutionTargetSelection.OnPartialFailure=continue`
@@ -405,6 +410,10 @@ Current scope:
 
 The public facade now re-exports typed projection contracts:
 
+- `ExecutionProgramLineage`
+- `ExecutionApprovalLinkage`
+- `ExecutionBlockedRuntimeLinkage`
+- `ExecutionRuntimeHandleLineage`
 - `ExecutionTargetSlice`
 - `ExecutionBlockedRuntimeProjection`
 - `ExecutionBlockedRuntimeWait`
@@ -414,12 +423,18 @@ Current scope:
 
 - these contracts define the public value shape for target-scoped replay/projection and richer blocked-runtime views
 - target slices are now populated when execution facts carry stable target metadata, for example from explicit program fan-out execution
+- `pkg/harness/replay.ExecutionCycleProjection.Program` and `ExecutionTargetSlice.Program` now derive structured program lineage from stable program metadata such as `program_id`, `program_group_id`, `program_parent_step_id`, `program_node_id`, and `program_depends_on`
+- `pkg/harness/replay.ExecutionCycleProjection.ApprovalLinkage` now exposes structured approval linkage from stable cycle facts
 - blocked-runtime projections are now runtime-backed through:
   - `GetBlockedRuntimeProjection(...)`
   - `GetBlockedRuntimeProjectionByApproval(...)`
   - `ListBlockedRuntimeProjections()`
   - `pkg/harness/replay.SessionProjection.BlockedRuntimes`
 - approval-backed and generic blocked runtimes now both project through the same current blocked-runtime read surface
+- `ExecutionBlockedRuntimeProjection` now also exposes:
+  - `Program` for the blocked node lineage when stable program metadata is available
+  - `ApprovalLinkage` for approval-backed continuation identity
+  - `BlockedRuntimeLinkage` for stable blocked/attempt/cycle linkage
 
 This is a mixed state:
 - target-slice population is partially runtime-backed today
@@ -452,6 +467,7 @@ The runtime also exposes:
 Current scope:
 
 - interactive runtime projection is derived from persisted runtime handles plus stable interactive metadata keys
+- `ExecutionInteractiveRuntime.Lineage` now exposes structured runtime-handle linkage over stable attempt/cycle/target/program facts when present
 - the kernel now exposes a typed transport-neutral interactive controller contract for start/reopen/view/write/close plus durable runtime-handle persistence
 - companion modules or embedders implement the backend-specific behavior behind that contract
 - `pkg/harness/replay.ExecutionCycleProjection` now exposes `InteractiveRuntimes`

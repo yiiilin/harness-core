@@ -268,6 +268,7 @@ Recommended embedder read path:
 - `GetExecutionCycle(session_id, cycle_id)`
 - `ListAuditEvents(session_id)`
 - optional projection helper: `pkg/harness/replay`
+  - current replay projections add target slices, interactive runtimes, blocked-runtime views, and structured program lineage without requiring direct storage reads
 
 This keeps replay/debug consumers on public runtime contracts instead of storage internals.
 
@@ -330,6 +331,7 @@ Current runtime behavior:
 - expose `RespondApproval(...)`
 - expose `ResumePendingApproval(...)`
 - support `once`, `always`, and `reject`
+- keep second confirmation on the generic blocked-runtime path via `RequestConfirmation(...)`, not as an approval reply
 - scope `always` reuse to the recorded approval request shape, matched rule, and resolved capability version
 - persist the blocked step's logical execution cycle so resumed or recovered execution facts stay attached to the same cycle
 

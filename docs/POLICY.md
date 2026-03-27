@@ -81,6 +81,9 @@ Recommended approval replies:
 - `reject`
 
 The runtime should support these as generic concepts even if a host app presents them in a custom UI.
+Second confirmation stays outside `approval.Record`: model it as a generic `BlockedRuntimeConfirmation`
+through `RequestConfirmation(...)` / `RespondBlockedRuntime(...)` / `ResumeBlockedRuntime(...)`, not
+as a new approval reply value.
 
 ## Approval lifecycle
 

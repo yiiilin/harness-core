@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -139,6 +140,108 @@ func TestReaderProjectsSingleExecutionCycle(t *testing.T) {
 	}
 	if got := eventSequences(projection.Events); !reflect.DeepEqual([]int64{1, 2}, got) {
 		t.Fatalf("cycle event sequences = %v, want %v", got, []int64{1, 2})
+	}
+}
+
+func TestReaderProjectsProgramLineage(t *testing.T) {
+	metadata := execution.ApplyTargetMetadata(map[string]any{
+		execution.ProgramMetadataKeyID:           "prog_lineage",
+		execution.ProgramMetadataKeyGroupID:      "group_lineage",
+		execution.ProgramMetadataKeyNodeID:       "node_apply",
+		execution.ProgramMetadataKeyParentStepID: "parent_step",
+		execution.ProgramMetadataKeyDependsOn:    []string{"node_prepare"},
+	}, execution.Target{TargetID: "host-a", Kind: "host"}, 1, 1)
+
+	reader := &fakeExecutionFactReader{
+		cycles: []execution.ExecutionCycle{{
+			CycleID:   "cycle-1",
+			SessionID: "session-1",
+			Actions: []execution.ActionRecord{{
+				ActionID:  "action-1",
+				SessionID: "session-1",
+				CycleID:   "cycle-1",
+				Metadata:  metadata,
+			}},
+		}},
+	}
+
+	projection, err := NewReader(reader).SessionProjection("session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(projection.Cycles) != 1 {
+		t.Fatalf("expected one cycle projection, got %#v", projection.Cycles)
+	}
+	if projection.Cycles[0].Program == nil || !projection.Cycles[0].Program.HasLineage() {
+		t.Fatalf("expected structured program lineage on cycle projection, got %#v", projection.Cycles[0])
+	}
+	if projection.Cycles[0].Program.ProgramID != "prog_lineage" || projection.Cycles[0].Program.GroupID != "group_lineage" || projection.Cycles[0].Program.NodeID != "node_apply" {
+		t.Fatalf("unexpected cycle program lineage: %#v", projection.Cycles[0].Program)
+	}
+	if !reflect.DeepEqual(projection.Cycles[0].Program.DependsOn, []string{"node_prepare"}) {
+		t.Fatalf("unexpected cycle dependency lineage: %#v", projection.Cycles[0].Program)
+	}
+	if len(projection.Cycles[0].TargetSlices) != 1 {
+		t.Fatalf("expected one target slice, got %#v", projection.Cycles[0].TargetSlices)
+	}
+	if projection.Cycles[0].TargetSlices[0].Program == nil || projection.Cycles[0].TargetSlices[0].Program.NodeID != "node_apply" || projection.Cycles[0].TargetSlices[0].Program.GroupID != "group_lineage" {
+		t.Fatalf("expected target slice to retain program lineage, got %#v", projection.Cycles[0].TargetSlices[0])
+	}
+}
+
+func TestExecutionCycleProjectionMarshalOmitsEmptyProgramLineage(t *testing.T) {
+	data, err := json.Marshal(ExecutionCycleProjection{})
+	if err != nil {
+		t.Fatalf("marshal execution cycle projection: %v", err)
+	}
+	if string(data) != "{\"cycle\":{\"cycle_id\":\"\",\"session_id\":\"\"}}" {
+		t.Fatalf("unexpected execution cycle projection json: %s", data)
+	}
+}
+
+func TestReaderProjectsApprovalLinkageAndInteractiveRuntimeLineage(t *testing.T) {
+	handleMetadata := execution.ApplyInteractiveRuntimeMetadata(map[string]any{
+		execution.ProgramMetadataKeyID:      "prog_interactive",
+		execution.ProgramMetadataKeyGroupID: "group_interactive",
+		execution.ProgramMetadataKeyNodeID:  "node_interactive",
+		execution.TargetMetadataKeyID:       "target-1",
+		execution.TargetMetadataKeyKind:     "host",
+	}, &execution.InteractiveCapabilities{View: true}, &execution.InteractiveObservation{
+		Status: "active",
+	}, nil)
+
+	reader := &fakeExecutionFactReader{
+		cycles: []execution.ExecutionCycle{{
+			CycleID:    "cycle-1",
+			SessionID:  "session-1",
+			StepID:     "step_interactive",
+			ApprovalID: "approval-1",
+			RuntimeHandles: []execution.RuntimeHandle{{
+				HandleID:  "handle-1",
+				SessionID: "session-1",
+				AttemptID: "attempt-1",
+				CycleID:   "cycle-1",
+				Status:    execution.RuntimeHandleActive,
+				Metadata:  handleMetadata,
+			}},
+		}},
+	}
+
+	projection, err := NewReader(reader).ExecutionCycleProjection("session-1", "cycle-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if projection.ApprovalLinkage == nil || projection.ApprovalLinkage.ApprovalID != "approval-1" || projection.ApprovalLinkage.StepID != "step_interactive" {
+		t.Fatalf("expected approval linkage on cycle projection, got %#v", projection)
+	}
+	if len(projection.InteractiveRuntimes) != 1 || projection.InteractiveRuntimes[0].Lineage == nil {
+		t.Fatalf("expected interactive runtime lineage on cycle projection, got %#v", projection.InteractiveRuntimes)
+	}
+	if projection.InteractiveRuntimes[0].Lineage.HandleID != "handle-1" || projection.InteractiveRuntimes[0].Lineage.AttemptID != "attempt-1" || projection.InteractiveRuntimes[0].Lineage.CycleID != "cycle-1" {
+		t.Fatalf("unexpected runtime handle linkage: %#v", projection.InteractiveRuntimes[0].Lineage)
+	}
+	if projection.InteractiveRuntimes[0].Lineage.Program == nil || projection.InteractiveRuntimes[0].Lineage.Program.ProgramID != "prog_interactive" || projection.InteractiveRuntimes[0].Lineage.Program.NodeID != "node_interactive" {
+		t.Fatalf("expected interactive runtime program lineage, got %#v", projection.InteractiveRuntimes[0].Lineage)
 	}
 }
 

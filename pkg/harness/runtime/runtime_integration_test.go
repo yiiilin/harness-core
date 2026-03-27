@@ -91,3 +91,58 @@ func TestHappyPathRunStep(t *testing.T) {
 		t.Fatalf("expected stored audit events, got none")
 	}
 }
+
+func TestRunStepActionFailureFailsEvenWithoutVerifyChecks(t *testing.T) {
+	sessions := session.NewMemoryStore()
+	tasks := task.NewMemoryStore()
+	plans := plan.NewMemoryStore()
+	tools := tool.NewRegistry()
+	verifiers := verify.NewRegistry()
+	audits := audit.NewMemoryStore()
+
+	tools.Register(
+		tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskMedium, Enabled: true},
+		failingHandler{},
+	)
+
+	rt := hruntime.New(hruntime.Options{Sessions: sessions, Tasks: tasks, Plans: plans, Tools: tools, Verifiers: verifiers, Audit: audits})
+
+	sess := mustCreateSession(t, rt, "failed action", "action failure should fail the step even without verify checks")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "fail a step without verify checks"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "action failure", []plan.StepSpec{{
+		StepID: "step_fail_action_no_verify",
+		Title:  "simulated action failure without verify",
+		Action: action.Spec{ToolName: "shell.exec", Args: map[string]any{"mode": "pipe", "command": "false"}},
+		Verify: verify.Spec{},
+		OnFail: plan.OnFailSpec{Strategy: "abort"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	if out.Execution.Action.Error == nil || out.Execution.Action.Error.Code != "SIMULATED_FAILURE" {
+		t.Fatalf("expected simulated action failure, got %#v", out.Execution.Action)
+	}
+	if out.Execution.Step.Status != plan.StepFailed {
+		t.Fatalf("expected failed step after action failure without verify checks, got %#v", out.Execution.Step)
+	}
+	if out.Session.Phase != session.PhaseFailed {
+		t.Fatalf("expected failed session after action failure without verify checks, got %#v", out.Session)
+	}
+	if out.UpdatedTask == nil || out.UpdatedTask.Status != task.StatusFailed {
+		t.Fatalf("expected failed task after action failure without verify checks, got %#v", out.UpdatedTask)
+	}
+	if out.UpdatedPlan == nil || out.UpdatedPlan.Status != plan.StatusFailed {
+		t.Fatalf("expected failed plan after action failure without verify checks, got %#v", out.UpdatedPlan)
+	}
+}

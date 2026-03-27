@@ -25,6 +25,8 @@ const (
 	AggregateMetadataKeyExpected       = "aggregate_expected"
 	AggregateMetadataKeyTitle          = "aggregate_title"
 	AggregateMetadataKeyMaxConcurrency = "aggregate_max_concurrency"
+	AggregateMetadataKeyTargetStatus   = "aggregate_target_status"
+	AggregateMetadataKeyTargetReason   = "aggregate_target_reason"
 )
 
 type AggregateTargetResult struct {
@@ -90,6 +92,35 @@ func ApplyAggregateConcurrencyMetadata(metadata map[string]any, maxConcurrency i
 	return metadata
 }
 
+func ApplyAggregateTargetOutcomeMetadata(metadata map[string]any, status plan.StepStatus, reason string) map[string]any {
+	cloned := cloneAggregateMetadataMap(metadata)
+	if status != "" {
+		cloned[AggregateMetadataKeyTargetStatus] = string(status)
+	} else {
+		delete(cloned, AggregateMetadataKeyTargetStatus)
+	}
+	if reason != "" {
+		cloned[AggregateMetadataKeyTargetReason] = reason
+	} else {
+		delete(cloned, AggregateMetadataKeyTargetReason)
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+func cloneAggregateMetadataMap(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func AggregateRefFromMetadata(metadata map[string]any) (aggregateID string, scope AggregateScope, ok bool) {
 	if len(metadata) == 0 {
 		return "", "", false
@@ -120,6 +151,18 @@ func AggregateMaxConcurrencyFromMetadata(metadata map[string]any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func AggregateTargetOutcomeFromMetadata(metadata map[string]any) (plan.StepStatus, string, bool) {
+	if len(metadata) == 0 {
+		return "", "", false
+	}
+	statusValue, _ := metadata[AggregateMetadataKeyTargetStatus].(string)
+	if statusValue == "" {
+		return "", "", false
+	}
+	reason, _ := metadata[AggregateMetadataKeyTargetReason].(string)
+	return plan.StepStatus(statusValue), reason, true
 }
 
 func AggregateResultsFromPlan(spec plan.Spec) []AggregateResult {
@@ -157,15 +200,23 @@ func AggregateResultsFromSteps(steps []plan.StepSpec) []AggregateResult {
 			order = append(order, aggregateID)
 		}
 
+		targetStatus := step.Status
+		targetReason := step.Reason
+		if metadataStatus, metadataReason, ok := AggregateTargetOutcomeFromMetadata(step.Metadata); ok {
+			targetStatus = metadataStatus
+			if metadataReason != "" || targetReason == "" {
+				targetReason = metadataReason
+			}
+		}
 		target, _ := TargetFromStep(step)
 		bucket.result.Targets = append(bucket.result.Targets, AggregateTargetResult{
 			Target:  target,
 			StepID:  step.StepID,
-			Status:  step.Status,
+			Status:  targetStatus,
 			Attempt: step.Attempt,
-			Reason:  step.Reason,
+			Reason:  targetReason,
 		})
-		switch step.Status {
+		switch targetStatus {
 		case plan.StepCompleted:
 			bucket.result.Completed++
 		case plan.StepFailed:

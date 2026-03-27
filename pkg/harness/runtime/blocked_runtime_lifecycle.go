@@ -28,6 +28,28 @@ type BlockedRuntimeAbortRequest struct {
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
+type ConfirmationRequest struct {
+	Subject    execution.BlockedRuntimeSubject `json:"subject,omitempty"`
+	WaitingFor string                          `json:"waiting_for,omitempty"`
+	Metadata   map[string]any                  `json:"metadata,omitempty"`
+}
+
+func (s *Service) RequestConfirmation(ctx context.Context, sessionID string, request ConfirmationRequest) (execution.BlockedRuntimeRecord, session.State, error) {
+	waitingFor := request.WaitingFor
+	if waitingFor == "" {
+		waitingFor = "human_confirmation"
+	}
+	return s.CreateBlockedRuntime(ctx, sessionID, BlockedRuntimeRequest{
+		Kind:    execution.BlockedRuntimeConfirmation,
+		Subject: cloneBlockedRuntimeSubject(request.Subject),
+		Condition: execution.BlockedRuntimeCondition{
+			Kind:       execution.BlockedRuntimeConditionConfirmation,
+			WaitingFor: waitingFor,
+		},
+		Metadata: cloneAnyMap(request.Metadata),
+	})
+}
+
 func (s *Service) CreateBlockedRuntime(ctx context.Context, sessionID string, request BlockedRuntimeRequest) (execution.BlockedRuntimeRecord, session.State, error) {
 	if err := validateBlockedRuntimeRequest(request); err != nil {
 		return execution.BlockedRuntimeRecord{}, session.State{}, err
@@ -125,6 +147,9 @@ func (s *Service) RespondBlockedRuntime(ctx context.Context, blockedRuntimeID st
 		}
 		if rec.Status != execution.BlockedRuntimePending {
 			return ErrBlockedRuntimeNotPending
+		}
+		if err := validateBlockedRuntimeResponseForKind(rec.Kind, response); err != nil {
+			return err
 		}
 		rec.Status = response.Status
 		rec.UpdatedAt = now
@@ -272,6 +297,25 @@ func validateBlockedRuntimeResponse(response BlockedRuntimeResponse) error {
 	default:
 		return ErrInvalidBlockedRuntimeResponse
 	}
+}
+
+func validateBlockedRuntimeResponseForKind(kind execution.BlockedRuntimeKind, response BlockedRuntimeResponse) error {
+	if err := validateBlockedRuntimeResponse(response); err != nil {
+		return err
+	}
+	switch kind {
+	case execution.BlockedRuntimeConfirmation:
+		if response.Status != execution.BlockedRuntimeConfirmed {
+			return ErrInvalidBlockedRuntimeResponse
+		}
+	case execution.BlockedRuntimeExternal, execution.BlockedRuntimeInteractive:
+		if response.Status != execution.BlockedRuntimeApproved && response.Status != execution.BlockedRuntimeRejected {
+			return ErrInvalidBlockedRuntimeResponse
+		}
+	default:
+		return ErrInvalidBlockedRuntimeResponse
+	}
+	return nil
 }
 
 func validateBlockedRuntimeSessionState(st session.State) error {

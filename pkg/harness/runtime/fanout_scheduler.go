@@ -20,15 +20,18 @@ import (
 type fanoutRound struct {
 	AggregateID    string
 	AnchorStepID   string
+	AllowSingle    bool
 	MaxConcurrency int
 	Steps          []plan.StepSpec
 }
 
 type fanoutPreparedStep struct {
-	Original plan.StepSpec
-	Step     plan.StepSpec
-	Decision permission.Decision
-	Attempt  execution.Attempt
+	Original         plan.StepSpec
+	Step             plan.StepSpec
+	Decision         permission.Decision
+	Attempt          execution.Attempt
+	ConcurrencyGroup string
+	ConcurrencyLimit int
 }
 
 type fanoutStepOutcome struct {
@@ -60,11 +63,7 @@ func fanoutRoundForSelection(spec plan.Spec, selected plan.StepSpec, budgets Loo
 	if !ok || aggregateID == "" || scope != execution.AggregateScopeTargetFanout {
 		return fanoutRound{}, false
 	}
-	maxConcurrency, ok := execution.AggregateMaxConcurrencyFromMetadata(selected.Metadata)
-	if !ok || maxConcurrency <= 1 {
-		return fanoutRound{}, false
-	}
-	steps := make([]plan.StepSpec, 0, maxConcurrency)
+	steps := make([]plan.StepSpec, 0)
 	for _, step := range spec.Steps {
 		id, otherScope, ok := execution.AggregateRefFromMetadata(step.Metadata)
 		if !ok || id != aggregateID || otherScope != execution.AggregateScopeTargetFanout {
@@ -78,9 +77,14 @@ func fanoutRoundForSelection(spec plan.Spec, selected plan.StepSpec, budgets Loo
 	if len(steps) <= 1 {
 		return fanoutRound{}, false
 	}
+	maxConcurrency := fanoutRoundMaxConcurrency(selected, len(steps))
+	if maxConcurrency <= 1 {
+		return fanoutRound{}, false
+	}
 	return fanoutRound{
 		AggregateID:    aggregateID,
 		AnchorStepID:   selected.StepID,
+		AllowSingle:    false,
 		MaxConcurrency: maxConcurrency,
 		Steps:          steps,
 	}, true
@@ -131,16 +135,18 @@ func (s *Service) runFanoutRound(ctx context.Context, sessionID, leaseID string,
 		return fanoutRoundOutput{}, false, err
 	}
 
-	workingState, initialTransitions, initialEvents := s.advanceStateToExecuteForFanout(state, round.AnchorStepID)
-	prepared, ok, err := s.prepareFanoutRound(ctx, sessionID, workingState, round)
+	preparationState, _, _ := s.advanceStateToExecuteForFanout(state, round.AnchorStepID)
+	prepared, ok, err := s.prepareFanoutRound(ctx, sessionID, preparationState, round)
 	if err != nil {
 		return fanoutRoundOutput{}, false, err
 	}
 	if !ok {
 		return fanoutRoundOutput{}, false, nil
 	}
+	anchorStepID := fanoutEffectiveAnchorStepID(round, prepared)
+	workingState, initialTransitions, initialEvents := s.advanceStateToExecuteForFanout(state, anchorStepID)
 
-	if _, err := s.markSessionInFlight(ctx, sessionID, leaseID, round.AnchorStepID); err != nil {
+	if _, err := s.markSessionInFlight(ctx, sessionID, leaseID, anchorStepID); err != nil {
 		return fanoutRoundOutput{}, false, err
 	}
 	currentState, err := s.GetSession(sessionID)
@@ -208,6 +214,7 @@ func (s *Service) prepareFanoutRound(ctx context.Context, sessionID string, work
 	prepared := make([]fanoutPreparedStep, 0, len(round.Steps))
 	for _, original := range round.Steps {
 		step := annotateStepFromSession(workingState, original)
+		step = cloneStepForExecution(step)
 		if _, hasProgram := execution.ProgramFromStep(step); hasProgram {
 			return nil, false, ErrProgramStepNotCompiled
 		}
@@ -229,6 +236,9 @@ func (s *Service) prepareFanoutRound(ctx context.Context, sessionID string, work
 		if decision.Action == permission.Ask {
 			reusableDecision, _ := s.findReusableApprovalDecision(ctx, stepState, resolved, decision)
 			if reusableDecision == nil {
+				if round.AllowSingle {
+					continue
+				}
 				return nil, false, nil
 			}
 			decision = *reusableDecision
@@ -245,13 +255,19 @@ func (s *Service) prepareFanoutRound(ctx context.Context, sessionID string, work
 		attempt.CycleID = ensureExecutionCycleID(&resolved, attempt.CycleID)
 		applyExecutionFactMetadata(&attempt.Metadata, resolved.Metadata)
 		prepared = append(prepared, fanoutPreparedStep{
-			Original: original,
-			Step:     resolved,
-			Decision: decision,
-			Attempt:  attempt,
+			Original:         original,
+			Step:             resolved,
+			Decision:         decision,
+			Attempt:          attempt,
+			ConcurrencyGroup: fanoutPreparedStepConcurrencyGroup(resolved),
+			ConcurrencyLimit: fanoutPreparedStepConcurrencyLimit(resolved),
 		})
 	}
-	if len(prepared) <= 1 {
+	minPrepared := 2
+	if round.AllowSingle {
+		minPrepared = 1
+	}
+	if len(prepared) < minPrepared {
 		return nil, false, nil
 	}
 	return prepared, true, nil
@@ -261,20 +277,57 @@ func (s *Service) executeFanoutPreparedSteps(ctx context.Context, workingState s
 	outcomes := make([]fanoutStepOutcome, len(prepared))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrency)
+	groupSems := make(map[string]chan struct{}, len(prepared))
+	for i := range prepared {
+		group := prepared[i].ConcurrencyGroup
+		limit := prepared[i].ConcurrencyLimit
+		if group == "" || limit <= 0 {
+			continue
+		}
+		if _, ok := groupSems[group]; !ok {
+			groupSems[group] = make(chan struct{}, limit)
+		}
+	}
 
 	for i := range prepared {
 		preparedStep := prepared[i]
-		sem <- struct{}{}
+		groupSem := groupSems[preparedStep.ConcurrencyGroup]
 		wg.Add(1)
-		go func(index int, item fanoutPreparedStep) {
+		go func(index int, item fanoutPreparedStep, groupSem chan struct{}) {
 			defer wg.Done()
+			if groupSem != nil {
+				groupSem <- struct{}{}
+				defer func() { <-groupSem }()
+			}
+			sem <- struct{}{}
 			defer func() { <-sem }()
 			outcomes[index] = s.executeFanoutPreparedStep(ctx, workingState, item)
-		}(i, preparedStep)
+		}(i, preparedStep, groupSem)
 	}
 
 	wg.Wait()
 	return outcomes
+}
+
+func fanoutPreparedStepConcurrencyGroup(step plan.StepSpec) string {
+	if aggregateID, scope, ok := execution.AggregateRefFromMetadata(step.Metadata); ok && scope == execution.AggregateScopeTargetFanout && aggregateID != "" {
+		return aggregateID
+	}
+	return step.StepID
+}
+
+func fanoutEffectiveAnchorStepID(round fanoutRound, prepared []fanoutPreparedStep) string {
+	if round.AnchorStepID != "" {
+		for _, item := range prepared {
+			if item.Original.StepID == round.AnchorStepID {
+				return round.AnchorStepID
+			}
+		}
+	}
+	if len(prepared) == 0 {
+		return round.AnchorStepID
+	}
+	return prepared[0].Original.StepID
 }
 
 func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState session.State, prepared fanoutPreparedStep) fanoutStepOutcome {
@@ -343,7 +396,7 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 		StartedAt:   s.nowMilli(),
 	}
 	applyExecutionFactMetadata(&actionRecord.Metadata, step.Metadata)
-	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, workingState, step)
+	resolution, actResult, actErr := s.resolveCapabilityAndInvoke(ctx, workingState, step, prepared.Attempt, actionRecord)
 	if resolution != nil {
 		snapshot := resolution.Snapshot
 		snapshot.Scope = capability.SnapshotScopeAction
@@ -426,41 +479,48 @@ func (s *Service) persistFanoutRound(ctx context.Context, sessionID, leaseID str
 	verifyState := workingState
 	verifyState.Phase = session.PhaseVerify
 
-	retryFailures := 0
-	lastAggregateIndex := -1
+	aggregateFinalIndex := map[string]int{}
+	aggregateFinalOrder := make([]string, 0)
 	for i := range outcomes {
 		if outcomes[i].ActionRecord == nil {
 			outcomes[i] = finalizeFanoutDenyOutcome(outcomes[i], s.nowMilli())
 			continue
 		}
 		if programVerifyScopeFromStep(outcomes[i].Step) == execution.VerificationScopeAggregate {
-			lastAggregateIndex = i
-			outcomes[i] = s.finalizeFanoutAggregatePendingOutcome(outcomes[i], s.nowMilli())
-			if !outcomes[i].Verified {
-				retryFailures++
+			aggregateID, _, _ := execution.AggregateRefFromMetadata(outcomes[i].Step.Metadata)
+			if aggregateID != "" {
+				if _, ok := aggregateFinalIndex[aggregateID]; !ok {
+					aggregateFinalOrder = append(aggregateFinalOrder, aggregateID)
+				}
+				aggregateFinalIndex[aggregateID] = i
 			}
+			outcomes[i] = s.finalizeFanoutAggregatePendingOutcome(outcomes[i], s.nowMilli())
 			continue
 		}
 		outcomes[i] = s.finalizeFanoutVerifiedOutcome(ctx, verifyState, outcomes[i], outcomes[i].Execution.Action, s.nowMilli())
-		if !outcomes[i].Verified {
-			retryFailures++
-		}
 	}
 
-	if lastAggregateIndex >= 0 {
+	if len(aggregateFinalOrder) > 0 {
 		provisional := replacePlanSteps(latest, fanoutOutcomeSteps(outcomes))
-		outcomes[lastAggregateIndex] = s.finalizeFanoutAggregateOutcome(ctx, verifyState, provisional, outcomes[lastAggregateIndex], s.nowMilli())
-		if !outcomes[lastAggregateIndex].Verified {
-			retryFailures++
+		for _, aggregateID := range aggregateFinalOrder {
+			index := aggregateFinalIndex[aggregateID]
+			resolveAt := s.nowMilli()
+			outcomes[index] = s.finalizeFanoutAggregateOutcome(ctx, verifyState, provisional, outcomes[index], resolveAt)
+			if outcomes[index].Verified {
+				outcomes = finalizeSuccessfulAggregateSiblingOutcomes(outcomes, aggregateID, outcomes[index], resolveAt)
+			}
+			provisional = replacePlanSteps(provisional, fanoutOutcomeSteps(outcomes))
 		}
 	}
 
+	retryFailures := fanoutRetryFailureCount(outcomes)
 	finalPlanSpec := replacePlanSteps(latest, fanoutOutcomeSteps(outcomes))
 	outcome := planExecutionOutcomeForSpec(finalPlanSpec, s.LoopBudgets)
 	transitionState := verifyState
 	transitionState.RetryCount += retryFailures
-	anchorStep := outcomes[len(outcomes)-1].Step
-	next := transitionForPlanOutcome(transitionState, anchorStep, outcome)
+	transitionIndex := fanoutTransitionOutcomeIndex(latest, outcomes, s.LoopBudgets)
+	transitionStep := outcomes[transitionIndex].Step
+	next := transitionForPlanOutcome(transitionState, transitionStep, outcome)
 	finalState := ApplyTransition(transitionState, next)
 	finalState.ExecutionState = session.ExecutionIdle
 	finalState.InFlightStepID = ""
@@ -469,11 +529,11 @@ func (s *Service) persistFanoutRound(ctx context.Context, sessionID, leaseID str
 		Type:        audit.EventStateChanged,
 		SessionID:   sessionID,
 		TaskID:      finalState.TaskID,
-		StepID:      anchorStep.StepID,
-		AttemptID:   outcomes[len(outcomes)-1].Attempt.AttemptID,
-		CycleID:     outcomes[len(outcomes)-1].Attempt.CycleID,
-		TraceID:     outcomes[len(outcomes)-1].Attempt.TraceID,
-		CausationID: outcomes[len(outcomes)-1].Attempt.AttemptID,
+		StepID:      transitionStep.StepID,
+		AttemptID:   outcomes[transitionIndex].Attempt.AttemptID,
+		CycleID:     outcomes[transitionIndex].Attempt.CycleID,
+		TraceID:     outcomes[transitionIndex].Attempt.TraceID,
+		CausationID: outcomes[transitionIndex].Attempt.AttemptID,
 		Payload: map[string]any{
 			"from":   next.From,
 			"to":     next.To,
@@ -481,7 +541,7 @@ func (s *Service) persistFanoutRound(ctx context.Context, sessionID, leaseID str
 		},
 		CreatedAt: s.nowMilli(),
 	}
-	outcomes[len(outcomes)-1].Events = append(outcomes[len(outcomes)-1].Events, finalEvent)
+	outcomes[transitionIndex].Events = append(outcomes[transitionIndex].Events, finalEvent)
 
 	var updatedPlan *plan.Spec
 	var updatedTask *task.Record
@@ -548,7 +608,7 @@ func (s *Service) persistFanoutRound(ctx context.Context, sessionID, leaseID str
 		s.emitEventsBestEffort(ctx, fanoutAllEvents(initialEvents, outcomes))
 	}
 
-	outputs := fanoutStepRunOutputs(outcomes, finalState, updatedPlan, updatedTask, initialTransitions, next)
+	outputs := fanoutStepRunOutputs(outcomes, finalState, updatedPlan, updatedTask, initialTransitions, next, transitionIndex)
 	return finalState, updatedPlan, updatedTask, fanoutAllEvents(initialEvents, outcomes), outputs, nil
 }
 
@@ -609,6 +669,18 @@ func (s *Service) finalizeFanoutVerifiedOutcome(ctx context.Context, verifyState
 	out.Events = append(out.Events, verifyEvent)
 
 	verified := verifyErr == nil && verifyResult.Success
+	if out.ActionFailed {
+		verified = false
+		if verificationRecord.Result.Success {
+			verificationRecord.Result.Success = false
+		}
+		if verificationRecord.Result.Reason == "" {
+			verificationRecord.Result.Reason = actionErrorMessage(out.Execution.Action)
+		}
+		verifyResult = verificationRecord.Result
+		verifyEvent.Payload["success"] = false
+		verifyEvent.Payload["reason"] = verifyResult.Reason
+	}
 	if verified {
 		verificationRecord.Status = execution.VerificationCompleted
 		out.Step.Status = plan.StepCompleted
@@ -689,6 +761,11 @@ func (s *Service) finalizeFanoutAggregatePendingOutcome(out fanoutStepOutcome, n
 		verificationRecord.Status = execution.VerificationFailed
 		out.Step.Status = plan.StepFailed
 	}
+	targetReason := ""
+	if !rawSuccess {
+		targetReason = verifyResult.Reason
+	}
+	out.Step.Metadata = execution.ApplyAggregateTargetOutcomeMetadata(out.Step.Metadata, out.Step.Status, targetReason)
 	stepNext := nextTransitionAfterVerification(session.State{Phase: session.PhaseVerify}, out.Step, out.Execution.Policy.Decision, verifyResult.Success, s.LoopBudgets)
 	applyStepRetryBackoff(&out.Step, stepNext, now)
 	out.Step.FinishedAt = now
@@ -736,13 +813,6 @@ func (s *Service) finalizeFanoutAggregateOutcome(ctx context.Context, verifyStat
 	verifyInput := actionResultFromAggregate(aggregate)
 	verifyResult, verifyErr := s.EvaluateVerify(ctx, *spec, verifyInput, verifyState)
 	verified := verifyErr == nil && verifyResult.Success
-	if !out.Execution.Action.OK {
-		verified = false
-		if verifyResult.Reason == "" {
-			verifyResult.Reason = actionErrorMessage(out.Execution.Action)
-		}
-		verifyResult.Success = false
-	}
 	out.VerificationRecord.Result = verifyResult
 	if verified {
 		out.VerificationRecord.Status = execution.VerificationCompleted
@@ -773,6 +843,47 @@ func (s *Service) finalizeFanoutAggregateOutcome(ctx context.Context, verifyStat
 		last.Payload["reason"] = verifyResult.Reason
 	}
 	out.DurationMS = now - out.Attempt.StartedAt
+	return out
+}
+
+func finalizeSuccessfulAggregateSiblingOutcomes(outcomes []fanoutStepOutcome, aggregateID string, resolved fanoutStepOutcome, now int64) []fanoutStepOutcome {
+	for i := range outcomes {
+		if !fanoutAggregateOutcomeMatches(outcomes[i], aggregateID) {
+			continue
+		}
+		outcomes[i] = finalizeSuccessfulAggregateSiblingOutcome(outcomes[i], resolved, now)
+	}
+	return outcomes
+}
+
+func fanoutAggregateOutcomeMatches(out fanoutStepOutcome, aggregateID string) bool {
+	if programVerifyScopeFromStep(out.Step) != execution.VerificationScopeAggregate {
+		return false
+	}
+	id, _, ok := execution.AggregateRefFromMetadata(out.Step.Metadata)
+	return ok && id == aggregateID
+}
+
+func finalizeSuccessfulAggregateSiblingOutcome(out fanoutStepOutcome, resolved fanoutStepOutcome, now int64) fanoutStepOutcome {
+	out.Step.Verify = resolved.Step.Verify
+	out.Step.Status = plan.StepCompleted
+	out.Step.Reason = ""
+	out.Step.FinishedAt = now
+	out.Execution.Step = out.Step
+	out.Execution.Verify = resolved.Execution.Verify
+	if out.ActionFailed || out.VerifyFailed || out.Attempt.Status == execution.AttemptFailed {
+		out.Attempt.Step = out.Step
+		out.Attempt.Status = execution.AttemptCompleted
+		out.Attempt.FinishedAt = now
+		if out.VerificationRecord != nil {
+			out.VerificationRecord.Spec = resolved.Step.Verify
+			out.VerificationRecord.Status = execution.VerificationCompleted
+			out.VerificationRecord.Result = resolved.Execution.Verify
+			out.VerificationRecord.FinishedAt = now
+		}
+	}
+	out.Verified = true
+	out.VerifyFailed = false
 	return out
 }
 
@@ -848,14 +959,69 @@ func fanoutAllEvents(initial []audit.Event, outcomes []fanoutStepOutcome) []audi
 	return events
 }
 
-func fanoutStepRunOutputs(outcomes []fanoutStepOutcome, finalState session.State, updatedPlan *plan.Spec, updatedTask *task.Record, initialTransitions []TransitionDecision, finalTransition TransitionDecision) []StepRunOutput {
+func fanoutRetryFailureCount(outcomes []fanoutStepOutcome) int {
+	count := 0
+	for _, outcome := range outcomes {
+		if outcome.ActionRecord == nil {
+			continue
+		}
+		if outcome.Step.Status == plan.StepFailed {
+			count++
+		}
+	}
+	return count
+}
+
+func fanoutTransitionOutcomeIndex(latest plan.Spec, outcomes []fanoutStepOutcome, budgets LoopBudgets) int {
+	if len(outcomes) == 0 {
+		return 0
+	}
+	finalPlan := replacePlanSteps(latest, fanoutOutcomeSteps(outcomes))
+	finalOutcome := planExecutionOutcomeForSpec(finalPlan, budgets)
+	if finalOutcome.Fail && finalOutcome.Reason == "fan-out aggregate failed" {
+		exhausted := exhaustedFailedAggregateIDs(finalPlan, budgets)
+		for i := len(outcomes) - 1; i >= 0; i-- {
+			aggregateID, _, ok := execution.AggregateRefFromMetadata(outcomes[i].Step.Metadata)
+			if !ok {
+				continue
+			}
+			if _, ok := exhausted[aggregateID]; ok {
+				return i
+			}
+		}
+	}
+	provisional := latest
+	for i := range outcomes {
+		provisional = replacePlanSteps(provisional, []plan.StepSpec{outcomes[i].Step})
+		if planExecutionOutcomeForSpec(provisional, budgets).Fail {
+			return i
+		}
+	}
+	return len(outcomes) - 1
+}
+
+func exhaustedFailedAggregateIDs(spec plan.Spec, budgets LoopBudgets) map[string]struct{} {
+	aggregateIDs := map[string]struct{}{}
+	for _, aggregate := range execution.AggregateResultsFromPlan(spec) {
+		if aggregate.Status != execution.AggregateStatusFailed {
+			continue
+		}
+		if !aggregateExhaustedAsFailed(spec, aggregate.AggregateID, budgets) {
+			continue
+		}
+		aggregateIDs[aggregate.AggregateID] = struct{}{}
+	}
+	return aggregateIDs
+}
+
+func fanoutStepRunOutputs(outcomes []fanoutStepOutcome, finalState session.State, updatedPlan *plan.Spec, updatedTask *task.Record, initialTransitions []TransitionDecision, finalTransition TransitionDecision, finalTransitionIndex int) []StepRunOutput {
 	outputs := make([]StepRunOutput, 0, len(outcomes))
 	for i := range outcomes {
 		transitions := []TransitionDecision{}
 		if i == 0 {
 			transitions = append(transitions, initialTransitions...)
 		}
-		if i == len(outcomes)-1 {
+		if i == finalTransitionIndex {
 			transitions = append(transitions, finalTransition)
 		}
 		stepOut := StepRunOutput{
@@ -864,7 +1030,7 @@ func fanoutStepRunOutputs(outcomes []fanoutStepOutcome, finalState session.State
 			Transitions: transitions,
 			Events:      outcomes[i].Events,
 		}
-		if i == len(outcomes)-1 {
+		if i == finalTransitionIndex {
 			stepOut.UpdatedPlan = updatedPlan
 			stepOut.UpdatedTask = updatedTask
 		}

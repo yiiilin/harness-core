@@ -48,6 +48,7 @@ type ApprovalResponse = approval.Response
 type ApprovalRecord = approval.Record
 type ApprovalReply = approval.Reply
 type ApprovalStatus = approval.Status
+type SessionApprovalRequest = hruntime.SessionApprovalRequest
 
 type CapabilitySnapshot = capability.Snapshot
 type CapabilityResolution = capability.Resolution
@@ -88,12 +89,17 @@ type ExecutionAttachmentInputKind = execution.AttachmentInputKind
 type ExecutionAttachmentMaterialization = execution.AttachmentMaterialization
 type ExecutionArtifactRef = execution.ArtifactRef
 type ExecutionAttachmentRef = execution.AttachmentRef
+type ExecutionRuntimeHandleRef = execution.RuntimeHandleRef
 type ExecutionOutputRef = execution.OutputRef
 type ExecutionOutputRefKind = execution.OutputRefKind
 type ExecutionProgram = execution.Program
 type ExecutionProgramNode = execution.ProgramNode
 type ExecutionProgramInputBinding = execution.ProgramInputBinding
 type ExecutionProgramInputBindingKind = execution.ProgramInputBindingKind
+type ExecutionProgramLineage = execution.ProgramLineage
+type ExecutionApprovalLinkage = execution.ApprovalLinkage
+type ExecutionBlockedRuntimeLinkage = execution.BlockedRuntimeLinkage
+type ExecutionRuntimeHandleLineage = execution.RuntimeHandleLineage
 type ExecutionVerificationScope = execution.VerificationScope
 type ExecutionTargetSlice = execution.TargetSlice
 type ExecutionBlockedRuntimeProjection = execution.BlockedRuntimeProjection
@@ -139,6 +145,7 @@ type AbortOutput = hruntime.AbortOutput
 type BlockedRuntimeRequest = hruntime.BlockedRuntimeRequest
 type BlockedRuntimeResponse = hruntime.BlockedRuntimeResponse
 type BlockedRuntimeAbortRequest = hruntime.BlockedRuntimeAbortRequest
+type ConfirmationRequest = hruntime.ConfirmationRequest
 type InteractiveStartRequest = hruntime.InteractiveStartRequest
 type InteractiveStartResult = hruntime.InteractiveStartResult
 type InteractiveReopenRequest = hruntime.InteractiveReopenRequest
@@ -245,6 +252,12 @@ const (
 	ExecutionInteractiveOperationWrite  = execution.InteractiveOperationWrite
 	ExecutionInteractiveOperationClose  = execution.InteractiveOperationClose
 
+	ProgramInteractiveStartToolName  = hruntime.ProgramInteractiveStartToolName
+	ProgramInteractiveViewToolName   = hruntime.ProgramInteractiveViewToolName
+	ProgramInteractiveWriteToolName  = hruntime.ProgramInteractiveWriteToolName
+	ProgramInteractiveVerifyToolName = hruntime.ProgramInteractiveVerifyToolName
+	ProgramInteractiveCloseToolName  = hruntime.ProgramInteractiveCloseToolName
+
 	ExecutionAttachmentInputText           = execution.AttachmentInputText
 	ExecutionAttachmentInputBytes          = execution.AttachmentInputBytes
 	ExecutionAttachmentInputArtifactRef    = execution.AttachmentInputArtifactRef
@@ -257,12 +270,13 @@ const (
 	ExecutionOutputRefArtifact   = execution.OutputRefArtifact
 	ExecutionOutputRefAttachment = execution.OutputRefAttachment
 
-	ExecutionProgramInputBindingLiteral    = execution.ProgramInputBindingLiteral
-	ExecutionProgramInputBindingOutputRef  = execution.ProgramInputBindingOutputRef
-	ExecutionProgramInputBindingAttachment = execution.ProgramInputBindingAttachment
-	ExecutionVerificationScopeStep         = execution.VerificationScopeStep
-	ExecutionVerificationScopeTarget       = execution.VerificationScopeTarget
-	ExecutionVerificationScopeAggregate    = execution.VerificationScopeAggregate
+	ExecutionProgramInputBindingLiteral          = execution.ProgramInputBindingLiteral
+	ExecutionProgramInputBindingOutputRef        = execution.ProgramInputBindingOutputRef
+	ExecutionProgramInputBindingAttachment       = execution.ProgramInputBindingAttachment
+	ExecutionProgramInputBindingRuntimeHandleRef = execution.ProgramInputBindingRuntimeHandleRef
+	ExecutionVerificationScopeStep               = execution.VerificationScopeStep
+	ExecutionVerificationScopeTarget             = execution.VerificationScopeTarget
+	ExecutionVerificationScopeAggregate          = execution.VerificationScopeAggregate
 
 	ExecutionBlockedRuntimeWaitStep   = execution.BlockedRuntimeWaitStep
 	ExecutionBlockedRuntimeWaitAction = execution.BlockedRuntimeWaitAction

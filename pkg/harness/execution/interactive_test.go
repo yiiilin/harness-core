@@ -11,6 +11,8 @@ func TestInteractiveRuntimeFromHandle(t *testing.T) {
 	handle := execution.RuntimeHandle{
 		HandleID:  "hdl_interactive",
 		SessionID: "session-1",
+		AttemptID: "attempt-1",
+		CycleID:   "cycle-1",
 		Status:    execution.RuntimeHandleActive,
 		Metadata: map[string]any{
 			execution.InteractiveMetadataKeyEnabled:             true,
@@ -28,6 +30,9 @@ func TestInteractiveRuntimeFromHandle(t *testing.T) {
 			execution.InteractiveMetadataKeyLastOperationOffset: int64(29),
 			execution.TargetMetadataKeyID:                       "target-1",
 			execution.TargetMetadataKeyKind:                     "host",
+			execution.ProgramMetadataKeyID:                      "prog_interactive",
+			execution.ProgramMetadataKeyGroupID:                 "group_interactive",
+			execution.ProgramMetadataKeyNodeID:                  "node_interactive",
 		},
 	}
 
@@ -55,6 +60,18 @@ func TestInteractiveRuntimeFromHandle(t *testing.T) {
 	}
 	if runtime.Target.TargetID != "target-1" || runtime.Target.Kind != "host" {
 		t.Fatalf("expected target ref, got %#v", runtime.Target)
+	}
+	if runtime.Lineage == nil {
+		t.Fatalf("expected runtime handle lineage, got %#v", runtime)
+	}
+	if runtime.Lineage.HandleID != "hdl_interactive" || runtime.Lineage.AttemptID != "attempt-1" || runtime.Lineage.CycleID != "cycle-1" {
+		t.Fatalf("unexpected runtime handle identity lineage: %#v", runtime.Lineage)
+	}
+	if runtime.Lineage.Target.TargetID != "target-1" || runtime.Lineage.Target.Kind != "host" {
+		t.Fatalf("expected runtime handle target lineage, got %#v", runtime.Lineage)
+	}
+	if runtime.Lineage.Program == nil || runtime.Lineage.Program.ProgramID != "prog_interactive" || runtime.Lineage.Program.GroupID != "group_interactive" || runtime.Lineage.Program.NodeID != "node_interactive" {
+		t.Fatalf("expected runtime handle program lineage, got %#v", runtime.Lineage)
 	}
 }
 
