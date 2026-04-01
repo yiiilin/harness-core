@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+- Dual-channel runtime action results with raw/full output preserved alongside inline-trimmed output metadata
+
+### Fixed
+- Program and fanout output bindings now prefer raw action results so downstream aggregation does not lose trimmed branch tails
+- Runtime verification, artifact persistence, and runtime-handle extraction now consume preserved raw action results instead of only inline-trimmed output
+
 ## v1.0.2 - 2026-03-24
 
 ### Added

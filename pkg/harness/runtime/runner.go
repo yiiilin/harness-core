@@ -430,7 +430,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		"tool_version":           toolVersion,
 		"capability_snapshot_id": snapshotID,
 	}, actionRecord.ActionID, attemptRecord.AttemptID)
-	actResult = trimActionResultToBudget(actResult, s.LoopBudgets.MaxToolOutputChars)
+	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
+	rawResult := rawPreferredActionResult(actResult)
 	execResult.Action = actResult
 	actionRecord.Result = actResult
 	actionRecord.FinishedAt = s.nowMilli()
@@ -456,22 +457,18 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			TraceID:    attemptRecord.TraceID,
 			Name:       "action.result",
 			Kind:       "action_result",
-			Payload: map[string]any{
-				"data":  actResult.Data,
-				"meta":  actResult.Meta,
-				"error": actResult.Error,
-			},
-			Metadata:  executionFactMetadata(step.Metadata),
-			CreatedAt: s.nowMilli(),
+			Payload:    actionResultPayloadForArtifact(actResult),
+			Metadata:   executionFactMetadata(step.Metadata),
+			CreatedAt:  s.nowMilli(),
 		})
 	}
-	runtimeHandles = extractRuntimeHandles(actResult, attemptRecord, actionRecord, s.nowMilli())
+	runtimeHandles = extractRuntimeHandles(rawResult, attemptRecord, actionRecord, s.nowMilli())
 	applyExecutionFactMetadataToHandles(runtimeHandles, step.Metadata)
 
 	state.Phase = session.PhaseVerify
 	verifyScope := programVerifyScopeFromStep(step)
 	verifySpec := step.Verify
-	verifyInput := actResult
+	verifyInput := rawResult
 	rawActionSuccess := actErr == nil && actResult.OK
 	aggregateVerifyReady := false
 	if aggregateSpec, aggregateResult, ready, err := s.aggregateVerifyInputForStep(ctx, sessionID, step, rawActionSuccess); err != nil {
@@ -738,8 +735,9 @@ func updateTaskForTerminalInStore(store task.Store, state session.State) (*task.
 }
 
 func actionErrorMessage(result action.Result) string {
-	if result.Error != nil && result.Error.Message != "" {
-		return result.Error.Message
+	preferred := rawPreferredActionResult(result)
+	if preferred.Error != nil && preferred.Error.Message != "" {
+		return preferred.Error.Message
 	}
 	return "tool failed"
 }

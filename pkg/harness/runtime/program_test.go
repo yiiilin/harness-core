@@ -3087,6 +3087,114 @@ func TestRunProgramResolvesTargetScopedOutputRefsPerTarget(t *testing.T) {
 	}
 }
 
+func TestRunProgramResolvesTargetScopedOutputRefsFromRawActionResultsWhenInlineTrimmed(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(tool.Definition{ToolName: "demo.target-long", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, targetLongOutputHandler{
+		outputs: map[string]string{
+			"host-a": "host-a-" + strings.Repeat("x", 12) + "-tail-a",
+			"host-b": "host-b-" + strings.Repeat("y", 12) + "-tail-b",
+		},
+	})
+	tools.Register(tool.Definition{ToolName: "demo.inspect-arg", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, inspectArgHandler{})
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 8,
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "program target raw refs", "resolve target scoped refs from raw action output")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "resolve target scoped refs from raw action output"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	expected := map[string]string{
+		"host-a": "host-a-" + strings.Repeat("x", 12) + "-tail-a",
+		"host-b": "host-b-" + strings.Repeat("y", 12) + "-tail-b",
+	}
+
+	out, err := rt.RunProgram(context.Background(), attached.SessionID, execution.Program{
+		ProgramID: "prog_target_raw_refs",
+		Nodes: []execution.ProgramNode{
+			{
+				NodeID: "node_prepare",
+				Action: action.Spec{ToolName: "demo.target-long"},
+				Targeting: &execution.TargetSelection{
+					Mode: execution.TargetSelectionFanoutExplicit,
+					Targets: []execution.Target{
+						{TargetID: "host-a", Kind: "host"},
+						{TargetID: "host-b", Kind: "host"},
+					},
+				},
+			},
+			{
+				NodeID:    "node_apply",
+				Action:    action.Spec{ToolName: "demo.inspect-arg"},
+				DependsOn: []string{"node_prepare"},
+				Targeting: &execution.TargetSelection{
+					Mode: execution.TargetSelectionFanoutExplicit,
+					Targets: []execution.Target{
+						{TargetID: "host-a", Kind: "host"},
+						{TargetID: "host-b", Kind: "host"},
+					},
+				},
+				InputBinds: []execution.ProgramInputBinding{{
+					Name: "message",
+					Kind: execution.ProgramInputBindingOutputRef,
+					Ref: &execution.OutputRef{
+						Kind:   execution.OutputRefText,
+						StepID: "node_prepare",
+					},
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("run program: %v", err)
+	}
+	if out.Session.Phase != session.PhaseComplete {
+		t.Fatalf("expected completed session, got %#v", out.Session)
+	}
+
+	actions := mustListActions(t, rt, attached.SessionID)
+	resolvedLengths := map[string]int{}
+	resolvedSuffixes := map[string]string{}
+	for _, record := range actions {
+		nodeID, _ := record.Metadata[execution.ProgramMetadataKeyNodeID].(string)
+		if nodeID != "node_apply" {
+			continue
+		}
+		target, ok := execution.TargetRefFromMetadata(record.Metadata)
+		if !ok {
+			t.Fatalf("expected target metadata on target-scoped action, got %#v", record)
+		}
+		length, _ := record.Result.Data["message_length"].(int)
+		suffix, _ := record.Result.Data["message_suffix"].(string)
+		resolvedLengths[target.TargetID] = length
+		resolvedSuffixes[target.TargetID] = suffix
+	}
+	if len(resolvedLengths) != len(expected) {
+		t.Fatalf("expected resolved results for every target, got %#v", resolvedLengths)
+	}
+	for targetID, text := range expected {
+		if resolvedLengths[targetID] != len(text) {
+			t.Fatalf("expected target %s to receive full raw text length %d, got %#v", targetID, len(text), resolvedLengths)
+		}
+		if resolvedSuffixes[targetID] != text[len(text)-6:] {
+			t.Fatalf("expected target %s to receive raw tail %q, got %#v", targetID, text[len(text)-6:], resolvedSuffixes)
+		}
+	}
+}
+
 func TestRunProgramResolvesArtifactRefsIntoLaterStepArgs(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "demo.structured", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, structuredProducerHandler{})
@@ -4891,6 +4999,22 @@ func (targetAwareHandler) Invoke(_ context.Context, args map[string]any) (action
 	}, nil
 }
 
+type targetLongOutputHandler struct {
+	outputs map[string]string
+}
+
+func (h targetLongOutputHandler) Invoke(_ context.Context, args map[string]any) (action.Result, error) {
+	target, _ := args[execution.TargetArgKey].(map[string]any)
+	targetID, _ := target[execution.TargetMetadataKeyID].(string)
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"target_id": targetID,
+			"stdout":    h.outputs[targetID],
+		},
+	}, nil
+}
+
 type targetScriptedHandler struct {
 	mu      sync.Mutex
 	outputs map[string][]string
@@ -4976,6 +5100,23 @@ func (echoArgHandler) Invoke(_ context.Context, args map[string]any) (action.Res
 		OK: true,
 		Data: map[string]any{
 			"stdout": fmt.Sprint(args["message"]),
+		},
+	}, nil
+}
+
+type inspectArgHandler struct{}
+
+func (inspectArgHandler) Invoke(_ context.Context, args map[string]any) (action.Result, error) {
+	message := fmt.Sprint(args["message"])
+	suffix := message
+	if len(suffix) > 6 {
+		suffix = suffix[len(suffix)-6:]
+	}
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"message_length": len(message),
+			"message_suffix": suffix,
 		},
 	}, nil
 }

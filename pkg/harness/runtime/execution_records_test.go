@@ -3,11 +3,13 @@ package runtime_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/approval"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
+	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -303,10 +305,161 @@ func TestApprovalAuditEventsExposeApprovalCorrelation(t *testing.T) {
 	}
 }
 
+func TestRunStepPreservesRawActionResultAlongsideTrimmedInlineResult(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.long-output", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		longOutputHandler{stdout: "abcdefghijklmnopqrstuvwxyz"},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 8,
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "raw result", "preserve raw action output")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "preserve raw action output"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "raw result", []plan.StepSpec{{
+		StepID: "step_raw_result",
+		Title:  "raw result",
+		Action: action.Spec{ToolName: "demo.long-output"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	inlineStdout, _ := out.Execution.Action.Data["stdout"].(string)
+	if inlineStdout != "abcdefgh" {
+		t.Fatalf("expected inline stdout to be trimmed, got %#v", out.Execution.Action)
+	}
+	if !out.Execution.Action.WasTrimmed {
+		t.Fatalf("expected action result to report trimming, got %#v", out.Execution.Action)
+	}
+	if out.Execution.Action.Raw == nil {
+		t.Fatalf("expected raw action result channel, got %#v", out.Execution.Action)
+	}
+	rawStdout, _ := out.Execution.Action.Raw.Data["stdout"].(string)
+	if rawStdout != "abcdefghijklmnopqrstuvwxyz" {
+		t.Fatalf("expected raw stdout to stay intact, got %#v", out.Execution.Action.Raw)
+	}
+
+	actions := mustListActions(t, rt, attached.SessionID)
+	if len(actions) != 1 {
+		t.Fatalf("expected one action record, got %#v", actions)
+	}
+	storedInline, _ := actions[0].Result.Data["stdout"].(string)
+	if storedInline != "abcdefgh" {
+		t.Fatalf("expected stored inline stdout to stay trimmed, got %#v", actions[0].Result)
+	}
+	if actions[0].Result.Raw == nil {
+		t.Fatalf("expected stored raw action result, got %#v", actions[0].Result)
+	}
+	storedRaw, _ := actions[0].Result.Raw.Data["stdout"].(string)
+	if storedRaw != "abcdefghijklmnopqrstuvwxyz" {
+		t.Fatalf("expected stored raw stdout to stay intact, got %#v", actions[0].Result.Raw)
+	}
+
+	artifacts := mustListArtifacts(t, rt, attached.SessionID)
+	if len(artifacts) == 0 {
+		t.Fatalf("expected action result artifact")
+	}
+	payload, _ := artifacts[0].Payload["data"].(map[string]any)
+	artifactStdout, _ := payload["stdout"].(string)
+	if artifactStdout != "abcdefghijklmnopqrstuvwxyz" {
+		t.Fatalf("expected artifact payload to keep raw stdout, got %#v", artifacts[0])
+	}
+}
+
+func TestRunStepVerificationUsesRawActionResultWhenInlineTrimmed(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.long-output", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		longOutputHandler{stdout: "prefix-" + strings.Repeat("x", 20) + "-needle"},
+	)
+	verifiers := verify.NewRegistry()
+	verify.RegisterBuiltins(verifiers)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verifiers,
+		Policy:    permission.DefaultEvaluator{},
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 8,
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "raw verify", "verify against raw action output")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "verify against raw action output"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "raw verify", []plan.StepSpec{{
+		StepID: "step_raw_verify",
+		Title:  "raw verify",
+		Action: action.Spec{ToolName: "demo.long-output"},
+		Verify: verify.Spec{Mode: verify.ModeAll, Checks: []verify.Check{
+			{Kind: "output_contains", Args: map[string]any{"text": "-needle"}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if !out.Execution.Verify.Success {
+		t.Fatalf("expected verification to read raw output beyond inline trim, got %#v", out.Execution.Verify)
+	}
+
+	verifications := mustListVerifications(t, rt, attached.SessionID)
+	if len(verifications) != 1 || !verifications[0].Result.Success {
+		t.Fatalf("expected persisted verification success, got %#v", verifications)
+	}
+}
+
 func auditEventStringField(event audit.Event, field string) (string, bool) {
 	value := reflect.ValueOf(event).FieldByName(field)
 	if !value.IsValid() || value.Kind() != reflect.String {
 		return "", false
 	}
 	return value.String(), true
+}
+
+type longOutputHandler struct {
+	stdout string
+}
+
+func (h longOutputHandler) Invoke(_ context.Context, _ map[string]any) (action.Result, error) {
+	return action.Result{
+		OK: true,
+		Data: map[string]any{
+			"stdout": h.stdout,
+		},
+	}, nil
 }

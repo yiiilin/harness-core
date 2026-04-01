@@ -134,19 +134,20 @@ func (s *Service) resolveProgramOutputRef(ctx context.Context, sessionID string,
 	if err != nil {
 		return nil, err
 	}
+	result := rawPreferredActionResult(record.Result)
 	switch ref.Kind {
 	case "", execution.OutputRefStructured:
 		if strings.TrimSpace(ref.Path) == "" {
-			return cloneAnyMap(record.Result.Data), nil
+			return cloneAnyMap(result.Data), nil
 		}
-		value, ok := resolveProgramResultPath(record.Result, ref.Path)
+		value, ok := resolveProgramResultPath(result, ref.Path)
 		if !ok {
 			return nil, fmt.Errorf("%w: output path %q not found", ErrProgramBindingResolveFailed, ref.Path)
 		}
 		return value, nil
 	case execution.OutputRefText:
 		if strings.TrimSpace(ref.Path) != "" {
-			value, ok := resolveProgramResultPath(record.Result, ref.Path)
+			value, ok := resolveProgramResultPath(result, ref.Path)
 			if !ok {
 				return nil, fmt.Errorf("%w: text path %q not found", ErrProgramBindingResolveFailed, ref.Path)
 			}
@@ -156,16 +157,16 @@ func (s *Service) resolveProgramOutputRef(ctx context.Context, sessionID string,
 			}
 			return text, nil
 		}
-		if text, ok := stringFromProgramValue(record.Result.Data["stdout"]); ok {
+		if text, ok := stringFromProgramValue(result.Data["stdout"]); ok {
 			return text, nil
 		}
-		if text, ok := stringFromProgramValue(record.Result.Data["text"]); ok {
+		if text, ok := stringFromProgramValue(result.Data["text"]); ok {
 			return text, nil
 		}
 		return nil, fmt.Errorf("%w: text output missing", ErrProgramBindingResolveFailed)
 	case execution.OutputRefBytes:
 		if strings.TrimSpace(ref.Path) != "" {
-			value, ok := resolveProgramResultPath(record.Result, ref.Path)
+			value, ok := resolveProgramResultPath(result, ref.Path)
 			if !ok {
 				return nil, fmt.Errorf("%w: bytes path %q not found", ErrProgramBindingResolveFailed, ref.Path)
 			}
@@ -175,10 +176,10 @@ func (s *Service) resolveProgramOutputRef(ctx context.Context, sessionID string,
 			}
 			return bytes, nil
 		}
-		if bytes, ok := bytesFromProgramValue(record.Result.Data["bytes"]); ok {
+		if bytes, ok := bytesFromProgramValue(result.Data["bytes"]); ok {
 			return bytes, nil
 		}
-		if text, ok := stringFromProgramValue(record.Result.Data["stdout"]); ok {
+		if text, ok := stringFromProgramValue(result.Data["stdout"]); ok {
 			return []byte(text), nil
 		}
 		return nil, fmt.Errorf("%w: bytes output missing", ErrProgramBindingResolveFailed)

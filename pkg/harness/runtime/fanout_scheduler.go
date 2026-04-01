@@ -426,7 +426,8 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 		"capability_snapshot_id": snapshotID,
 	}, actionRecord.ActionID, prepared.Attempt.AttemptID)
 
-	actResult = trimActionResultToBudget(actResult, s.LoopBudgets.MaxToolOutputChars)
+	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
+	rawResult := rawPreferredActionResult(actResult)
 	actionRecord.Result = actResult
 	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
@@ -453,16 +454,12 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 			TraceID:    prepared.Attempt.TraceID,
 			Name:       "action.result",
 			Kind:       "action_result",
-			Payload: map[string]any{
-				"data":  actResult.Data,
-				"meta":  actResult.Meta,
-				"error": actResult.Error,
-			},
-			Metadata:  executionFactMetadata(step.Metadata),
-			CreatedAt: s.nowMilli(),
+			Payload:    actionResultPayloadForArtifact(actResult),
+			Metadata:   executionFactMetadata(step.Metadata),
+			CreatedAt:  s.nowMilli(),
 		})
 	}
-	runtimeHandles := extractRuntimeHandles(actResult, prepared.Attempt, actionRecord, s.nowMilli())
+	runtimeHandles := extractRuntimeHandles(rawResult, prepared.Attempt, actionRecord, s.nowMilli())
 	applyExecutionFactMetadataToHandles(runtimeHandles, step.Metadata)
 
 	out.Step = step
@@ -497,7 +494,7 @@ func (s *Service) persistFanoutRound(ctx context.Context, sessionID, leaseID str
 			outcomes[i] = s.finalizeFanoutAggregatePendingOutcome(outcomes[i], s.nowMilli())
 			continue
 		}
-		outcomes[i] = s.finalizeFanoutVerifiedOutcome(ctx, verifyState, outcomes[i], outcomes[i].Execution.Action, s.nowMilli())
+		outcomes[i] = s.finalizeFanoutVerifiedOutcome(ctx, verifyState, outcomes[i], rawPreferredActionResult(outcomes[i].Execution.Action), s.nowMilli())
 	}
 
 	if len(aggregateFinalOrder) > 0 {
