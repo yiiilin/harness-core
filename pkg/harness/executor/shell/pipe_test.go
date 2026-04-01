@@ -3,7 +3,9 @@ package shell_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	shellexec "github.com/yiiilin/harness-core/pkg/harness/executor/shell"
 )
@@ -22,7 +24,7 @@ func TestPipeExecutorTruncatesOutputAndReportsMetadata(t *testing.T) {
 		t.Fatalf("expected ok result, got %#v", result)
 	}
 	stdout, _ := result.Data["stdout"].(string)
-	if stdout != "hello" {
+	if stdout != "h...d" {
 		t.Fatalf("expected truncated stdout, got %q", stdout)
 	}
 	if truncated, _ := result.Meta["stdout_truncated"].(bool); !truncated {
@@ -131,7 +133,7 @@ func TestPipeExecutorPreservesRawOutputAndReportsRecoverablePreviewMetadata(t *t
 	}
 
 	stdout, _ := result.Data["stdout"].(string)
-	if stdout != "hello" {
+	if stdout != "h...d" {
 		t.Fatalf("expected preview stdout to be truncated, got %#v", result.Data["stdout"])
 	}
 	if result.Raw == nil {
@@ -155,10 +157,142 @@ func TestPipeExecutorPreservesRawOutputAndReportsRecoverablePreviewMetadata(t *t
 	if returnedBytes, _ := window["returned_bytes"].(int); returnedBytes != len("hello") {
 		t.Fatalf("expected returned_bytes %d, got %#v", len("hello"), window["returned_bytes"])
 	}
+	if mode, _ := window["preview_mode"].(string); mode != "head_tail" {
+		t.Fatalf("expected head_tail preview mode, got %#v", window)
+	}
 	if hasMore, _ := window["has_more"].(bool); !hasMore {
 		t.Fatalf("expected has_more metadata, got %#v", window)
 	}
-	if nextOffset, _ := window["next_offset"].(int64); nextOffset != int64(len("hello")) {
-		t.Fatalf("expected next_offset %d, got %#v", len("hello"), window["next_offset"])
+	if _, exists := window["next_offset"]; exists {
+		t.Fatalf("did not expect head-tail preview metadata to expose next_offset, got %#v", window)
+	}
+}
+
+func TestPipeExecutorUsesHeadTailPreviewWhenOutputIsTruncated(t *testing.T) {
+	exec := shellexec.PipeExecutor{MaxOutputBytes: 13}
+
+	result, err := exec.Execute(context.Background(), shellexec.Request{
+		Command:   "printf 'abcdefghijklmnopqrst'",
+		TimeoutMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected ok result, got %#v", result)
+	}
+
+	stdout, _ := result.Data["stdout"].(string)
+	assertHeadTailPreview(t, stdout, 13, "abcd", "opqrst")
+	if result.Raw == nil {
+		t.Fatalf("expected raw result channel, got %#v", result)
+	}
+	rawStdout, _ := result.Raw.Data["stdout"].(string)
+	if rawStdout != "abcdefghijklmnopqrst" {
+		t.Fatalf("expected raw stdout to remain intact, got %#v", result.Raw)
+	}
+}
+
+func TestPipeExecutorReportsHeadTailPreviewMetadataWhenOutputIsTruncated(t *testing.T) {
+	exec := shellexec.PipeExecutor{MaxOutputBytes: 13}
+
+	result, err := exec.Execute(context.Background(), shellexec.Request{
+		Command:   "printf 'abcdefghijklmnopqrst'",
+		TimeoutMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	window, ok := result.Meta["stdout_preview"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected stdout_preview metadata, got %#v", result.Meta)
+	}
+	if mode, _ := window["preview_mode"].(string); mode != "head_tail" {
+		t.Fatalf("expected head_tail preview mode, got %#v", window)
+	}
+	if headBytes, _ := window["head_bytes"].(int); headBytes != 4 {
+		t.Fatalf("expected head_bytes=4, got %#v", window)
+	}
+	if tailBytes, _ := window["tail_bytes"].(int); tailBytes != 6 {
+		t.Fatalf("expected tail_bytes=6, got %#v", window)
+	}
+	if elidedBytes, _ := window["elided_bytes"].(int); elidedBytes != 10 {
+		t.Fatalf("expected elided_bytes=10, got %#v", window)
+	}
+	if _, exists := window["next_offset"]; exists {
+		t.Fatalf("did not expect head-tail preview metadata to expose next_offset, got %#v", window)
+	}
+}
+
+func TestPipeExecutorReportsPrefixPreviewMetadataWhenTailCannotBePreserved(t *testing.T) {
+	exec := shellexec.PipeExecutor{MaxOutputBytes: 5}
+
+	result, err := exec.Execute(context.Background(), shellexec.Request{
+		Command:   "printf '世界你好再见朋友'",
+		TimeoutMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	stdout, _ := result.Data["stdout"].(string)
+	if stdout != "世" {
+		t.Fatalf("expected UTF-8 fallback preview to degrade to prefix mode, got %q", stdout)
+	}
+	window, ok := result.Meta["stdout_preview"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected stdout_preview metadata, got %#v", result.Meta)
+	}
+	if mode, _ := window["preview_mode"].(string); mode != "prefix" {
+		t.Fatalf("expected prefix preview mode for fallback, got %#v", window)
+	}
+	if tailBytes, _ := window["tail_bytes"].(int); tailBytes != 0 {
+		t.Fatalf("expected tail_bytes=0 for prefix fallback, got %#v", window)
+	}
+	if nextOffset, _ := window["next_offset"].(int64); nextOffset != int64(len(stdout)) {
+		t.Fatalf("expected prefix fallback next_offset %d, got %#v", len(stdout), window["next_offset"])
+	}
+}
+
+func TestPipeExecutorHeadTailPreviewRemainsUTF8Safe(t *testing.T) {
+	exec := shellexec.PipeExecutor{MaxOutputBytes: 15}
+
+	result, err := exec.Execute(context.Background(), shellexec.Request{
+		Command:   "printf '世界你好再见朋友'",
+		TimeoutMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	stdout, _ := result.Data["stdout"].(string)
+	if !utf8.ValidString(stdout) {
+		t.Fatalf("expected UTF-8 safe preview, got %q", stdout)
+	}
+	if len(stdout) > 15 {
+		t.Fatalf("expected preview to stay within byte limit %d, got %q (%d bytes)", 15, stdout, len(stdout))
+	}
+	if !strings.Contains(stdout, "...") {
+		t.Fatalf("expected middle elision marker in UTF-8 preview, got %q", stdout)
+	}
+	if !strings.HasPrefix(stdout, "世") {
+		t.Fatalf("expected UTF-8 preview head to preserve first rune, got %q", stdout)
+	}
+	if !strings.HasSuffix(stdout, "朋友") {
+		t.Fatalf("expected UTF-8 preview tail to preserve last runes, got %q", stdout)
+	}
+}
+
+func assertHeadTailPreview(t *testing.T, got string, limit int, head string, tail string) {
+	t.Helper()
+	if !strings.HasPrefix(got, head) {
+		t.Fatalf("expected preview head %q, got %q", head, got)
+	}
+	if !strings.HasSuffix(got, tail) {
+		t.Fatalf("expected preview tail %q, got %q", tail, got)
+	}
+	if !strings.Contains(got, "...") {
+		t.Fatalf("expected middle truncation marker, got %q", got)
+	}
+	if len(got) > limit {
+		t.Fatalf("expected preview to stay within byte limit %d, got %q (%d bytes)", limit, got, len(got))
 	}
 }

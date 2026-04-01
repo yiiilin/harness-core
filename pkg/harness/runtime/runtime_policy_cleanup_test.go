@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -168,6 +169,59 @@ func TestProjectPlannerContextInlineProjectionIsDeterministicAndRuneSafe(t *test
 	}
 }
 
+func TestProjectPlannerContextInlineProjectionUsesHeadTailPreview(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Planner: hruntime.PlannerPolicy{
+				Projection: hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionInline},
+				Context:    hruntime.PlannerContextBudgetPolicy{MaxChars: 13},
+			},
+		},
+	})
+
+	raw := hruntime.ContextPackage{
+		Task: hruntime.ContextTask{TaskID: "task"},
+		Metadata: map[string]any{
+			"notes": "abcdefghijklmnopqrst",
+		},
+	}
+
+	projected, err := rt.ProjectPlannerContext(context.Background(), raw, session.State{}, task.Spec{})
+	if err != nil {
+		t.Fatalf("project planner context: %v", err)
+	}
+	notes, _ := projected.Metadata["notes"].(string)
+	assertHeadTailPreviewText(t, notes, 13, "abcd", "opqrst")
+}
+
+func TestProjectPlannerContextInlineProjectionUsesHeadTailPreviewForUTF8(t *testing.T) {
+	rt := hruntime.New(hruntime.Options{
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Planner: hruntime.PlannerPolicy{
+				Projection: hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionInline},
+				Context:    hruntime.PlannerContextBudgetPolicy{MaxChars: 7},
+			},
+		},
+	})
+
+	raw := hruntime.ContextPackage{
+		Task: hruntime.ContextTask{TaskID: "task"},
+		Metadata: map[string]any{
+			"notes": "世界你好再见朋友",
+		},
+	}
+
+	projected, err := rt.ProjectPlannerContext(context.Background(), raw, session.State{}, task.Spec{})
+	if err != nil {
+		t.Fatalf("project planner context: %v", err)
+	}
+	notes, _ := projected.Metadata["notes"].(string)
+	assertHeadTailPreviewText(t, notes, 7, "世", "见朋友")
+	if !utf8.ValidString(notes) {
+		t.Fatalf("expected valid UTF-8 after head-tail projection, got %q", notes)
+	}
+}
+
 func TestCreatePlanFromPlannerUsesProjectedContext(t *testing.T) {
 	planner := &plannerCapture{}
 	tools := tool.NewRegistry()
@@ -252,8 +306,8 @@ func TestRunStepUsesStepToolThenRuntimeOutputPolicyPrecedence(t *testing.T) {
 		expect   string
 	}{
 		{stepID: "step_specific", toolName: "demo.long-output", expect: "abcd"},
-		{stepID: "step_tool_only", toolName: "demo.long-output", expect: "abcdef"},
-		{stepID: "step_default", toolName: "demo.default-output", expect: "abcdefghij"},
+		{stepID: "step_tool_only", toolName: "demo.long-output", expect: "a...kl"},
+		{stepID: "step_default", toolName: "demo.default-output", expect: "ab...hijkl"},
 	} {
 		sess := mustCreateSession(t, rt, "output policy precedence", "step override should win over tool override and runtime default")
 		tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run precedence cases"})
@@ -277,6 +331,178 @@ func TestRunStepUsesStepToolThenRuntimeOutputPolicyPrecedence(t *testing.T) {
 		if stdout != tc.expect {
 			t.Fatalf("expected %s to resolve inline policy %q, got %#v", tc.stepID, tc.expect, out.Execution.Action)
 		}
+	}
+}
+
+func TestRunStepAppliesHeadTailPreviewToInlineResultStrings(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.long-output", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		longOutputHandler{stdout: "abcdefghijklmnopqrst"},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Transport: hruntime.TransportBudgetPolicy{MaxBytes: 4096},
+					Inline:    hruntime.InlineBudgetPolicy{MaxChars: 13},
+					Raw:       hruntime.RawResultPolicy{RetentionMode: hruntime.RawRetentionBackendDefined},
+				},
+			},
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "head-tail inline result", "inline preview should preserve both head and tail")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "head-tail inline result"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "head-tail inline", []plan.StepSpec{{
+		StepID: "step_head_tail_inline",
+		Title:  "head-tail inline",
+		Action: action.Spec{ToolName: "demo.long-output"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	stdout, _ := out.Execution.Action.Data["stdout"].(string)
+	assertHeadTailPreviewText(t, stdout, 13, "abcd", "opqrst")
+}
+
+func TestRunStepAppliesHeadTailPreviewToInlineMetaAndErrorStrings(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.structured-output", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		structuredLongOutputHandler{
+			stdout:  "ok",
+			meta:    "abcdefghijklmnopqrst",
+			message: "abcdefghijklmnopqrst",
+		},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Transport: hruntime.TransportBudgetPolicy{MaxBytes: 4096},
+					Inline:    hruntime.InlineBudgetPolicy{MaxChars: 13},
+					Raw:       hruntime.RawResultPolicy{RetentionMode: hruntime.RawRetentionBackendDefined},
+				},
+			},
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "head-tail meta error", "inline preview should cover meta and error strings")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "head-tail meta and error"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "head-tail meta error", []plan.StepSpec{{
+		StepID: "step_head_tail_meta_error",
+		Title:  "head-tail meta error",
+		Action: action.Spec{ToolName: "demo.structured-output"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	note, _ := out.Execution.Action.Meta["note"].(string)
+	assertHeadTailPreviewText(t, note, 13, "abcd", "opqrst")
+	if out.Execution.Action.Error == nil {
+		t.Fatalf("expected action error to remain present, got %#v", out.Execution.Action)
+	}
+	assertHeadTailPreviewText(t, out.Execution.Action.Error.Message, 13, "abcd", "opqrst")
+	if !utf8.ValidString(out.Execution.Action.Error.Message) {
+		t.Fatalf("expected UTF-8 safe error preview, got %#v", out.Execution.Action.Error)
+	}
+}
+
+func TestRunStepKeepsUTF8ValidWhenInlinePreviewTruncatesMetaAndErrorStrings(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.structured-utf8", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		structuredLongOutputHandler{
+			stdout:  "世界你好再见朋友",
+			meta:    "世界你好再见朋友",
+			message: "世界你好再见朋友",
+		},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Transport: hruntime.TransportBudgetPolicy{MaxBytes: 4096},
+					Inline:    hruntime.InlineBudgetPolicy{MaxChars: 7},
+					Raw:       hruntime.RawResultPolicy{RetentionMode: hruntime.RawRetentionBackendDefined},
+				},
+			},
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "utf8 inline trim", "inline preview must stay UTF-8 safe")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "utf8 inline trim"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "utf8 inline trim", []plan.StepSpec{{
+		StepID: "step_utf8_inline_trim",
+		Title:  "utf8 inline trim",
+		Action: action.Spec{ToolName: "demo.structured-utf8"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+
+	stdout, _ := out.Execution.Action.Data["stdout"].(string)
+	assertHeadTailPreviewText(t, stdout, 7, "世", "见朋友")
+	if !utf8.ValidString(stdout) {
+		t.Fatalf("expected UTF-8 safe data preview, got %q", stdout)
+	}
+
+	note, _ := out.Execution.Action.Meta["note"].(string)
+	assertHeadTailPreviewText(t, note, 7, "世", "见朋友")
+	if !utf8.ValidString(note) {
+		t.Fatalf("expected UTF-8 safe meta preview, got %q", note)
+	}
+	if out.Execution.Action.Error == nil {
+		t.Fatalf("expected action error to remain present, got %#v", out.Execution.Action)
+	}
+	assertHeadTailPreviewText(t, out.Execution.Action.Error.Message, 7, "世", "见朋友")
+	if !utf8.ValidString(out.Execution.Action.Error.Message) {
+		t.Fatalf("expected UTF-8 safe error preview, got %#v", out.Execution.Action.Error)
 	}
 }
 
@@ -363,6 +589,44 @@ func TestRunStepExposesUnifiedResultWindowAndRawHandle(t *testing.T) {
 	}
 }
 
+type structuredLongOutputHandler struct {
+	stdout  string
+	meta    string
+	message string
+}
+
+func (h structuredLongOutputHandler) Invoke(_ context.Context, _ map[string]any) (action.Result, error) {
+	return action.Result{
+		OK: false,
+		Data: map[string]any{
+			"stdout": h.stdout,
+		},
+		Meta: map[string]any{
+			"note": h.meta,
+		},
+		Error: &action.Error{
+			Code:    "LONG_MESSAGE",
+			Message: h.message,
+		},
+	}, nil
+}
+
+func assertHeadTailPreviewText(t *testing.T, got string, limit int, head string, tail string) {
+	t.Helper()
+	if !strings.HasPrefix(got, head) {
+		t.Fatalf("expected preview head %q, got %q", head, got)
+	}
+	if !strings.HasSuffix(got, tail) {
+		t.Fatalf("expected preview tail %q, got %q", tail, got)
+	}
+	if !strings.Contains(got, "...") {
+		t.Fatalf("expected middle truncation marker, got %q", got)
+	}
+	if utf8.RuneCountInString(got) > limit {
+		t.Fatalf("expected preview to stay within limit %d, got %q", limit, got)
+	}
+}
+
 func TestRunStepAppliesRuntimeTransportBudgetToPipeExecution(t *testing.T) {
 	opts := hruntime.Options{
 		RuntimePolicy: hruntime.RuntimePolicy{
@@ -407,7 +671,7 @@ func TestRunStepAppliesRuntimeTransportBudgetToPipeExecution(t *testing.T) {
 		t.Fatalf("run step: %v", err)
 	}
 	stdout, _ := out.Execution.Action.Data["stdout"].(string)
-	if stdout != "hello" {
+	if stdout != "h...d" {
 		t.Fatalf("expected pipe preview to honor runtime transport budget, got %#v", out.Execution.Action)
 	}
 	if out.Execution.Action.Raw == nil {
@@ -468,7 +732,7 @@ func TestRunStepAppliesRuntimeTransportBudgetToDirectPipeExecutor(t *testing.T) 
 		t.Fatalf("run step: %v", err)
 	}
 	stdout, _ := out.Execution.Action.Data["stdout"].(string)
-	if stdout != "hello" {
+	if stdout != "h...d" {
 		t.Fatalf("expected direct pipe executor preview to honor runtime transport budget, got %#v", out.Execution.Action)
 	}
 	if out.Execution.Action.Raw == nil {

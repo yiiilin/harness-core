@@ -319,8 +319,15 @@ Current runtime policy boundary:
 
 Current action-result contract:
 - `ActionResult.Data` / `Meta` / `Error` remain the inline or preview channel
+- preview truncation is a preview-only representation, not a durable read window:
+  - transport-bound pipe previews use byte-budget head-tail middle elision
+  - runtime/planner inline previews use char-budget head-tail middle elision
+  - the current marker is `...`
+  - when the budget is too small to express both head and tail safely, the kernel falls back to rune-safe prefix clipping
 - `ActionResult.Raw` carries the full recoverable payload whenever preview trimming happened before downstream consumption
 - `ActionResult.Window` standardizes truncation and continuation metadata for the preview channel
+- when a preview remains a contiguous prefix (or an exact read window), metadata may carry continuation cursors such as `next_offset`
+- head-tail middle-elision previews intentionally omit prefix-style continuation offsets because the preview text is not a contiguous window
 - `ActionResult.RawHandle` points at the durable raw artifact/window source once the step persists execution facts
 - correctness-sensitive runtime paths such as verification, program aggregation, fan-out aggregation, and step-output bindings prefer raw/full payloads over inline previews
 
@@ -328,6 +335,10 @@ Current reread contract:
 - embedders can use `GetArtifact(id)` plus `ReadArtifact(id, request)` for offset-based or line-window rereads of durable raw payloads
 - `ReadArtifact(raw_handle.ref, ArtifactReadRequest{})` returns the default raw payload window directly; `Path` is optional, not required for basic recovery
 - action/artifact/interactive surfaces now converge on the same `Window` / `RawHandle` contract instead of ad-hoc preview fields
+- reread/window surfaces stay exact-window based:
+  - `ReadArtifact` remains offset/line-window reread over raw payloads
+  - `ViewInteractive` remains offset/byte-window reread over interactive buffers
+  - verifier offsets such as PTY stream checks continue to use exact offsets, not preview head-tail projections
 
 This keeps runtime safety inside core while leaving planner-facing semantic projection to the embedding product.
 

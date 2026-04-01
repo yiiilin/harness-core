@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/yiiilin/harness-core/pkg/harness/preview"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 )
@@ -101,12 +102,11 @@ func projectStringWithRemaining(value string, remaining *int) string {
 	if remaining == nil || *remaining <= 0 || value == "" {
 		return ""
 	}
-	runes := []rune(value)
-	if len(runes) <= *remaining {
-		*remaining -= len(runes)
-		return value
+	projected := preview.TruncateHeadTailChars(value, *remaining)
+	if projected.Truncated {
+		*remaining = 0
+		return projected.Text
 	}
-	projected := string(runes[:*remaining])
-	*remaining = 0
-	return projected
+	*remaining -= projected.ReturnedChars
+	return projected.Text
 }

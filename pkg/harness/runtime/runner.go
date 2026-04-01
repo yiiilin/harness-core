@@ -13,6 +13,7 @@ import (
 	"github.com/yiiilin/harness-core/pkg/harness/permission"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
 	"github.com/yiiilin/harness-core/pkg/harness/plan"
+	"github.com/yiiilin/harness-core/pkg/harness/preview"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
 	"github.com/yiiilin/harness-core/pkg/harness/task"
 	"github.com/yiiilin/harness-core/pkg/harness/verify"
@@ -1021,8 +1022,9 @@ func trimActionResultToBudget(result action.Result, limit int) action.Result {
 	}
 	result.Data = trimMapStrings(result.Data, limit)
 	result.Meta = trimMapStrings(result.Meta, limit)
-	if result.Error != nil && len(result.Error.Message) > limit {
-		result.Error = &action.Error{Code: result.Error.Code, Message: result.Error.Message[:limit]}
+	if result.Error != nil {
+		trimmed := preview.TruncateHeadTailChars(result.Error.Message, limit)
+		result.Error = &action.Error{Code: result.Error.Code, Message: trimmed.Text}
 	}
 	return result
 }
@@ -1287,11 +1289,7 @@ func trimMapStrings(in map[string]any, limit int) map[string]any {
 	for key, value := range in {
 		switch v := value.(type) {
 		case string:
-			if len(v) > limit {
-				out[key] = v[:limit]
-			} else {
-				out[key] = v
-			}
+			out[key] = preview.TruncateHeadTailChars(v, limit).Text
 		default:
 			out[key] = value
 		}

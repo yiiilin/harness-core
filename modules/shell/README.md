@@ -28,11 +28,20 @@ Current contents:
 
 - `pipe`
   - one-shot command execution
+  - inline `stdout` / `stderr` previews are byte-budgeted head-tail middle elisions when truncation is needed
+  - preview metadata keeps `has_more`; `next_offset` is exposed only when the preview remains a contiguous prefix fallback
   - recommended default policy: allow
 - `pty`
   - interactive PTY-backed process startup
   - returns a runtime handle plus shell-specific stream metadata
   - recommended default policy: ask
+
+Important distinction:
+
+- `pipe` preview truncation is a preview-only rendering contract
+- `ReadArtifact(...)` rereads the durable raw payload through exact offset/line windows
+- PTY `Read(...)` / `ViewInteractive(...)` style flows remain exact-window reads over the interactive buffer
+- `next_offset`, when present, tells consumers where the raw reread stream continues; head-tail previews intentionally omit it because the preview text is not a continuous prefix window
 
 ## PTY Control Surface
 

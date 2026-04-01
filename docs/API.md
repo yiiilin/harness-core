@@ -183,10 +183,19 @@ Read consistency rule:
 
 Action-result boundary rule:
 - inline action results remain budgeted for runtime context safety
+- preview-only truncation currently uses head-tail middle elision with `...`
+- transport-bound pipe previews are byte-budgeted; runtime/planner inline previews are char-budgeted
+- if the budget is too small to safely represent both head and tail, the preview falls back to rune-safe prefix clipping
 - when preview trimming happens before downstream runtime consumption, `ActionResult.Raw` preserves the full payload
 - `ActionResult.Window` carries stable truncation and continuation metadata for the inline/preview channel
+- `ActionResult.Window.NextOffset` and related continuation metadata point at the recoverable raw reread stream; they do not imply the preview payload is a contiguous prefix window
+- preview-local metadata should expose prefix-style continuation cursors only when the preview itself is still a contiguous prefix or exact window; head-tail previews intentionally omit them
 - once persisted, `ActionResult.RawHandle` points to the durable raw artifact/window source that `GetArtifact` / `ReadArtifact` can reread
 - planner-facing context projection is explicit runtime configuration through `RuntimePolicy.Planner.Projection`; there is no implicit default
+- exact reread surfaces stay exact-window based:
+  - `ReadArtifact` uses offset or line-window rereads over the raw payload
+  - `ViewInteractive` uses exact interactive buffer windows
+  - preview truncation never rewrites those reread contracts into head-tail projections
 
 ### Re-exported facade types
 
@@ -493,6 +502,7 @@ Current scope:
 - `pkg/harness/replay.ExecutionCycleProjection` now exposes `InteractiveRuntimes`
 - runtime-handle lifecycle still remains authoritative for active/closed/invalidated status
 - actual interactive I/O backends such as PTY attach/resize or other transport-specific stream behavior remain companion-module or embedder concerns
+- `ViewInteractive` stays an exact-window reread API; it does not reuse inline preview middle-elision semantics
 
 ## Target-Scoped Execution Facts
 

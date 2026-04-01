@@ -353,7 +353,7 @@ func TestRunStepPreservesRawActionResultAlongsideTrimmedInlineResult(t *testing.
 	}
 
 	inlineStdout, _ := out.Execution.Action.Data["stdout"].(string)
-	if inlineStdout != "abcdefgh" {
+	if inlineStdout != "ab...xyz" {
 		t.Fatalf("expected inline stdout to be trimmed, got %#v", out.Execution.Action)
 	}
 	if out.Execution.Action.Window == nil || !out.Execution.Action.Window.Truncated {
@@ -372,7 +372,7 @@ func TestRunStepPreservesRawActionResultAlongsideTrimmedInlineResult(t *testing.
 		t.Fatalf("expected one action record, got %#v", actions)
 	}
 	storedInline, _ := actions[0].Result.Data["stdout"].(string)
-	if storedInline != "abcdefgh" {
+	if storedInline != "ab...xyz" {
 		t.Fatalf("expected stored inline stdout to stay trimmed, got %#v", actions[0].Result)
 	}
 	if actions[0].Result.Raw == nil {

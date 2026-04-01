@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
+	"github.com/yiiilin/harness-core/pkg/harness/preview"
 )
 
 const defaultMaxOutputBytes = 16 * 1024
@@ -215,24 +216,37 @@ func hasAllowedPrefix(target string, prefixes []string) bool {
 
 type truncationMeta struct {
 	truncated     bool
+	previewMode   string
 	originalBytes int
 	returnedBytes int
+	headBytes     int
+	tailBytes     int
+	elidedBytes   int
 }
 
 func (m truncationMeta) previewMap() map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"truncated":      m.truncated,
+		"preview_mode":   m.previewMode,
 		"original_bytes": m.originalBytes,
 		"returned_bytes": m.returnedBytes,
+		"head_bytes":     m.headBytes,
+		"tail_bytes":     m.tailBytes,
+		"elided_bytes":   m.elidedBytes,
 		"has_more":       m.originalBytes > m.returnedBytes,
-		"next_offset":    int64(m.returnedBytes),
 	}
+	if m.previewMode != "head_tail" {
+		out["next_offset"] = int64(m.returnedBytes)
+	}
+	return out
 }
 
 func fullOutputMeta(text string) truncationMeta {
 	return truncationMeta{
+		previewMode:   "full",
 		originalBytes: len(text),
 		returnedBytes: len(text),
+		headBytes:     len(text),
 	}
 }
 
@@ -261,16 +275,27 @@ func clonePipeActionError(err *action.Error) *action.Error {
 }
 
 func truncateOutput(text string, maxBytes int) (string, truncationMeta) {
+	result := preview.TruncateHeadTailBytes(text, maxBytes)
 	meta := truncationMeta{
-		originalBytes: len(text),
-		returnedBytes: len(text),
+		truncated:     result.Truncated,
+		previewMode:   previewModeForResult(result),
+		originalBytes: result.OriginalBytes,
+		returnedBytes: result.ReturnedBytes,
+		headBytes:     result.HeadBytes,
+		tailBytes:     result.TailBytes,
+		elidedBytes:   result.ElidedBytes,
 	}
-	if maxBytes <= 0 || len(text) <= maxBytes {
-		return text, meta
+	return result.Text, meta
+}
+
+func previewModeForResult(result preview.Result) string {
+	if !result.Truncated {
+		return "full"
 	}
-	meta.truncated = true
-	meta.returnedBytes = maxBytes
-	return text[:maxBytes], meta
+	if result.HeadBytes > 0 && result.TailBytes > 0 && strings.Contains(result.Text, "...") {
+		return "head_tail"
+	}
+	return "prefix"
 }
 
 func actionPayloadBytes(payload action.ResultPayload) int {
