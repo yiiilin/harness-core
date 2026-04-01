@@ -115,3 +115,50 @@ func TestPipeExecutorClassifiesTimeoutStartFailureAndExitFailure(t *testing.T) {
 		t.Fatalf("expected exit code 1, got %#v", exitFailureResult.Data["exit_code"])
 	}
 }
+
+func TestPipeExecutorPreservesRawOutputAndReportsRecoverablePreviewMetadata(t *testing.T) {
+	exec := shellexec.PipeExecutor{MaxOutputBytes: 5}
+
+	result, err := exec.Execute(context.Background(), shellexec.Request{
+		Command:   "printf 'hello world'",
+		TimeoutMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected ok result, got %#v", result)
+	}
+
+	stdout, _ := result.Data["stdout"].(string)
+	if stdout != "hello" {
+		t.Fatalf("expected preview stdout to be truncated, got %#v", result.Data["stdout"])
+	}
+	if result.Raw == nil {
+		t.Fatalf("expected raw result channel, got %#v", result)
+	}
+	rawStdout, _ := result.Raw.Data["stdout"].(string)
+	if rawStdout != "hello world" {
+		t.Fatalf("expected raw stdout to remain recoverable, got %#v", result.Raw)
+	}
+
+	window, ok := result.Meta["stdout_preview"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected standardized stdout_preview metadata, got %#v", result.Meta)
+	}
+	if truncated, _ := window["truncated"].(bool); !truncated {
+		t.Fatalf("expected preview truncation metadata, got %#v", window)
+	}
+	if originalBytes, _ := window["original_bytes"].(int); originalBytes != len("hello world") {
+		t.Fatalf("expected original_bytes %d, got %#v", len("hello world"), window["original_bytes"])
+	}
+	if returnedBytes, _ := window["returned_bytes"].(int); returnedBytes != len("hello") {
+		t.Fatalf("expected returned_bytes %d, got %#v", len("hello"), window["returned_bytes"])
+	}
+	if hasMore, _ := window["has_more"].(bool); !hasMore {
+		t.Fatalf("expected has_more metadata, got %#v", window)
+	}
+	if nextOffset, _ := window["next_offset"].(int64); nextOffset != int64(len("hello")) {
+		t.Fatalf("expected next_offset %d, got %#v", len("hello"), window["next_offset"])
+	}
+}

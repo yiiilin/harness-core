@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
@@ -91,7 +92,7 @@ func (c PTYInteractiveController) ViewInteractive(ctx context.Context, handle ex
 		exitCode := read.ExitCode
 		observation.ExitCode = &exitCode
 	}
-	return hruntime.InteractiveViewResult{
+	result := hruntime.InteractiveViewResult{
 		Data:      read.Data,
 		Truncated: read.Truncated,
 		Runtime: execution.InteractiveRuntime{
@@ -99,7 +100,13 @@ func (c PTYInteractiveController) ViewInteractive(ctx context.Context, handle ex
 			Observation:  observation,
 			Capabilities: execution.InteractiveCapabilities{Reopen: true, View: true, Write: true, Close: true},
 		},
-	}, nil
+	}
+	setInteractiveViewPreviewField(&result, "OriginalBytes", read.OriginalBytes)
+	setInteractiveViewPreviewField(&result, "ReturnedBytes", read.ReturnedBytes)
+	setInteractiveViewPreviewField(&result, "HasMore", read.HasMore)
+	setInteractiveViewPreviewField(&result, "NextOffset", read.NextOffset)
+	setInteractiveViewPreviewField(&result, "RawRef", handle.HandleID)
+	return result, nil
 }
 
 func (c PTYInteractiveController) WriteInteractive(ctx context.Context, handle execution.RuntimeHandle, request hruntime.InteractiveWriteRequest) (hruntime.InteractiveWriteResult, error) {
@@ -188,4 +195,25 @@ func mergeMaps(base map[string]any, extra map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func setInteractiveViewPreviewField(target *hruntime.InteractiveViewResult, fieldName string, value any) {
+	if target == nil {
+		return
+	}
+	field := reflect.ValueOf(target).Elem().FieldByName(fieldName)
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	incoming := reflect.ValueOf(value)
+	if !incoming.IsValid() {
+		return
+	}
+	if incoming.Type().AssignableTo(field.Type()) {
+		field.Set(incoming)
+		return
+	}
+	if incoming.Type().ConvertibleTo(field.Type()) {
+		field.Set(incoming.Convert(field.Type()))
+	}
 }

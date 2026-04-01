@@ -240,6 +240,7 @@ Prefer this read chain:
 - `ListExecutionCycles(session_id)`
 - `GetExecutionCycle(session_id, cycle_id)` when needed
 - `ListAuditEvents(session_id)`
+- `GetArtifact(id)` / `ReadArtifact(id, request)` when a step exposed `ActionResult.RawRef` and you need the durable full payload instead of the inline preview
 - `GetBlockedRuntimeProjection(...)` / `ListBlockedRuntimeProjections()` when you need current approval-backed blocked views
 - `GetInteractiveRuntime(...)` / `ListInteractiveRuntimes(...)` when you need typed interactive current-state projection
 - `pkg/harness/replay` projection helpers for stable ordering and grouping

@@ -46,10 +46,15 @@ type InteractiveViewRequest struct {
 }
 
 type InteractiveViewResult struct {
-	Runtime   execution.InteractiveRuntime `json:"runtime"`
-	Data      string                       `json:"data,omitempty"`
-	Truncated bool                         `json:"truncated,omitempty"`
-	Metadata  map[string]any               `json:"metadata,omitempty"`
+	Runtime       execution.InteractiveRuntime `json:"runtime"`
+	Data          string                       `json:"data,omitempty"`
+	Truncated     bool                         `json:"truncated,omitempty"`
+	OriginalBytes int                          `json:"original_bytes,omitempty"`
+	ReturnedBytes int                          `json:"returned_bytes,omitempty"`
+	HasMore       bool                         `json:"has_more,omitempty"`
+	NextOffset    int64                        `json:"next_offset,omitempty"`
+	RawRef        string                       `json:"raw_ref,omitempty"`
+	Metadata      map[string]any               `json:"metadata,omitempty"`
 }
 
 type InteractiveWriteRequest struct {
@@ -169,6 +174,8 @@ func (s *Service) ViewInteractive(ctx context.Context, handleID string, request 
 		return InteractiveViewResult{}, err
 	}
 	viewed.Runtime = updated
+	viewed.NextOffset = updated.Observation.NextOffset
+	viewed.RawRef = firstNonEmptyString(viewed.RawRef, handleID)
 	viewed.Metadata = mergeMaps(cloneAnyMap(viewed.Metadata), cloneAnyMap(updated.Metadata))
 	return viewed, nil
 }

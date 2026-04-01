@@ -145,7 +145,7 @@ Completion criteria for this section:
 - [x] Add shell timeout-path benchmark documentation/examples
 
 Completion notes:
-- truncation policy should cap runtime-returned output and persisted/audited output while preserving truncation metadata
+- truncation policy should cap inline/runtime-returned preview output while keeping durable raw output recoverable through action-result raw channels and artifact rereads
 - cwd/path allowlist should be enforced before process start and be configurable at executor construction/runtime wiring time
 - error taxonomy should clearly separate timeout / spawn failure / policy denial / non-zero exit / verification failure classes
 - timeout benchmark docs should include the command used, representative output, and how to interpret the numbers
@@ -285,8 +285,8 @@ This section turns the remaining checklist into directly assignable implementati
      - `pkg/harness/executor/shell/pipe.go`
      - runtime paths that return/persist action output
    - required assertions:
-     - stdout/stderr are capped deterministically
-     - truncation metadata survives in action result/audit-visible data
+     - stdout/stderr previews are capped deterministically without destroying the only raw copy
+     - truncation metadata survives in action result/audit-visible data and raw reread surfaces
 
 2. cwd/path allowlist
    - likely touch points:

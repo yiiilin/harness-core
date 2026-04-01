@@ -296,6 +296,33 @@ Today they are used for:
 - compactor input
 - tool-output truncation boundaries
 
+### Output boundary contract
+
+Runtime resource protection and product semantic compaction are separate concerns.
+
+The kernel owns:
+- transport/read windows
+- inline preview budgets
+- durable raw-result capture
+- reread handles and continuation metadata
+
+The kernel does not own:
+- product-specific semantic summarization
+- planner prompt compaction policy
+- frontend-only display truncation
+
+Current action-result contract:
+- `ActionResult.Data` / `Meta` / `Error` remain the inline or preview channel
+- `ActionResult.Raw` carries the full recoverable payload whenever preview trimming happened before downstream consumption
+- `ActionResult.RawRef` points at the durable raw artifact once the step persists execution facts
+- correctness-sensitive runtime paths such as verification, program aggregation, fan-out aggregation, and step-output bindings prefer raw/full payloads over inline previews
+
+Current reread contract:
+- embedders can use `GetArtifact(id)` plus `ReadArtifact(id, request)` for offset-based or line-window rereads of durable raw payloads
+- interactive view surfaces expose stable preview metadata such as `truncated`, `original_bytes`, `returned_bytes`, `has_more`, `next_offset`, and `raw_ref`
+
+This keeps runtime safety inside core while leaving planner-facing semantic projection to the embedding product.
+
 ### Current `OnFail` runtime behavior
 
 The kernel currently treats `OnFailSpec` as executable runtime policy, not planner-only metadata.

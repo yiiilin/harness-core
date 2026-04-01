@@ -202,6 +202,19 @@ func (s *Service) listArtifactRecords(ctx context.Context, sessionID string) ([]
 	return out, err
 }
 
+func (s *Service) getArtifactRecord(ctx context.Context, id string) (execution.Artifact, error) {
+	var out execution.Artifact
+	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {
+		if repos.Artifacts == nil {
+			return execution.ErrRecordNotFound
+		}
+		var err error
+		out, err = repos.Artifacts.Get(id)
+		return err
+	})
+	return out, err
+}
+
 func (s *Service) getRuntimeHandleRecord(ctx context.Context, id string) (execution.RuntimeHandle, error) {
 	var out execution.RuntimeHandle
 	err := s.readRepositories(ctx, func(repos persistence.RepositorySet) error {

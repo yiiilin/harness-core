@@ -142,7 +142,9 @@ Durable execution facts and reads:
 - `ListActions`
 - `ListVerifications`
 - `ListAggregateResults`
+- `GetArtifact`
 - `ListArtifacts`
+- `ReadArtifact`
 - `ListRuntimeHandles`
 - `GetInteractiveRuntime`
 - `ListInteractiveRuntimes`
@@ -179,6 +181,11 @@ Read consistency rule:
 - public getters/listers resolve against the same effective repository set that runtime writes use
 - when a custom `Runner` overrides only some repositories, reads fall back only for the repositories the runner does not override
 
+Action-result boundary rule:
+- inline action results remain budgeted for runtime context safety
+- when preview trimming happens before downstream runtime consumption, `ActionResult.Raw` preserves the full payload
+- once persisted, `ActionResult.RawRef` points to the durable raw artifact that `GetArtifact` / `ReadArtifact` can reread
+
 ### Re-exported facade types
 
 `pkg/harness` re-exports stable kernel domain and control types, including:
@@ -210,6 +217,8 @@ Read consistency rule:
   - `InteractiveWriteResult`
   - `InteractiveCloseRequest`
   - `InteractiveCloseResult`
+  - `ArtifactReadRequest`
+  - `ArtifactReadResult`
   - `AbortRequest`
   - `AbortOutput`
   - `InteractiveRuntimeUpdate`

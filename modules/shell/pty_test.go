@@ -131,6 +131,63 @@ func TestPTYManagerInteractiveControllerDrivesKernelInteractiveLifecycle(t *test
 	}
 }
 
+func TestInteractiveViewExposesRecoverablePreviewMetadata(t *testing.T) {
+	ctx := context.Background()
+	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})
+	t.Cleanup(func() {
+		_ = manager.CloseAll(ctx, "test cleanup")
+	})
+
+	rt := hruntime.New(hruntime.Options{
+		InteractiveController: shellmodule.NewInteractiveController(manager),
+	})
+	sess, err := rt.CreateSession("interactive preview metadata", "expose recoverable preview metadata for PTY reads")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	started, err := rt.StartInteractive(ctx, sess.SessionID, hruntime.InteractiveStartRequest{
+		Kind: "pty",
+		Spec: map[string]any{
+			"command": "printf 'hello world'; sleep 2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("start interactive: %v", err)
+	}
+
+	_ = waitForInteractiveViewContains(t, rt, started.Handle.HandleID, "hello world")
+
+	viewed, err := rt.ViewInteractive(ctx, started.Handle.HandleID, hruntime.InteractiveViewRequest{
+		Offset:   0,
+		MaxBytes: 5,
+	})
+	if err != nil {
+		t.Fatalf("view interactive with preview budget: %v", err)
+	}
+	if viewed.Data != "hello" {
+		t.Fatalf("expected preview data to be bounded, got %#v", viewed)
+	}
+	if !viewed.Truncated {
+		t.Fatalf("expected truncated preview metadata, got %#v", viewed)
+	}
+	if viewed.OriginalBytes < len("hello world") {
+		t.Fatalf("expected original_bytes to reflect full PTY buffer, got %#v", viewed)
+	}
+	if viewed.ReturnedBytes != len("hello") {
+		t.Fatalf("expected returned_bytes %d, got %#v", len("hello"), viewed)
+	}
+	if !viewed.HasMore {
+		t.Fatalf("expected has_more metadata, got %#v", viewed)
+	}
+	if viewed.NextOffset != int64(len("hello")) {
+		t.Fatalf("expected next_offset %d, got %#v", len("hello"), viewed)
+	}
+	if viewed.RawRef != started.Handle.HandleID {
+		t.Fatalf("expected raw_ref to reuse the PTY handle id %q, got %#v", started.Handle.HandleID, viewed)
+	}
+}
+
 func TestPTYManagerReadWriteAndCloseLifecycle(t *testing.T) {
 	ctx := context.Background()
 	manager := shellmodule.NewPTYManager(shellmodule.PTYManagerOptions{})

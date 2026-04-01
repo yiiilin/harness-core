@@ -443,6 +443,89 @@ func TestRunStepVerificationUsesRawActionResultWhenInlineTrimmed(t *testing.T) {
 	}
 }
 
+func TestRunStepExposesRawArtifactReferenceAndRereadWindows(t *testing.T) {
+	tools := tool.NewRegistry()
+	tools.Register(
+		tool.Definition{ToolName: "demo.long-output", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true},
+		longOutputHandler{stdout: "line-1\nline-2\nline-3\nline-4\n"},
+	)
+
+	rt := hruntime.New(hruntime.Options{
+		Tools:     tools,
+		Verifiers: verify.NewRegistry(),
+		Policy:    permission.DefaultEvaluator{},
+		LoopBudgets: hruntime.LoopBudgets{
+			MaxSteps:           8,
+			MaxRetriesPerStep:  3,
+			MaxPlanRevisions:   8,
+			MaxTotalRuntimeMS:  60000,
+			MaxToolOutputChars: 8,
+		},
+	})
+
+	sess := mustCreateSession(t, rt, "raw reread", "re-read raw output through runtime artifact APIs")
+	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "re-read raw output through runtime artifact APIs"})
+	attached, err := rt.AttachTaskToSession(sess.SessionID, tsk.TaskID)
+	if err != nil {
+		t.Fatalf("attach task: %v", err)
+	}
+
+	pl, err := rt.CreatePlan(attached.SessionID, "raw reread", []plan.StepSpec{{
+		StepID: "step_raw_reread",
+		Title:  "raw reread",
+		Action: action.Spec{ToolName: "demo.long-output"},
+	}})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	out, err := rt.RunStep(context.Background(), attached.SessionID, pl.Steps[0])
+	if err != nil {
+		t.Fatalf("run step: %v", err)
+	}
+	if out.Execution.Action.RawRef == "" {
+		t.Fatalf("expected action result raw_ref to point at a durable raw artifact, got %#v", out.Execution.Action)
+	}
+
+	artifact, err := rt.GetArtifact(out.Execution.Action.RawRef)
+	if err != nil {
+		t.Fatalf("get artifact by raw_ref: %v", err)
+	}
+	if artifact.ArtifactID != out.Execution.Action.RawRef {
+		t.Fatalf("expected raw_ref artifact %q, got %#v", out.Execution.Action.RawRef, artifact)
+	}
+
+	byteWindow, err := rt.ReadArtifact(out.Execution.Action.RawRef, hruntime.ArtifactReadRequest{
+		Path:     "data.stdout",
+		Offset:   7,
+		MaxBytes: 6,
+	})
+	if err != nil {
+		t.Fatalf("read artifact byte window: %v", err)
+	}
+	if byteWindow.Data != "line-2" {
+		t.Fatalf("expected byte reread window to recover raw output slice, got %#v", byteWindow)
+	}
+	if !byteWindow.HasMore || byteWindow.NextOffset <= 7 {
+		t.Fatalf("expected byte reread continuation metadata, got %#v", byteWindow)
+	}
+
+	lineWindow, err := rt.ReadArtifact(out.Execution.Action.RawRef, hruntime.ArtifactReadRequest{
+		Path:       "data.stdout",
+		LineOffset: 1,
+		MaxLines:   2,
+	})
+	if err != nil {
+		t.Fatalf("read artifact line window: %v", err)
+	}
+	if lineWindow.Data != "line-2\nline-3\n" {
+		t.Fatalf("expected line reread window to recover raw output lines, got %#v", lineWindow)
+	}
+	if !lineWindow.HasMore || lineWindow.NextLineOffset != 3 {
+		t.Fatalf("expected line reread continuation metadata, got %#v", lineWindow)
+	}
+}
+
 func auditEventStringField(event audit.Event, field string) (string, bool) {
 	value := reflect.ValueOf(event).FieldByName(field)
 	if !value.IsValid() || value.Kind() != reflect.String {

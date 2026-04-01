@@ -428,7 +428,6 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 
 	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
 	rawResult := rawPreferredActionResult(actResult)
-	actionRecord.Result = actResult
 	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
 		actionRecord.Status = execution.ActionFailed
@@ -442,8 +441,8 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 	}
 
 	artifacts := []execution.Artifact{}
-	if len(actResult.Data) > 0 || len(actResult.Meta) > 0 || actResult.Error != nil {
-		artifacts = append(artifacts, execution.Artifact{
+	if len(rawResult.Data) > 0 || len(rawResult.Meta) > 0 || rawResult.Error != nil {
+		artifactRecord := execution.Artifact{
 			ArtifactID: "art_" + uuid.NewString(),
 			SessionID:  prepared.Attempt.SessionID,
 			TaskID:     prepared.Attempt.TaskID,
@@ -457,8 +456,11 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 			Payload:    actionResultPayloadForArtifact(actResult),
 			Metadata:   executionFactMetadata(step.Metadata),
 			CreatedAt:  s.nowMilli(),
-		})
+		}
+		actResult.RawRef = artifactRecord.ArtifactID
+		artifacts = append(artifacts, artifactRecord)
 	}
+	actionRecord.Result = actResult
 	runtimeHandles := extractRuntimeHandles(rawResult, prepared.Attempt, actionRecord, s.nowMilli())
 	applyExecutionFactMetadataToHandles(runtimeHandles, step.Metadata)
 

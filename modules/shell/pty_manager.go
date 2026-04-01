@@ -50,14 +50,18 @@ type PTYReadRequest struct {
 }
 
 type PTYReadResult struct {
-	HandleID     string `json:"handle_id"`
-	Data         string `json:"data,omitempty"`
-	NextOffset   int64  `json:"next_offset"`
-	Closed       bool   `json:"closed,omitempty"`
-	ExitCode     int    `json:"exit_code,omitempty"`
-	Status       string `json:"status"`
-	StatusReason string `json:"status_reason,omitempty"`
-	Truncated    bool   `json:"truncated,omitempty"`
+	HandleID      string `json:"handle_id"`
+	Data          string `json:"data,omitempty"`
+	NextOffset    int64  `json:"next_offset"`
+	OriginalBytes int    `json:"original_bytes,omitempty"`
+	ReturnedBytes int    `json:"returned_bytes,omitempty"`
+	Closed        bool   `json:"closed,omitempty"`
+	ExitCode      int    `json:"exit_code,omitempty"`
+	Status        string `json:"status"`
+	StatusReason  string `json:"status_reason,omitempty"`
+	Truncated     bool   `json:"truncated,omitempty"`
+	HasMore       bool   `json:"has_more,omitempty"`
+	RawRef        string `json:"raw_ref,omitempty"`
 }
 
 type PTYResizeRequest struct {
@@ -213,14 +217,18 @@ func (m *PTYManager) Read(_ context.Context, handleID string, req PTYReadRequest
 	}
 
 	return PTYReadResult{
-		HandleID:     handleID,
-		Data:         string(session.buffer[offset:int64(end)]),
-		NextOffset:   int64(end),
-		Closed:       session.closed,
-		ExitCode:     session.exitCode,
-		Status:       status,
-		StatusReason: session.statusReason,
-		Truncated:    truncated,
+		HandleID:      handleID,
+		Data:          string(session.buffer[offset:int64(end)]),
+		NextOffset:    int64(end),
+		OriginalBytes: len(session.buffer),
+		ReturnedBytes: end - int(offset),
+		Closed:        session.closed,
+		ExitCode:      session.exitCode,
+		Status:        status,
+		StatusReason:  session.statusReason,
+		Truncated:     truncated,
+		HasMore:       truncated,
+		RawRef:        handleID,
 	}, nil
 }
 

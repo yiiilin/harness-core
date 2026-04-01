@@ -223,6 +223,10 @@ func (s *Service) ListArtifacts(sessionID string) ([]execution.Artifact, error) 
 	return s.listArtifactRecords(context.Background(), sessionID)
 }
 
+func (s *Service) GetArtifact(id string) (execution.Artifact, error) {
+	return s.getArtifactRecord(context.Background(), id)
+}
+
 func (s *Service) GetBlockedRuntimeRecord(id string) (execution.BlockedRuntimeRecord, error) {
 	return s.getBlockedRuntimeStoredRecord(context.Background(), id)
 }

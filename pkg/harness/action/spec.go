@@ -12,6 +12,7 @@ type Result struct {
 	Meta            map[string]any `json:"meta,omitempty"`
 	Error           *Error         `json:"error,omitempty"`
 	Raw             *ResultPayload `json:"raw,omitempty"`
+	RawRef          string         `json:"raw_ref,omitempty"`
 	WasTrimmed      bool           `json:"was_trimmed,omitempty"`
 	RawSizeBytes    int            `json:"raw_size_bytes,omitempty"`
 	InlineSizeChars int            `json:"inline_size_chars,omitempty"`

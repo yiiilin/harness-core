@@ -3,8 +3,8 @@ package shell
 import (
 	"bytes"
 	"context"
-	"path/filepath"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,9 +14,9 @@ import (
 const defaultMaxOutputBytes = 16 * 1024
 
 type PipeExecutor struct {
-	MaxOutputBytes       int
-	AllowedCWDPrefixes   []string
-	AllowedPathPrefixes  []string
+	MaxOutputBytes      int
+	AllowedCWDPrefixes  []string
+	AllowedPathPrefixes []string
 }
 
 func (e PipeExecutor) Invoke(ctx context.Context, args map[string]any) (action.Result, error) {
@@ -83,9 +83,16 @@ func (e PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, 
 		exitCode = 0
 	}
 
-	stdoutText, stdoutMeta := truncateOutput(stdout.String(), e.maxOutputBytes())
-	stderrText, stderrMeta := truncateOutput(stderr.String(), e.maxOutputBytes())
-
+	stdoutFull := stdout.String()
+	stderrFull := stderr.String()
+	stdoutText, stdoutMeta := truncateOutput(stdoutFull, e.maxOutputBytes())
+	stderrText, stderrMeta := truncateOutput(stderrFull, e.maxOutputBytes())
+	fullMeta := pipeResultMeta(duration, fullOutputMeta(stdoutFull), fullOutputMeta(stderrFull))
+	previewMeta := pipeResultMeta(duration, stdoutMeta, stderrMeta)
+	resultErr := (*action.Error)(nil)
+	if err != nil {
+		resultErr = &action.Error{Code: errorCode, Message: err.Error()}
+	}
 	result := action.Result{
 		OK: err == nil,
 		Data: map[string]any{
@@ -97,18 +104,24 @@ func (e PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, 
 			"exit_code": exitCode,
 			"status":    status,
 		},
-		Meta: map[string]any{
-			"duration_ms":          duration,
-			"stdout_truncated":     stdoutMeta.truncated,
-			"stdout_original_bytes": stdoutMeta.originalBytes,
-			"stdout_returned_bytes": stdoutMeta.returnedBytes,
-			"stderr_truncated":     stderrMeta.truncated,
-			"stderr_original_bytes": stderrMeta.originalBytes,
-			"stderr_returned_bytes": stderrMeta.returnedBytes,
-		},
+		Meta:  previewMeta,
+		Error: resultErr,
 	}
-	if err != nil {
-		result.Error = &action.Error{Code: errorCode, Message: err.Error()}
+	if stdoutMeta.truncated || stderrMeta.truncated {
+		result.Raw = &action.ResultPayload{
+			Data: map[string]any{
+				"mode":      "pipe",
+				"command":   command,
+				"cwd":       cwd,
+				"stdout":    stdoutFull,
+				"stderr":    stderrFull,
+				"exit_code": exitCode,
+				"status":    status,
+			},
+			Meta:  fullMeta,
+			Error: clonePipeActionError(resultErr),
+		}
+		result.WasTrimmed = true
 	}
 	return result, nil
 }
@@ -180,6 +193,47 @@ type truncationMeta struct {
 	truncated     bool
 	originalBytes int
 	returnedBytes int
+}
+
+func (m truncationMeta) previewMap() map[string]any {
+	return map[string]any{
+		"truncated":      m.truncated,
+		"original_bytes": m.originalBytes,
+		"returned_bytes": m.returnedBytes,
+		"has_more":       m.originalBytes > m.returnedBytes,
+		"next_offset":    int64(m.returnedBytes),
+	}
+}
+
+func fullOutputMeta(text string) truncationMeta {
+	return truncationMeta{
+		originalBytes: len(text),
+		returnedBytes: len(text),
+	}
+}
+
+func pipeResultMeta(duration int64, stdoutMeta, stderrMeta truncationMeta) map[string]any {
+	return map[string]any{
+		"duration_ms":           duration,
+		"stdout_truncated":      stdoutMeta.truncated,
+		"stdout_original_bytes": stdoutMeta.originalBytes,
+		"stdout_returned_bytes": stdoutMeta.returnedBytes,
+		"stdout_preview":        stdoutMeta.previewMap(),
+		"stderr_truncated":      stderrMeta.truncated,
+		"stderr_original_bytes": stderrMeta.originalBytes,
+		"stderr_returned_bytes": stderrMeta.returnedBytes,
+		"stderr_preview":        stderrMeta.previewMap(),
+	}
+}
+
+func clonePipeActionError(err *action.Error) *action.Error {
+	if err == nil {
+		return nil
+	}
+	return &action.Error{
+		Code:    err.Code,
+		Message: err.Message,
+	}
 }
 
 func truncateOutput(text string, maxBytes int) (string, truncationMeta) {

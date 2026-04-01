@@ -432,8 +432,6 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 	}, actionRecord.ActionID, attemptRecord.AttemptID)
 	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
 	rawResult := rawPreferredActionResult(actResult)
-	execResult.Action = actResult
-	actionRecord.Result = actResult
 	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
 		actionRecord.Status = execution.ActionFailed
@@ -445,8 +443,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		actionRecord.Status = execution.ActionFailed
 		appendEvent(audit.EventToolFailed, step.StepID, map[string]any{"tool_name": actionRecord.ToolName, "error": actionErrorMessage(actResult)}, actionRecord.ActionID, actionRecord.ActionID)
 	}
-	if len(actResult.Data) > 0 || len(actResult.Meta) > 0 || actResult.Error != nil {
-		artifactRecords = append(artifactRecords, execution.Artifact{
+	if len(rawResult.Data) > 0 || len(rawResult.Meta) > 0 || rawResult.Error != nil {
+		artifactRecord := execution.Artifact{
 			ArtifactID: "art_" + uuid.NewString(),
 			SessionID:  sessionID,
 			TaskID:     state.TaskID,
@@ -460,8 +458,12 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			Payload:    actionResultPayloadForArtifact(actResult),
 			Metadata:   executionFactMetadata(step.Metadata),
 			CreatedAt:  s.nowMilli(),
-		})
+		}
+		actResult.RawRef = artifactRecord.ArtifactID
+		artifactRecords = append(artifactRecords, artifactRecord)
 	}
+	execResult.Action = actResult
+	actionRecord.Result = actResult
 	runtimeHandles = extractRuntimeHandles(rawResult, attemptRecord, actionRecord, s.nowMilli())
 	applyExecutionFactMetadataToHandles(runtimeHandles, step.Metadata)
 

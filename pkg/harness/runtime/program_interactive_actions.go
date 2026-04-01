@@ -173,6 +173,21 @@ func (s *Service) invokeNativeInteractiveView(ctx context.Context, step plan.Ste
 	data := interactiveActionData(viewed.Runtime)
 	data["data"] = viewed.Data
 	data["truncated"] = viewed.Truncated
+	if viewed.OriginalBytes > 0 {
+		data["original_bytes"] = viewed.OriginalBytes
+	}
+	if viewed.ReturnedBytes > 0 {
+		data["returned_bytes"] = viewed.ReturnedBytes
+	}
+	if viewed.HasMore {
+		data["has_more"] = true
+	}
+	if viewed.NextOffset > 0 {
+		data["next_offset"] = viewed.NextOffset
+	}
+	if viewed.RawRef != "" {
+		data["raw_ref"] = viewed.RawRef
+	}
 	return nativeInteractiveActionResult(data), nil
 }
 
