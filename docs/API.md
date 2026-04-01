@@ -184,7 +184,9 @@ Read consistency rule:
 Action-result boundary rule:
 - inline action results remain budgeted for runtime context safety
 - when preview trimming happens before downstream runtime consumption, `ActionResult.Raw` preserves the full payload
-- once persisted, `ActionResult.RawRef` points to the durable raw artifact that `GetArtifact` / `ReadArtifact` can reread
+- `ActionResult.Window` carries stable truncation and continuation metadata for the inline/preview channel
+- once persisted, `ActionResult.RawHandle` points to the durable raw artifact/window source that `GetArtifact` / `ReadArtifact` can reread
+- planner-facing context projection is explicit runtime configuration through `RuntimePolicy.Planner.Projection`; there is no implicit default
 
 ### Re-exported facade types
 
@@ -228,6 +230,15 @@ Action-result boundary rule:
   - `CompactionTrigger`
   - `CompactionPolicy`
   - `LoopBudgets`
+  - `RuntimePolicy`
+  - `OutputPolicy`
+  - `OutputModePolicy`
+  - `TransportBudgetPolicy`
+  - `InlineBudgetPolicy`
+  - `RawResultPolicy`
+  - `PlannerPolicy`
+  - `PlannerProjectionPolicy`
+  - `PlannerContextBudgetPolicy`
 - worker helper types:
   - `WorkerLoopIteration`
 - runtime interfaces:

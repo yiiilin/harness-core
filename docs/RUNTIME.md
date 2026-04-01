@@ -311,15 +311,23 @@ The kernel does not own:
 - planner prompt compaction policy
 - frontend-only display truncation
 
+Current runtime policy boundary:
+- `LoopBudgets` covers runtime loop control only: step count, retry count, plan revisions, and total runtime
+- `RuntimePolicy.Output` owns transport windows, inline preview budgets, and raw-result contract defaults/overrides
+- `RuntimePolicy.Planner.Projection` explicitly chooses planner-facing projection mode (`raw`, `inline`, or `custom`)
+- planner projection has no implicit default; embedders must opt into the planner-facing representation they want
+
 Current action-result contract:
 - `ActionResult.Data` / `Meta` / `Error` remain the inline or preview channel
 - `ActionResult.Raw` carries the full recoverable payload whenever preview trimming happened before downstream consumption
-- `ActionResult.RawRef` points at the durable raw artifact once the step persists execution facts
+- `ActionResult.Window` standardizes truncation and continuation metadata for the preview channel
+- `ActionResult.RawHandle` points at the durable raw artifact/window source once the step persists execution facts
 - correctness-sensitive runtime paths such as verification, program aggregation, fan-out aggregation, and step-output bindings prefer raw/full payloads over inline previews
 
 Current reread contract:
 - embedders can use `GetArtifact(id)` plus `ReadArtifact(id, request)` for offset-based or line-window rereads of durable raw payloads
-- interactive view surfaces expose stable preview metadata such as `truncated`, `original_bytes`, `returned_bytes`, `has_more`, `next_offset`, and `raw_ref`
+- `ReadArtifact(raw_handle.ref, ArtifactReadRequest{})` returns the default raw payload window directly; `Path` is optional, not required for basic recovery
+- action/artifact/interactive surfaces now converge on the same `Window` / `RawHandle` contract instead of ad-hoc preview fields
 
 This keeps runtime safety inside core while leaving planner-facing semantic projection to the embedding product.
 

@@ -108,11 +108,15 @@ func (m *PTYManager) streamAttachedOutput(ctx context.Context, attachmentID, han
 		if err != nil {
 			return
 		}
-		if read.NextOffset > offset {
+		nextOffset := offset
+		if read.Window != nil {
+			nextOffset = read.Window.NextOffset
+		}
+		if nextOffset > offset {
 			if _, err := opts.Output.Write([]byte(read.Data)); err != nil {
 				return
 			}
-			offset = read.NextOffset
+			offset = nextOffset
 		}
 		if read.Closed {
 			return

@@ -84,9 +84,13 @@ func (c PTYStreamContainsChecker) Verify(ctx context.Context, args map[string]an
 		if err != nil {
 			return verify.Result{Success: false, Reason: err.Error()}, nil
 		}
-		if read.NextOffset > offset {
+		nextOffset := offset
+		if read.Window != nil {
+			nextOffset = read.Window.NextOffset
+		}
+		if nextOffset > offset {
 			seen += read.Data
-			offset = read.NextOffset
+			offset = nextOffset
 		}
 		if strings.Contains(seen, needle) {
 			return verify.Result{

@@ -78,8 +78,8 @@ func TestWithDefaultsSetsLoopBudgetAndCompactionDefaults(t *testing.T) {
 	if opts.LoopBudgets.MaxTotalRuntimeMS <= 0 {
 		t.Fatalf("expected positive MaxTotalRuntimeMS default, got %#v", opts.LoopBudgets)
 	}
-	if opts.LoopBudgets.MaxToolOutputChars <= 0 {
-		t.Fatalf("expected positive MaxToolOutputChars default, got %#v", opts.LoopBudgets)
+	if opts.RuntimePolicy.Output.Defaults.Transport.MaxBytes <= 0 || opts.RuntimePolicy.Output.Defaults.Inline.MaxChars <= 0 {
+		t.Fatalf("expected runtime output policy defaults, got %#v", opts.RuntimePolicy)
 	}
 	if opts.Compactor == nil {
 		t.Fatalf("expected default compactor")
@@ -97,23 +97,25 @@ func TestWithDefaultsPreservesExplicitZeroRetryBudgetOverride(t *testing.T) {
 	if opts.LoopBudgets.MaxRetriesPerStep != 0 {
 		t.Fatalf("expected explicit zero retry budget to be preserved, got %#v", opts.LoopBudgets)
 	}
-	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 || opts.LoopBudgets.MaxToolOutputChars <= 0 {
+	if opts.LoopBudgets.MaxSteps <= 0 || opts.LoopBudgets.MaxPlanRevisions <= 0 || opts.LoopBudgets.MaxTotalRuntimeMS <= 0 {
 		t.Fatalf("expected remaining loop budgets to be backfilled from defaults, got %#v", opts.LoopBudgets)
+	}
+	if opts.RuntimePolicy.Output.Defaults.Inline.MaxChars <= 0 {
+		t.Fatalf("expected runtime output defaults to remain populated, got %#v", opts.RuntimePolicy)
 	}
 }
 
 func TestWithDefaultsMergesLoopBudgetOverridesIntoExistingLoopBudgets(t *testing.T) {
 	opts := hruntime.WithDefaults(hruntime.Options{
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           2,
-			MaxPlanRevisions:   5,
-			MaxTotalRuntimeMS:  12345,
-			MaxToolOutputChars: 256,
+			MaxSteps:          2,
+			MaxPlanRevisions:  5,
+			MaxTotalRuntimeMS: 12345,
 		},
 		LoopBudgetMaxRetriesOverride: intPtr(0),
 	})
 
-	if opts.LoopBudgets.MaxSteps != 2 || opts.LoopBudgets.MaxPlanRevisions != 5 || opts.LoopBudgets.MaxTotalRuntimeMS != 12345 || opts.LoopBudgets.MaxToolOutputChars != 256 {
+	if opts.LoopBudgets.MaxSteps != 2 || opts.LoopBudgets.MaxPlanRevisions != 5 || opts.LoopBudgets.MaxTotalRuntimeMS != 12345 {
 		t.Fatalf("expected existing non-zero loop budgets to survive zero-retry override merge, got %#v", opts.LoopBudgets)
 	}
 	if opts.LoopBudgets.MaxRetriesPerStep != 0 {
@@ -124,10 +126,9 @@ func TestWithDefaultsMergesLoopBudgetOverridesIntoExistingLoopBudgets(t *testing
 func TestWithDefaultsKeepsRetryBudgetWhenLoopBudgetOverridesOnlyAdjustOtherFields(t *testing.T) {
 	opts := hruntime.WithDefaults(hruntime.Options{
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxRetriesPerStep:  2,
-			MaxPlanRevisions:   4,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 1024,
+			MaxRetriesPerStep: 2,
+			MaxPlanRevisions:  4,
+			MaxTotalRuntimeMS: 60000,
 		},
 		LoopBudgetOverrides: &hruntime.LoopBudgets{
 			MaxSteps: 5,
@@ -187,7 +188,7 @@ func (c *lifecycleCompactor) Compact(_ context.Context, pkg hruntime.ContextPack
 	return pkg, summary, nil
 }
 
-func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.T) {
+func TestAssembleContextForSessionReturnsRawContextAndCompactSessionContextPersistsSummary(t *testing.T) {
 	compactor := &recordingCompactor{}
 	summaries := hruntime.NewMemoryContextSummaryStore()
 	rt := hruntime.New(hruntime.Options{
@@ -211,8 +212,8 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 		t.Fatalf("assemble context: %v", err)
 	}
 
-	if compactor.calls != 1 {
-		t.Fatalf("expected compactor to be called once, got %d", compactor.calls)
+	if compactor.calls != 0 {
+		t.Fatalf("expected raw assemble path to skip compactor, got %d calls", compactor.calls)
 	}
 	if state.SessionID != attached.SessionID {
 		t.Fatalf("expected assembled state for %s, got %#v", attached.SessionID, state)
@@ -220,11 +221,25 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 	if spec.TaskID != tsk.TaskID {
 		t.Fatalf("expected assembled task %s, got %#v", tsk.TaskID, spec)
 	}
-	if assembled.Compaction == nil || assembled.Compaction.SummaryID == "" {
-		t.Fatalf("expected compaction metadata with persisted summary id, got %#v", assembled.Compaction)
+	if assembled.Compaction != nil {
+		t.Fatalf("expected raw assemble to leave compaction metadata empty, got %#v", assembled.Compaction)
 	}
-	if compacted, _ := assembled.Derived["compacted"].(bool); !compacted {
-		t.Fatalf("expected compactor to annotate derived context, got %#v", assembled.Derived)
+	if compacted, _ := assembled.Derived["compacted"].(bool); compacted {
+		t.Fatalf("expected raw assemble output to stay un-compacted, got %#v", assembled.Derived)
+	}
+
+	compacted, summary, err := rt.CompactSessionContext(context.Background(), attached.SessionID, hruntime.CompactionTriggerPlan)
+	if err != nil {
+		t.Fatalf("compact session context: %v", err)
+	}
+	if compactor.calls != 1 {
+		t.Fatalf("expected explicit compaction path to invoke compactor once, got %d", compactor.calls)
+	}
+	if summary == nil || summary.SummaryID == "" || compacted.Compaction == nil || compacted.Compaction.SummaryID == "" {
+		t.Fatalf("expected compact session context to persist summary metadata, got %#v / %#v", compacted, summary)
+	}
+	if compactedFlag, _ := compacted.Derived["compacted"].(bool); !compactedFlag {
+		t.Fatalf("expected compact session context to include compactor annotations, got %#v", compacted.Derived)
 	}
 
 	items, err := summaries.List(attached.SessionID)
@@ -242,11 +257,15 @@ func TestAssembleContextForSessionAppliesCompactorAndPersistsSummary(t *testing.
 func TestCreatePlanFromPlannerUsesConfiguredLoopBudgetWhenMaxStepsOmitted(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           2,
-			MaxRetriesPerStep:  2,
-			MaxPlanRevisions:   2,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          2,
+			MaxRetriesPerStep: 2,
+			MaxPlanRevisions:  2,
+			MaxTotalRuntimeMS: 60000,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Planner: hruntime.PlannerPolicy{
+				Projection: hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionRaw},
+			},
 		},
 	}).WithPlanner(budgetedSequencePlanner{})
 

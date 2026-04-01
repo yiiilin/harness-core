@@ -18,6 +18,7 @@ func TestPlanningRecordsPersistAcrossPostgresRuntimeReinitAndReplan(t *testing.T
 
 	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
 	builtins.Register(&opts)
+	opts = withExplicitPlannerProjection(opts)
 
 	rt1, db1 := pg.OpenService(t, opts)
 	rt1 = rt1.WithPlanner(sequencePlanner{})
@@ -74,6 +75,7 @@ func TestContextSummariesPersistTriggerAndSupersedesAcrossPostgresRuntimeReinit(
 
 	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
 	builtins.Register(&opts)
+	opts = withExplicitPlannerProjection(opts)
 
 	rt1, db1 := pg.OpenService(t, opts)
 
@@ -133,11 +135,15 @@ func TestRuntimeBudgetAnchorPersistsAcrossPostgresRuntimeReinit(t *testing.T) {
 
 	opts := hruntime.Options{
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  1,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 1,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Planner: hruntime.PlannerPolicy{
+				Projection: hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionRaw},
+			},
 		},
 	}
 	builtins.Register(&opts)

@@ -77,7 +77,7 @@ func newSplitStoreRuntime(policy permission.Evaluator, planner hruntime.Planner,
 		ContextSummaries:    hruntime.NewMemoryContextSummaryStore(),
 		Audits:              audit.NewMemoryStore(),
 	}
-	return hruntime.New(hruntime.Options{
+	return hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Sessions:            serviceStores.sessions,
 		Tasks:               serviceStores.tasks,
 		Plans:               serviceStores.plans,
@@ -95,7 +95,7 @@ func newSplitStoreRuntime(policy permission.Evaluator, planner hruntime.Planner,
 		Planner:             planner,
 		Policy:              policy,
 		Runner:              sinkRunner{repos: runnerRepos},
-	}), serviceStores
+	})), serviceStores
 }
 
 func TestPublicReadAPIsUseRunnerCommittedRepositories(t *testing.T) {

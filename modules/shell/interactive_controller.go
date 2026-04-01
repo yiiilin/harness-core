@@ -83,29 +83,28 @@ func (c PTYInteractiveController) ViewInteractive(ctx context.Context, handle ex
 		return hruntime.InteractiveViewResult{}, err
 	}
 	observation := execution.InteractiveObservation{
-		NextOffset:   read.NextOffset,
 		Closed:       read.Closed,
 		Status:       read.Status,
 		StatusReason: read.StatusReason,
+	}
+	if read.Window != nil {
+		observation.NextOffset = read.Window.NextOffset
 	}
 	if read.Closed {
 		exitCode := read.ExitCode
 		observation.ExitCode = &exitCode
 	}
 	result := hruntime.InteractiveViewResult{
-		Data:      read.Data,
-		Truncated: read.Truncated,
+		Data: read.Data,
 		Runtime: execution.InteractiveRuntime{
 			Handle:       handle,
 			Observation:  observation,
 			Capabilities: execution.InteractiveCapabilities{Reopen: true, View: true, Write: true, Close: true},
 		},
 	}
-	setInteractiveViewPreviewField(&result, "OriginalBytes", read.OriginalBytes)
-	setInteractiveViewPreviewField(&result, "ReturnedBytes", read.ReturnedBytes)
-	setInteractiveViewPreviewField(&result, "HasMore", read.HasMore)
-	setInteractiveViewPreviewField(&result, "NextOffset", read.NextOffset)
-	setInteractiveViewPreviewField(&result, "RawRef", handle.HandleID)
+	setOptionalField(&result, "Window", read.Window)
+	setOptionalField(&result, "RawHandle", read.RawHandle)
+	setInteractiveViewLegacyPreviewFields(&result, read)
 	return result, nil
 }
 
@@ -197,8 +196,21 @@ func mergeMaps(base map[string]any, extra map[string]any) map[string]any {
 	return out
 }
 
-func setInteractiveViewPreviewField(target *hruntime.InteractiveViewResult, fieldName string, value any) {
-	if target == nil {
+func setInteractiveViewLegacyPreviewFields(target any, read PTYReadResult) {
+	if read.Window != nil {
+		setOptionalField(target, "Truncated", read.Window.Truncated)
+		setOptionalField(target, "OriginalBytes", read.Window.OriginalBytes)
+		setOptionalField(target, "ReturnedBytes", read.Window.ReturnedBytes)
+		setOptionalField(target, "HasMore", read.Window.HasMore)
+		setOptionalField(target, "NextOffset", read.Window.NextOffset)
+	}
+	if read.RawHandle != nil {
+		setOptionalField(target, "RawRef", read.RawHandle.Ref)
+	}
+}
+
+func setOptionalField(target any, fieldName string, value any) {
+	if target == nil || value == nil {
 		return
 	}
 	field := reflect.ValueOf(target).Elem().FieldByName(fieldName)

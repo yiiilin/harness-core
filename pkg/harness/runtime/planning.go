@@ -31,11 +31,11 @@ func (s *Service) AssembleContextForSession(ctx context.Context, sessionID strin
 		Constraints: rec.Constraints,
 		Metadata:    rec.Metadata,
 	}
-	assembled, summary, err := s.CompactSessionContext(ctx, sessionID, CompactionTriggerPlan)
+	assembled, err := s.ContextAssembler.Assemble(ctx, state, spec)
 	if err != nil {
 		return ContextPackage{}, nil, session.State{}, task.Spec{}, err
 	}
-	return assembled, summary, state, spec, nil
+	return assembled, nil, state, spec, nil
 }
 
 func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeReason string, maxSteps int) (plan.Spec, ContextPackage, error) {
@@ -83,7 +83,7 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		return plan.Spec{}, ContextPackage{}, err
 	}
 
-	assembled, summary, planningState, spec, err := s.AssembleContextForSession(ctx, sessionID)
+	assembled, _, planningState, spec, err := s.AssembleContextForSession(ctx, sessionID)
 	if err != nil {
 		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
 			PlanningID: planningID,
@@ -98,7 +98,20 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		return plan.Spec{}, ContextPackage{}, err
 	}
 	contextSummaryID := ""
-	if summary != nil {
+	if _, summary, compactErr := s.compactContextPackage(ctx, cloneContextPackage(assembled), planningState, spec, CompactionTriggerPlan); compactErr != nil {
+		err = s.joinPlanningPersistenceError(ctx, compactErr, planning.Record{
+			PlanningID: planningID,
+			SessionID:  planningState.SessionID,
+			TaskID:     spec.TaskID,
+			Status:     planning.StatusFailed,
+			Reason:     changeReason,
+			Error:      compactErr.Error(),
+			Metadata:   metadata,
+			StartedAt:  startedAt,
+			FinishedAt: s.nowMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
+	} else if summary != nil {
 		contextSummaryID = summary.SummaryID
 	}
 	planningState, err = s.ensureRuntimeBudgetAnchor(ctx, planningState, "", startedAt)
@@ -134,9 +147,26 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		return plan.Spec{}, ContextPackage{}, err
 	}
 	assembled = attachCapabilityViewToContext(assembled, view)
+	projected, err := s.ProjectPlannerContext(ctx, assembled, planningState, spec)
+	if err != nil {
+		err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
+			PlanningID:       planningID,
+			SessionID:        planningState.SessionID,
+			TaskID:           spec.TaskID,
+			Status:           planning.StatusFailed,
+			Reason:           changeReason,
+			Error:            err.Error(),
+			CapabilityViewID: view.ViewID,
+			ContextSummaryID: contextSummaryID,
+			Metadata:         metadata,
+			StartedAt:        startedAt,
+			FinishedAt:       s.nowMilli(),
+		})
+		return plan.Spec{}, ContextPackage{}, err
+	}
 
 	steps := make([]plan.StepSpec, 0, maxSteps)
-	lastAssembled := assembled
+	lastAssembled := projected
 	for i := 0; i < maxSteps; i++ {
 		step, err := s.Planner.PlanNext(ctx, planningState, spec, lastAssembled)
 		if err != nil {
@@ -166,7 +196,45 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 		steps = append(steps, step)
 		planningState.CurrentStepID = step.StepID
 		planningState.Phase = session.PhasePlan
-		lastAssembled, summary, err = s.compactAssembledContext(ctx, planningState, spec, CompactionTriggerPlan)
+		nextRaw, assembleErr := s.ContextAssembler.Assemble(ctx, planningState, spec)
+		if assembleErr != nil {
+			metadata["step_count"] = len(steps)
+			err = s.joinPlanningPersistenceError(ctx, assembleErr, planning.Record{
+				PlanningID:       planningID,
+				SessionID:        planningState.SessionID,
+				TaskID:           spec.TaskID,
+				Status:           planning.StatusFailed,
+				Reason:           changeReason,
+				Error:            assembleErr.Error(),
+				CapabilityViewID: view.ViewID,
+				ContextSummaryID: contextSummaryID,
+				Metadata:         metadata,
+				StartedAt:        startedAt,
+				FinishedAt:       s.nowMilli(),
+			})
+			return plan.Spec{}, ContextPackage{}, err
+		}
+		if _, summary, compactErr := s.compactContextPackage(ctx, cloneContextPackage(nextRaw), planningState, spec, CompactionTriggerPlan); compactErr != nil {
+			metadata["step_count"] = len(steps)
+			err = s.joinPlanningPersistenceError(ctx, compactErr, planning.Record{
+				PlanningID:       planningID,
+				SessionID:        planningState.SessionID,
+				TaskID:           spec.TaskID,
+				Status:           planning.StatusFailed,
+				Reason:           changeReason,
+				Error:            compactErr.Error(),
+				CapabilityViewID: view.ViewID,
+				ContextSummaryID: contextSummaryID,
+				Metadata:         metadata,
+				StartedAt:        startedAt,
+				FinishedAt:       s.nowMilli(),
+			})
+			return plan.Spec{}, ContextPackage{}, err
+		} else if summary != nil {
+			contextSummaryID = summary.SummaryID
+		}
+		nextRaw = attachCapabilityViewToContext(nextRaw, view)
+		lastAssembled, err = s.ProjectPlannerContext(ctx, nextRaw, planningState, spec)
 		if err != nil {
 			metadata["step_count"] = len(steps)
 			err = s.joinPlanningPersistenceError(ctx, err, planning.Record{
@@ -184,10 +252,6 @@ func (s *Service) CreatePlanFromPlanner(ctx context.Context, sessionID, changeRe
 			})
 			return plan.Spec{}, ContextPackage{}, err
 		}
-		if summary != nil {
-			contextSummaryID = summary.SummaryID
-		}
-		lastAssembled = attachCapabilityViewToContext(lastAssembled, view)
 	}
 
 	if len(steps) == 0 {

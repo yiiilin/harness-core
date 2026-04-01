@@ -19,11 +19,10 @@ import (
 func TestCreatePlanRejectsWhenRevisionBudgetExceeded(t *testing.T) {
 	rt := hruntime.New(hruntime.Options{
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   1,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  1,
+			MaxTotalRuntimeMS: 60000,
 		},
 	})
 
@@ -62,11 +61,10 @@ func TestRunStepRejectsWhenTotalRuntimeBudgetExceeded(t *testing.T) {
 		Tools:    tools,
 		Audit:    audits,
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  1,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 1,
 		},
 	})
 
@@ -124,11 +122,10 @@ func TestRunStepDoesNotBurnRuntimeBudgetBeforeFirstExecution(t *testing.T) {
 		Tools:     tools,
 		Verifiers: verifiers,
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
 		},
 	})
 
@@ -268,11 +265,10 @@ func TestRunStepRetryBudgetBlocksFurtherAttempts(t *testing.T) {
 		Verifiers: verifiers,
 		Audit:     audits,
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  1,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 2048,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 1,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
 		},
 	})
 

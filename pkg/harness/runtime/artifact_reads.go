@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 )
 
@@ -18,26 +20,20 @@ type ArtifactReadRequest struct {
 }
 
 type ArtifactReadResult struct {
-	ArtifactID     string `json:"artifact_id,omitempty"`
-	Path           string `json:"path,omitempty"`
-	Data           string `json:"data,omitempty"`
-	Truncated      bool   `json:"truncated,omitempty"`
-	OriginalBytes  int    `json:"original_bytes,omitempty"`
-	ReturnedBytes  int    `json:"returned_bytes,omitempty"`
-	OriginalChars  int    `json:"original_chars,omitempty"`
-	ReturnedChars  int    `json:"returned_chars,omitempty"`
-	OriginalLines  int    `json:"original_lines,omitempty"`
-	ReturnedLines  int    `json:"returned_lines,omitempty"`
-	HasMore        bool   `json:"has_more,omitempty"`
-	NextOffset     int64  `json:"next_offset,omitempty"`
-	NextLineOffset int    `json:"next_line_offset,omitempty"`
-	RawRef         string `json:"raw_ref,omitempty"`
+	ArtifactID string                  `json:"artifact_id,omitempty"`
+	Path       string                  `json:"path,omitempty"`
+	Data       string                  `json:"data,omitempty"`
+	Window     *action.ResultWindow    `json:"window,omitempty"`
+	RawHandle  *action.RawResultHandle `json:"raw_handle,omitempty"`
 }
 
 func (s *Service) ReadArtifact(artifactID string, request ArtifactReadRequest) (ArtifactReadResult, error) {
 	artifact, err := s.getArtifactRecord(context.Background(), artifactID)
 	if err != nil {
 		return ArtifactReadResult{}, err
+	}
+	if request.MaxBytes <= 0 && request.MaxLines <= 0 {
+		request.MaxBytes = s.RuntimePolicy.Output.Defaults.Transport.MaxBytes
 	}
 	return readArtifactWindow(artifact, request)
 }
@@ -62,7 +58,7 @@ func resolveArtifactReadValue(payload map[string]any, path string) (any, bool) {
 }
 
 func readArtifactByteWindow(artifact execution.Artifact, request ArtifactReadRequest, value any) (ArtifactReadResult, error) {
-	raw, ok := bytesFromProgramValue(value)
+	raw, ok := bytesFromArtifactReadValue(value)
 	if !ok {
 		return ArtifactReadResult{}, fmt.Errorf("%w: %q", ErrArtifactReadUnsupported, request.Path)
 	}
@@ -80,28 +76,30 @@ func readArtifactByteWindow(artifact execution.Artifact, request ArtifactReadReq
 	window := raw[offset:int64(end)]
 	hasMore := end < len(raw)
 	return ArtifactReadResult{
-		ArtifactID:    artifact.ArtifactID,
-		Path:          request.Path,
-		Data:          string(window),
-		Truncated:     hasMore,
-		OriginalBytes: len(raw),
-		ReturnedBytes: len(window),
-		OriginalChars: utf8.RuneCount(raw),
-		ReturnedChars: utf8.RuneCount(window),
-		HasMore:       hasMore,
-		NextOffset:    int64(end),
-		RawRef:        artifact.ArtifactID,
+		ArtifactID: artifact.ArtifactID,
+		Path:       request.Path,
+		Data:       string(window),
+		Window: &action.ResultWindow{
+			Truncated:     hasMore,
+			OriginalBytes: len(raw),
+			ReturnedBytes: len(window),
+			OriginalChars: utf8.RuneCount(raw),
+			ReturnedChars: utf8.RuneCount(window),
+			HasMore:       hasMore,
+			NextOffset:    int64(end),
+		},
+		RawHandle: &action.RawResultHandle{
+			Kind:   "artifact",
+			Ref:    artifact.ArtifactID,
+			Reread: true,
+		},
 	}, nil
 }
 
 func readArtifactLineWindow(artifact execution.Artifact, request ArtifactReadRequest, value any) (ArtifactReadResult, error) {
-	text, ok := stringFromProgramValue(value)
+	text, ok := stringFromArtifactReadValue(value)
 	if !ok {
-		raw, bytesOK := bytesFromProgramValue(value)
-		if !bytesOK {
-			return ArtifactReadResult{}, fmt.Errorf("%w: %q", ErrArtifactReadUnsupported, request.Path)
-		}
-		text = string(raw)
+		return ArtifactReadResult{}, fmt.Errorf("%w: %q", ErrArtifactReadUnsupported, request.Path)
 	}
 	lines := splitLinesPreservingDelimiters(text)
 	offset := request.LineOffset
@@ -122,20 +120,26 @@ func readArtifactLineWindow(artifact execution.Artifact, request ArtifactReadReq
 	}
 	hasMore := end < len(lines)
 	return ArtifactReadResult{
-		ArtifactID:     artifact.ArtifactID,
-		Path:           request.Path,
-		Data:           data,
-		Truncated:      hasMore,
-		OriginalBytes:  len(text),
-		ReturnedBytes:  len(data),
-		OriginalChars:  utf8.RuneCountInString(text),
-		ReturnedChars:  utf8.RuneCountInString(data),
-		OriginalLines:  len(lines),
-		ReturnedLines:  end - offset,
-		HasMore:        hasMore,
-		NextOffset:     nextOffset,
-		NextLineOffset: end,
-		RawRef:         artifact.ArtifactID,
+		ArtifactID: artifact.ArtifactID,
+		Path:       request.Path,
+		Data:       data,
+		Window: &action.ResultWindow{
+			Truncated:      hasMore,
+			OriginalBytes:  len(text),
+			ReturnedBytes:  len(data),
+			OriginalChars:  utf8.RuneCountInString(text),
+			ReturnedChars:  utf8.RuneCountInString(data),
+			OriginalLines:  len(lines),
+			ReturnedLines:  end - offset,
+			HasMore:        hasMore,
+			NextOffset:     nextOffset,
+			NextLineOffset: end,
+		},
+		RawHandle: &action.RawResultHandle{
+			Kind:   "artifact",
+			Ref:    artifact.ArtifactID,
+			Reread: true,
+		},
 	}, nil
 }
 
@@ -148,4 +152,26 @@ func splitLinesPreservingDelimiters(text string) []string {
 		lines = lines[:len(lines)-1]
 	}
 	return lines
+}
+
+func stringFromArtifactReadValue(value any) (string, bool) {
+	if text, ok := stringFromProgramValue(value); ok {
+		return text, true
+	}
+	raw, ok := bytesFromArtifactReadValue(value)
+	if !ok {
+		return "", false
+	}
+	return string(raw), true
+}
+
+func bytesFromArtifactReadValue(value any) ([]byte, bool) {
+	if raw, ok := bytesFromProgramValue(value); ok {
+		return raw, true
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }

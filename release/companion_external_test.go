@@ -114,6 +114,10 @@ import (
 
 func main() {
 	var _ = shellmodule.RegisterWithOptions
+	var read shellmodule.PTYReadResult
+	_ = read.NextOffset
+	_ = read.Truncated
+	_ = read.RawRef
 	var _ hruntime.Options
 }
 `,
@@ -362,7 +366,7 @@ func externalConsumerEnv(t *testing.T, workDir, snapshotRepo string) []string {
 	}
 	return []string{
 		"GOWORK=off",
-		"GOPROXY=direct",
+		"GOPROXY=https://proxy.golang.org,direct",
 		"GOSUMDB=off",
 		"GONOSUMDB=github.com/yiiilin/harness-core",
 		"GOPRIVATE=github.com/yiiilin/harness-core",

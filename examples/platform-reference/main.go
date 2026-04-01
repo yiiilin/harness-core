@@ -171,7 +171,7 @@ func RunReferenceDemo(ctx context.Context) (DemoResult, error) {
 	exitCode := mergedRead.ExitCode
 	if _, err := rt.UpdateInteractiveRuntime(ctx, persistedHandle.HandleID, harness.InteractiveRuntimeUpdate{
 		Observation: &harness.ExecutionInteractiveObservation{
-			NextOffset:   mergedRead.NextOffset,
+			NextOffset:   readResultNextOffset(mergedRead),
 			Closed:       mergedRead.Closed,
 			ExitCode:     &exitCode,
 			Status:       mergedRead.Status,
@@ -180,7 +180,7 @@ func RunReferenceDemo(ctx context.Context) (DemoResult, error) {
 		LastOperation: &harness.ExecutionInteractiveOperation{
 			Kind:   harness.ExecutionInteractiveOperationClose,
 			At:     time.Now().UnixMilli(),
-			Offset: mergedRead.NextOffset,
+			Offset: readResultNextOffset(mergedRead),
 		},
 	}); err != nil {
 		return DemoResult{}, err
@@ -361,8 +361,11 @@ func mergeReadResults(active, closed shellmodule.PTYReadResult) shellmodule.PTYR
 	if closed.HandleID != "" {
 		out.HandleID = closed.HandleID
 	}
-	if closed.NextOffset > out.NextOffset {
-		out.NextOffset = closed.NextOffset
+	if next := readResultNextOffset(closed); next > readResultNextOffset(out) {
+		if out.Window == nil {
+			out.Window = &shellmodule.ResultWindow{}
+		}
+		out.Window.NextOffset = next
 	}
 	out.Closed = closed.Closed
 	if closed.ExitCode != 0 {
@@ -375,6 +378,13 @@ func mergeReadResults(active, closed shellmodule.PTYReadResult) shellmodule.PTYR
 		out.StatusReason = closed.StatusReason
 	}
 	return out
+}
+
+func readResultNextOffset(read shellmodule.PTYReadResult) int64 {
+	if read.Window == nil {
+		return 0
+	}
+	return read.Window.NextOffset
 }
 
 // waitForBufferContains confirms that Attach bridged PTY output into an external writer.

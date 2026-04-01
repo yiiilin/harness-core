@@ -42,6 +42,8 @@ type PlanningStatus = planning.Status
 
 type ActionSpec = action.Spec
 type ActionResult = action.Result
+type ActionResultWindow = action.ResultWindow
+type ActionRawResultHandle = action.RawResultHandle
 
 type ApprovalRequest = approval.Request
 type ApprovalResponse = approval.Response
@@ -165,7 +167,19 @@ type RuntimeHandleInvalidateRequest = hruntime.RuntimeHandleInvalidateRequest
 type CompactionTrigger = hruntime.CompactionTrigger
 type CompactionPolicy = hruntime.CompactionPolicy
 type LoopBudgets = hruntime.LoopBudgets
+type RuntimePolicy = hruntime.RuntimePolicy
+type OutputPolicy = hruntime.OutputPolicy
+type OutputModePolicy = hruntime.OutputModePolicy
+type TransportBudgetPolicy = hruntime.TransportBudgetPolicy
+type InlineBudgetPolicy = hruntime.InlineBudgetPolicy
+type RawResultPolicy = hruntime.RawResultPolicy
+type RawRetentionMode = hruntime.RawRetentionMode
+type PlannerPolicy = hruntime.PlannerPolicy
+type PlannerProjectionPolicy = hruntime.PlannerProjectionPolicy
+type PlannerProjectionMode = hruntime.PlannerProjectionMode
+type PlannerContextBudgetPolicy = hruntime.PlannerContextBudgetPolicy
 type Planner = hruntime.Planner
+type PlannerProjector = hruntime.PlannerProjector
 type TargetResolver = hruntime.TargetResolver
 type AttachmentMaterializeRequest = hruntime.AttachmentMaterializeRequest
 type AttachmentMaterializer = hruntime.AttachmentMaterializer
@@ -185,9 +199,13 @@ const (
 	Ask   = permission.Ask
 	Deny  = permission.Deny
 
-	CompactionTriggerPlan    = hruntime.CompactionTriggerPlan
-	CompactionTriggerExecute = hruntime.CompactionTriggerExecute
-	CompactionTriggerRecover = hruntime.CompactionTriggerRecover
+	CompactionTriggerPlan      = hruntime.CompactionTriggerPlan
+	CompactionTriggerExecute   = hruntime.CompactionTriggerExecute
+	CompactionTriggerRecover   = hruntime.CompactionTriggerRecover
+	RawRetentionBackendDefined = hruntime.RawRetentionBackendDefined
+	PlannerProjectionInline    = hruntime.PlannerProjectionInline
+	PlannerProjectionRaw       = hruntime.PlannerProjectionRaw
+	PlannerProjectionCustom    = hruntime.PlannerProjectionCustom
 
 	CapabilityReasonNotFound            = capability.ReasonCapabilityNotFound
 	CapabilityReasonDisabled            = capability.ReasonCapabilityDisabled

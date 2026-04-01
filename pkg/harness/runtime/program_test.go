@@ -3102,11 +3102,17 @@ func TestRunProgramResolvesTargetScopedOutputRefsFromRawActionResultsWhenInlineT
 		Verifiers: verify.NewRegistry(),
 		Policy:    permission.DefaultEvaluator{},
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 8,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Inline: hruntime.InlineBudgetPolicy{MaxChars: 8},
+				},
+			},
 		},
 	})
 
@@ -3706,9 +3712,9 @@ func TestRunProgramSupportsNativeInteractiveLifecycleActions(t *testing.T) {
 			},
 			read: map[string]shellmodule.PTYReadResult{
 				"hdl_program_native": {
-					Status:     "active",
-					Data:       "hello from verifier",
-					NextOffset: 19,
+					Status: "active",
+					Data:   "hello from verifier",
+					Window: &shellmodule.ResultWindow{NextOffset: 19},
 				},
 			},
 		},

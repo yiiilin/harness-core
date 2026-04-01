@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	"github.com/yiiilin/harness-core/pkg/harness/builtins"
+	"github.com/yiiilin/harness-core/pkg/harness/capability"
 	hplanning "github.com/yiiilin/harness-core/pkg/harness/planning"
 	hruntime "github.com/yiiilin/harness-core/pkg/harness/runtime"
 	"github.com/yiiilin/harness-core/pkg/harness/session"
@@ -59,7 +59,7 @@ func (planningSummaryCompactor) Compact(_ context.Context, pkg hruntime.ContextP
 func TestCreatePlanFromPlannerPersistsCompletedPlanningRecord(t *testing.T) {
 	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planning records", "persist successful planning")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "record successful planning"})
@@ -148,7 +148,7 @@ func TestCreatePlanFromPlannerPersistsCompletedPlanningRecord(t *testing.T) {
 func TestCreatePlanFromPlannerPersistsFailedPlanningRecord(t *testing.T) {
 	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(failingPlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(failingPlanner{})
 
 	sess := mustCreateSession(t, rt, "planning failure records", "persist failed planning")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "record failed planning"})
@@ -191,7 +191,7 @@ func TestCreatePlanFromPlannerPersistsFailedPlanningRecord(t *testing.T) {
 func TestCreatePlanFromPlannerPersistsDistinctRecordsAcrossReplans(t *testing.T) {
 	opts := hruntime.Options{Compactor: planningSummaryCompactor{}}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planning replans", "persist replanning records")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "record replans durably"})
@@ -234,7 +234,7 @@ func TestCreatePlanFromPlannerStaysSuccessfulWhenNoRunnerPlanningRecordPersisten
 		PlanningRecords: &nthFailingPlanningStore{Store: hplanning.NewMemoryStore(), createErr: boom, failOnCreateCall: 1},
 	}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 	rt.Runner = nil
 
 	sess := mustCreateSession(t, rt, "planning record failure", "no-runner planning record failures should be best effort")
@@ -265,7 +265,7 @@ func TestCreatePlanFromPlannerDegradesGracefullyWhenNoRunnerCapabilitySnapshotPe
 		CapabilitySnapshots: &nthFailingSnapshotStore{SnapshotStore: capability.NewMemorySnapshotStore(), createErr: boom, failOnCreateCall: 1},
 	}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 	rt.Runner = nil
 
 	sess := mustCreateSession(t, rt, "snapshot failure", "no-runner snapshot failures should not strand a broken plan")

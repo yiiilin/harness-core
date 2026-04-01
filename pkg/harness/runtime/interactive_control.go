@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/yiiilin/harness-core/pkg/harness/action"
 	"github.com/yiiilin/harness-core/pkg/harness/audit"
 	"github.com/yiiilin/harness-core/pkg/harness/execution"
 	"github.com/yiiilin/harness-core/pkg/harness/persistence"
@@ -46,15 +47,11 @@ type InteractiveViewRequest struct {
 }
 
 type InteractiveViewResult struct {
-	Runtime       execution.InteractiveRuntime `json:"runtime"`
-	Data          string                       `json:"data,omitempty"`
-	Truncated     bool                         `json:"truncated,omitempty"`
-	OriginalBytes int                          `json:"original_bytes,omitempty"`
-	ReturnedBytes int                          `json:"returned_bytes,omitempty"`
-	HasMore       bool                         `json:"has_more,omitempty"`
-	NextOffset    int64                        `json:"next_offset,omitempty"`
-	RawRef        string                       `json:"raw_ref,omitempty"`
-	Metadata      map[string]any               `json:"metadata,omitempty"`
+	Runtime   execution.InteractiveRuntime `json:"runtime"`
+	Data      string                       `json:"data,omitempty"`
+	Window    *action.ResultWindow         `json:"window,omitempty"`
+	RawHandle *action.RawResultHandle      `json:"raw_handle,omitempty"`
+	Metadata  map[string]any               `json:"metadata,omitempty"`
 }
 
 type InteractiveWriteRequest struct {
@@ -160,22 +157,33 @@ func (s *Service) ViewInteractive(ctx context.Context, handleID string, request 
 	if err != nil {
 		return InteractiveViewResult{}, err
 	}
-	viewed, err := s.InteractiveController.ViewInteractive(ctx, current, request)
+	prepared := request
+	if prepared.MaxBytes <= 0 {
+		prepared.MaxBytes = s.RuntimePolicy.Output.Defaults.Transport.MaxBytes
+	}
+	viewed, err := s.InteractiveController.ViewInteractive(ctx, current, prepared)
 	if err != nil {
 		return InteractiveViewResult{}, err
 	}
 	updated, err := s.persistInteractiveRuntimeState(ctx, handleID, existing,
 		mergeInteractiveCapabilities(existing.Capabilities, viewed.Runtime.Capabilities),
 		mergeInteractiveObservation(existing.Observation, viewed.Runtime.Observation),
-		interactiveOperation(execution.InteractiveOperationView, s.nowMilli(), request.Offset, 0, request.Metadata),
+		interactiveOperation(execution.InteractiveOperationView, s.nowMilli(), prepared.Offset, 0, prepared.Metadata),
 		mergeMaps(cloneAnyMap(viewed.Metadata), cloneAnyMap(viewed.Runtime.Metadata)),
 	)
 	if err != nil {
 		return InteractiveViewResult{}, err
 	}
 	viewed.Runtime = updated
-	viewed.NextOffset = updated.Observation.NextOffset
-	viewed.RawRef = firstNonEmptyString(viewed.RawRef, handleID)
+	if viewed.Window != nil {
+		viewed.Window.NextOffset = updated.Observation.NextOffset
+	}
+	if viewed.RawHandle == nil {
+		viewed.RawHandle = &action.RawResultHandle{}
+	}
+	viewed.RawHandle.Kind = "interactive_runtime"
+	viewed.RawHandle.Ref = handleID
+	viewed.RawHandle.Reread = true
 	viewed.Metadata = mergeMaps(cloneAnyMap(viewed.Metadata), cloneAnyMap(updated.Metadata))
 	return viewed, nil
 }

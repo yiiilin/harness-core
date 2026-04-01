@@ -54,7 +54,7 @@ func (failingPlanner) PlanNext(_ context.Context, _ session.State, _ task.Spec, 
 func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planner integration", "execute planner-derived sequence")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run two planned shell steps"})
@@ -97,7 +97,7 @@ func TestCreatePlanFromPlannerBuildsMultiStepPlanAndRunsToCompletion(t *testing.
 func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(failingPlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(failingPlanner{})
 
 	sess := mustCreateSession(t, rt, "planner failure", "planner failure path")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner should fail"})
@@ -114,7 +114,7 @@ func TestCreatePlanFromPlannerFailurePath(t *testing.T) {
 func TestRunSessionDrivesPlannerDerivedPlanToCompletion(t *testing.T) {
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 
 	sess := mustCreateSession(t, rt, "planner session driver", "runtime should drive planner-derived steps")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "planner-driven session execution"})

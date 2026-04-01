@@ -55,10 +55,10 @@ func TestCreatePlanFromPlannerFreezesCapabilityViewAndPinsToolVersion(t *testing
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true}, &versionedHandler{version: "v2"})
 
-	rt := hruntime.New(hruntime.Options{
+	rt := hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Tools:   tools,
 		Planner: unversionedShellPlanner{stepID: "step_freeze_plan"},
-	})
+	}))
 
 	sess := mustCreateSession(t, rt, "capability freeze", "freeze visible capabilities during planning")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "plan with frozen capabilities"})
@@ -101,10 +101,10 @@ func TestRecoverSessionUsesFrozenCapabilityViewAfterRegistryDrift(t *testing.T) 
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, v1)
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true}, v2)
 
-	rt := hruntime.New(hruntime.Options{
+	rt := hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Tools:   tools,
 		Planner: unversionedShellPlanner{stepID: "step_freeze_recover"},
-	})
+	}))
 
 	sess := mustCreateSession(t, rt, "capability recover", "recover with frozen capability view")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "recover planned frozen capability"})
@@ -163,10 +163,10 @@ func TestCreatePlanFromPlannerReplanCreatesNewCapabilityView(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
 
-	rt := hruntime.New(hruntime.Options{
+	rt := hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Tools:   tools,
 		Planner: unversionedShellPlanner{stepID: "step_replan_freeze"},
-	})
+	}))
 
 	sess := mustCreateSession(t, rt, "capability replan", "replanning should freeze a fresh view")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "replan frozen capability view"})
@@ -217,7 +217,7 @@ func TestRunStepRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion(t *tes
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true, Metadata: map[string]any{"origin": "frozen"}}, original)
 
-	rt := hruntime.New(hruntime.Options{
+	rt := hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Tools: tools,
 		Planner: verifiedUnversionedShellPlanner{
 			stepID: "step_capability_drift",
@@ -226,7 +226,7 @@ func TestRunStepRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion(t *tes
 			}},
 			onFail: plan.OnFailSpec{Strategy: "abort"},
 		},
-	})
+	}))
 
 	sess := mustCreateSession(t, rt, "capability drift", "reject drifted frozen capabilities")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "run frozen capability without drift"})
@@ -267,7 +267,7 @@ func TestRecoverSessionRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v1", CapabilityType: "executor", RiskLevel: tool.RiskLow, Enabled: true}, &versionedHandler{version: "v1"})
 	tools.Register(tool.Definition{ToolName: "shell.exec", Version: "v2", CapabilityType: "executor", RiskLevel: tool.RiskHigh, Enabled: true, Metadata: map[string]any{"origin": "frozen"}}, original)
 
-	rt := hruntime.New(hruntime.Options{
+	rt := hruntime.New(withExplicitPlannerProjection(hruntime.Options{
 		Tools: tools,
 		Planner: verifiedUnversionedShellPlanner{
 			stepID: "step_recover_capability_drift",
@@ -276,7 +276,7 @@ func TestRecoverSessionRejectsFrozenCapabilityDefinitionDriftWithinPinnedVersion
 			}},
 			onFail: plan.OnFailSpec{Strategy: "abort"},
 		},
-	})
+	}))
 
 	sess := mustCreateSession(t, rt, "capability recover drift", "recover frozen capability without drift")
 	tsk := mustCreateTask(t, rt, task.Spec{TaskType: "demo", Goal: "recover frozen capability"})

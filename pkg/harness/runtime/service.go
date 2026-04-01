@@ -58,6 +58,7 @@ type Service struct {
 	Compactor              Compactor
 	CompactionPolicy       CompactionPolicy
 	LoopBudgets            LoopBudgets
+	RuntimePolicy          RuntimePolicy
 	Planner                Planner
 	TargetResolver         TargetResolver
 	AttachmentMaterializer AttachmentMaterializer
@@ -99,6 +100,7 @@ func New(opts Options) *Service {
 		Compactor:              opts.Compactor,
 		CompactionPolicy:       opts.CompactionPolicy,
 		LoopBudgets:            opts.LoopBudgets,
+		RuntimePolicy:          opts.RuntimePolicy,
 		Planner:                opts.Planner,
 		TargetResolver:         opts.TargetResolver,
 		AttachmentMaterializer: opts.AttachmentMaterializer,

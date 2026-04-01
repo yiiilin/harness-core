@@ -430,7 +430,8 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 		"tool_version":           toolVersion,
 		"capability_snapshot_id": snapshotID,
 	}, actionRecord.ActionID, attemptRecord.AttemptID)
-	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
+	outputPolicy := s.outputPolicyForStep(step)
+	actResult = inlineActionResultWithRaw(actResult, outputPolicy.Inline.MaxChars)
 	rawResult := rawPreferredActionResult(actResult)
 	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
@@ -459,7 +460,11 @@ func (s *Service) runStepWithDecision(ctx context.Context, sessionID, leaseID st
 			Metadata:   executionFactMetadata(step.Metadata),
 			CreatedAt:  s.nowMilli(),
 		}
-		actResult.RawRef = artifactRecord.ArtifactID
+		actResult.RawHandle = &action.RawResultHandle{
+			Kind:   "artifact",
+			Ref:    artifactRecord.ArtifactID,
+			Reread: true,
+		}
 		artifactRecords = append(artifactRecords, artifactRecord)
 	}
 	execResult.Action = actResult
@@ -963,11 +968,13 @@ func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.
 	if resolution, result, handled, err := s.invokeNativeProgramAction(ctx, state, step, attempt, actionRecord); handled {
 		return resolution, result, err
 	}
+	policy := s.outputPolicyForStep(step)
+	resolvedAction := actionSpecWithTransportBudget(step.Action, policy)
 	req := capability.Request{
 		SessionID: state.SessionID,
 		TaskID:    state.TaskID,
 		StepID:    step.StepID,
-		Action:    step.Action,
+		Action:    resolvedAction,
 	}
 	frozen, hasFrozen, err := s.frozenCapabilityEntryForStep(ctx, state.SessionID, step)
 	if err != nil {
@@ -990,6 +997,22 @@ func (s *Service) resolveCapabilityAndInvoke(ctx context.Context, state session.
 	}
 	result, invokeErr := resolution.Handler.Invoke(ctx, req.Action.Args)
 	return &resolution, result, invokeErr
+}
+
+func actionSpecWithTransportBudget(spec action.Spec, policy OutputModePolicy) action.Spec {
+	if spec.ToolName != "shell.exec" || policy.Transport.MaxBytes <= 0 {
+		return spec
+	}
+	mode, _ := spec.Args["mode"].(string)
+	if mode != "" && mode != "pipe" {
+		return spec
+	}
+	spec.Args = cloneAnyMap(spec.Args)
+	if spec.Args == nil {
+		spec.Args = map[string]any{}
+	}
+	spec.Args["max_output_bytes"] = policy.Transport.MaxBytes
+	return spec
 }
 
 func trimActionResultToBudget(result action.Result, limit int) action.Result {

@@ -265,7 +265,7 @@ func TestPlanningLifecycleUsesInjectedClockForRecordsAndObservability(t *testing
 		Sessions: session.NewMemoryStoreWithClock(clock),
 	}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 	rt.MetricsExporter = metricsExporter
 	rt.TraceExporter = traceExporter
 

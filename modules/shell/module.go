@@ -2,6 +2,7 @@ package shellmodule
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 	shellexec "github.com/yiiilin/harness-core/pkg/harness/executor/shell"
@@ -43,6 +44,9 @@ func (h handler) Invoke(ctx context.Context, args map[string]any) (action.Result
 	}
 	if v, ok := args["timeout_ms"]; ok {
 		req.TimeoutMS = asInt(v)
+	}
+	if v, ok := args["max_output_bytes"]; ok {
+		setOptionalIntField(&req, "MaxOutputBytes", asInt(v))
 	}
 	if req.Mode == "" {
 		req.Mode = "pipe"
@@ -155,6 +159,17 @@ func asInt(v any) int {
 	default:
 		return 0
 	}
+}
+
+func setOptionalIntField(target any, fieldName string, value int) {
+	if target == nil {
+		return
+	}
+	field := reflect.ValueOf(target).Elem().FieldByName(fieldName)
+	if !field.IsValid() || !field.CanSet() || field.Kind() != reflect.Int {
+		return
+	}
+	field.SetInt(int64(value))
 }
 
 func asAnyMap(v any) map[string]any {

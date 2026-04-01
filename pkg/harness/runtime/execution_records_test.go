@@ -317,11 +317,17 @@ func TestRunStepPreservesRawActionResultAlongsideTrimmedInlineResult(t *testing.
 		Verifiers: verify.NewRegistry(),
 		Policy:    permission.DefaultEvaluator{},
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 8,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Inline: hruntime.InlineBudgetPolicy{MaxChars: 8},
+				},
+			},
 		},
 	})
 
@@ -350,8 +356,8 @@ func TestRunStepPreservesRawActionResultAlongsideTrimmedInlineResult(t *testing.
 	if inlineStdout != "abcdefgh" {
 		t.Fatalf("expected inline stdout to be trimmed, got %#v", out.Execution.Action)
 	}
-	if !out.Execution.Action.WasTrimmed {
-		t.Fatalf("expected action result to report trimming, got %#v", out.Execution.Action)
+	if out.Execution.Action.Window == nil || !out.Execution.Action.Window.Truncated {
+		t.Fatalf("expected action result to expose unified trim metadata, got %#v", out.Execution.Action)
 	}
 	if out.Execution.Action.Raw == nil {
 		t.Fatalf("expected raw action result channel, got %#v", out.Execution.Action)
@@ -402,11 +408,17 @@ func TestRunStepVerificationUsesRawActionResultWhenInlineTrimmed(t *testing.T) {
 		Verifiers: verifiers,
 		Policy:    permission.DefaultEvaluator{},
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 8,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Inline: hruntime.InlineBudgetPolicy{MaxChars: 8},
+				},
+			},
 		},
 	})
 
@@ -455,11 +467,17 @@ func TestRunStepExposesRawArtifactReferenceAndRereadWindows(t *testing.T) {
 		Verifiers: verify.NewRegistry(),
 		Policy:    permission.DefaultEvaluator{},
 		LoopBudgets: hruntime.LoopBudgets{
-			MaxSteps:           8,
-			MaxRetriesPerStep:  3,
-			MaxPlanRevisions:   8,
-			MaxTotalRuntimeMS:  60000,
-			MaxToolOutputChars: 8,
+			MaxSteps:          8,
+			MaxRetriesPerStep: 3,
+			MaxPlanRevisions:  8,
+			MaxTotalRuntimeMS: 60000,
+		},
+		RuntimePolicy: hruntime.RuntimePolicy{
+			Output: hruntime.OutputPolicy{
+				Defaults: hruntime.OutputModePolicy{
+					Inline: hruntime.InlineBudgetPolicy{MaxChars: 8},
+				},
+			},
 		},
 	})
 
@@ -483,19 +501,19 @@ func TestRunStepExposesRawArtifactReferenceAndRereadWindows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run step: %v", err)
 	}
-	if out.Execution.Action.RawRef == "" {
-		t.Fatalf("expected action result raw_ref to point at a durable raw artifact, got %#v", out.Execution.Action)
+	if out.Execution.Action.RawHandle == nil || out.Execution.Action.RawHandle.Ref == "" {
+		t.Fatalf("expected action result raw_handle to point at a durable raw artifact, got %#v", out.Execution.Action)
 	}
 
-	artifact, err := rt.GetArtifact(out.Execution.Action.RawRef)
+	artifact, err := rt.GetArtifact(out.Execution.Action.RawHandle.Ref)
 	if err != nil {
 		t.Fatalf("get artifact by raw_ref: %v", err)
 	}
-	if artifact.ArtifactID != out.Execution.Action.RawRef {
-		t.Fatalf("expected raw_ref artifact %q, got %#v", out.Execution.Action.RawRef, artifact)
+	if artifact.ArtifactID != out.Execution.Action.RawHandle.Ref {
+		t.Fatalf("expected raw handle artifact %q, got %#v", out.Execution.Action.RawHandle.Ref, artifact)
 	}
 
-	byteWindow, err := rt.ReadArtifact(out.Execution.Action.RawRef, hruntime.ArtifactReadRequest{
+	byteWindow, err := rt.ReadArtifact(out.Execution.Action.RawHandle.Ref, hruntime.ArtifactReadRequest{
 		Path:     "data.stdout",
 		Offset:   7,
 		MaxBytes: 6,
@@ -506,11 +524,11 @@ func TestRunStepExposesRawArtifactReferenceAndRereadWindows(t *testing.T) {
 	if byteWindow.Data != "line-2" {
 		t.Fatalf("expected byte reread window to recover raw output slice, got %#v", byteWindow)
 	}
-	if !byteWindow.HasMore || byteWindow.NextOffset <= 7 {
+	if byteWindow.Window == nil || !byteWindow.Window.HasMore || byteWindow.Window.NextOffset <= 7 {
 		t.Fatalf("expected byte reread continuation metadata, got %#v", byteWindow)
 	}
 
-	lineWindow, err := rt.ReadArtifact(out.Execution.Action.RawRef, hruntime.ArtifactReadRequest{
+	lineWindow, err := rt.ReadArtifact(out.Execution.Action.RawHandle.Ref, hruntime.ArtifactReadRequest{
 		Path:       "data.stdout",
 		LineOffset: 1,
 		MaxLines:   2,
@@ -521,7 +539,7 @@ func TestRunStepExposesRawArtifactReferenceAndRereadWindows(t *testing.T) {
 	if lineWindow.Data != "line-2\nline-3\n" {
 		t.Fatalf("expected line reread window to recover raw output lines, got %#v", lineWindow)
 	}
-	if !lineWindow.HasMore || lineWindow.NextLineOffset != 3 {
+	if lineWindow.Window == nil || !lineWindow.Window.HasMore || lineWindow.Window.NextLineOffset != 3 {
 		t.Fatalf("expected line reread continuation metadata, got %#v", lineWindow)
 	}
 }

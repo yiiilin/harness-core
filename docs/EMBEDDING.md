@@ -240,7 +240,9 @@ Prefer this read chain:
 - `ListExecutionCycles(session_id)`
 - `GetExecutionCycle(session_id, cycle_id)` when needed
 - `ListAuditEvents(session_id)`
-- `GetArtifact(id)` / `ReadArtifact(id, request)` when a step exposed `ActionResult.RawRef` and you need the durable full payload instead of the inline preview
+- `GetArtifact(id)` / `ReadArtifact(id, request)` when a step exposed `ActionResult.RawHandle`
+  - `ReadArtifact(raw_handle.ref, ArtifactReadRequest{})` returns the default raw payload window without needing an internal schema path
+  - `ReadArtifact(raw_handle.ref, ArtifactReadRequest{Path: ...})` still supports targeted byte/line rereads when the embedder wants a specific field
 - `GetBlockedRuntimeProjection(...)` / `ListBlockedRuntimeProjections()` when you need current approval-backed blocked views
 - `GetInteractiveRuntime(...)` / `ListInteractiveRuntimes(...)` when you need typed interactive current-state projection
 - `pkg/harness/replay` projection helpers for stable ordering and grouping

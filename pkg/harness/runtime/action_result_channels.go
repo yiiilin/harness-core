@@ -16,13 +16,22 @@ func inlineActionResultWithRaw(full action.Result, limit int) action.Result {
 		Meta:  cloneAnyMap(inline.Meta),
 		Error: cloneActionError(inline.Error),
 	}
-	if actionResultPayloadEqual(rawPayload, inlinePayload) && full.Raw == nil && !full.WasTrimmed {
-		return inline
+	truncated := !actionResultPayloadEqual(rawPayload, inlinePayload)
+	if truncated || full.Raw != nil {
+		inline.Raw = &rawPayload
 	}
-	inline.Raw = &rawPayload
-	inline.WasTrimmed = full.WasTrimmed || !actionResultPayloadEqual(rawPayload, inlinePayload)
-	inline.RawSizeBytes = actionResultPayloadSizeBytes(rawPayload)
-	inline.InlineSizeChars = actionResultPayloadSizeChars(inlinePayload)
+	inline.Window = &action.ResultWindow{
+		Truncated:     truncated,
+		OriginalBytes: actionResultPayloadSizeBytes(rawPayload),
+		ReturnedBytes: actionResultPayloadSizeBytes(inlinePayload),
+		OriginalChars: actionResultPayloadSizeChars(rawPayload),
+		ReturnedChars: actionResultPayloadSizeChars(inlinePayload),
+		HasMore:       truncated,
+		NextOffset:    int64(actionResultPayloadSizeBytes(inlinePayload)),
+	}
+	if full.RawHandle != nil {
+		inline.RawHandle = cloneRawResultHandle(full.RawHandle)
+	}
 	return inline
 }
 
@@ -68,7 +77,7 @@ func actionResultPayloadEqual(left, right action.ResultPayload) bool {
 }
 
 func actionResultPayloadSizeBytes(payload action.ResultPayload) int {
-	data, err := json.Marshal(payload)
+	data, err := json.Marshal(actionResultArtifactEnvelope(payload))
 	if err != nil {
 		return 0
 	}
@@ -76,11 +85,19 @@ func actionResultPayloadSizeBytes(payload action.ResultPayload) int {
 }
 
 func actionResultPayloadSizeChars(payload action.ResultPayload) int {
-	data, err := json.Marshal(payload)
+	data, err := json.Marshal(actionResultArtifactEnvelope(payload))
 	if err != nil {
 		return 0
 	}
 	return utf8.RuneCount(data)
+}
+
+func actionResultArtifactEnvelope(payload action.ResultPayload) map[string]any {
+	return map[string]any{
+		"data":  cloneAnyMap(payload.Data),
+		"meta":  cloneAnyMap(payload.Meta),
+		"error": cloneActionError(payload.Error),
+	}
 }
 
 func cloneActionError(err *action.Error) *action.Error {
@@ -90,5 +107,16 @@ func cloneActionError(err *action.Error) *action.Error {
 	return &action.Error{
 		Code:    err.Code,
 		Message: err.Message,
+	}
+}
+
+func cloneRawResultHandle(handle *action.RawResultHandle) *action.RawResultHandle {
+	if handle == nil {
+		return nil
+	}
+	return &action.RawResultHandle{
+		Kind:   handle.Kind,
+		Ref:    handle.Ref,
+		Reread: handle.Reread,
 	}
 }

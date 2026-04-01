@@ -9,11 +9,10 @@ import (
 )
 
 type LoopBudgets struct {
-	MaxSteps           int   `json:"max_steps"`
-	MaxRetriesPerStep  int   `json:"max_retries_per_step"`
-	MaxPlanRevisions   int   `json:"max_plan_revisions"`
-	MaxTotalRuntimeMS  int64 `json:"max_total_runtime_ms"`
-	MaxToolOutputChars int   `json:"max_tool_output_chars"`
+	MaxSteps          int   `json:"max_steps"`
+	MaxRetriesPerStep int   `json:"max_retries_per_step"`
+	MaxPlanRevisions  int   `json:"max_plan_revisions"`
+	MaxTotalRuntimeMS int64 `json:"max_total_runtime_ms"`
 }
 
 type CompactionTrigger = hcontextsummary.Trigger
@@ -32,11 +31,10 @@ type CompactionPolicy struct {
 
 func DefaultLoopBudgets() LoopBudgets {
 	return LoopBudgets{
-		MaxSteps:           8,
-		MaxRetriesPerStep:  3,
-		MaxPlanRevisions:   8,
-		MaxTotalRuntimeMS:  300000,
-		MaxToolOutputChars: 8192,
+		MaxSteps:          8,
+		MaxRetriesPerStep: 3,
+		MaxPlanRevisions:  8,
+		MaxTotalRuntimeMS: 300000,
 	}
 }
 

@@ -42,6 +42,7 @@ type Options struct {
 	Compactor           Compactor
 	CompactionPolicy    CompactionPolicy
 	LoopBudgets         LoopBudgets
+	RuntimePolicy       RuntimePolicy
 	// LoopBudgetOverrides overlays ordinary non-zero budget fields.
 	LoopBudgetOverrides *LoopBudgets
 	// LoopBudgetMaxRetriesOverride preserves explicit retry overrides,
@@ -152,6 +153,7 @@ func WithDefaults(opts Options) Options {
 	opts.LoopBudgets = normalizeLoopBudgets(opts.LoopBudgets, opts.LoopBudgetOverrides, opts.LoopBudgetMaxRetriesOverride)
 	opts.LoopBudgetOverrides = nil
 	opts.LoopBudgetMaxRetriesOverride = nil
+	opts.RuntimePolicy = normalizeRuntimePolicy(opts.RuntimePolicy)
 	if opts.Planner == nil {
 		opts.Planner = NoopPlanner{}
 	}
@@ -187,7 +189,7 @@ func normalizeLoopBudgets(budgets LoopBudgets, override *LoopBudgets, maxRetries
 		explicitRetries = true
 		budgets.MaxRetriesPerStep = *maxRetriesOverride
 	}
-	if budgets.MaxSteps <= 0 || budgets.MaxRetriesPerStep < 0 || (!explicitRetries && budgets.MaxRetriesPerStep == 0) || budgets.MaxPlanRevisions <= 0 || budgets.MaxTotalRuntimeMS <= 0 || budgets.MaxToolOutputChars <= 0 {
+	if budgets.MaxSteps <= 0 || budgets.MaxRetriesPerStep < 0 || (!explicitRetries && budgets.MaxRetriesPerStep == 0) || budgets.MaxPlanRevisions <= 0 || budgets.MaxTotalRuntimeMS <= 0 {
 		defaults := DefaultLoopBudgets()
 		if budgets.MaxSteps <= 0 {
 			budgets.MaxSteps = defaults.MaxSteps
@@ -201,9 +203,6 @@ func normalizeLoopBudgets(budgets LoopBudgets, override *LoopBudgets, maxRetries
 		if budgets.MaxTotalRuntimeMS <= 0 {
 			budgets.MaxTotalRuntimeMS = defaults.MaxTotalRuntimeMS
 		}
-		if budgets.MaxToolOutputChars <= 0 {
-			budgets.MaxToolOutputChars = defaults.MaxToolOutputChars
-		}
 	}
 	return budgets
 }
@@ -215,8 +214,7 @@ func legacyRetryBudgetExplicit(budgets LoopBudgets) bool {
 	defaults := DefaultLoopBudgets()
 	return budgets.MaxSteps == defaults.MaxSteps &&
 		budgets.MaxPlanRevisions == defaults.MaxPlanRevisions &&
-		budgets.MaxTotalRuntimeMS == defaults.MaxTotalRuntimeMS &&
-		budgets.MaxToolOutputChars == defaults.MaxToolOutputChars
+		budgets.MaxTotalRuntimeMS == defaults.MaxTotalRuntimeMS
 }
 
 func mergeLoopBudgets(base, override LoopBudgets) LoopBudgets {
@@ -231,9 +229,6 @@ func mergeLoopBudgets(base, override LoopBudgets) LoopBudgets {
 	}
 	if override.MaxTotalRuntimeMS > 0 {
 		base.MaxTotalRuntimeMS = override.MaxTotalRuntimeMS
-	}
-	if override.MaxToolOutputChars > 0 {
-		base.MaxToolOutputChars = override.MaxToolOutputChars
 	}
 	return base
 }

@@ -143,3 +143,10 @@ func mustListRecoverableSessions(tb testing.TB, rt *hruntime.Service) []session.
 	}
 	return items
 }
+
+func withExplicitPlannerProjection(opts hruntime.Options) hruntime.Options {
+	if opts.RuntimePolicy.Planner.Projection.Mode == "" {
+		opts.RuntimePolicy.Planner.Projection = hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionRaw}
+	}
+	return opts
+}

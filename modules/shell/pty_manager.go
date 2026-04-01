@@ -49,19 +49,40 @@ type PTYReadRequest struct {
 	MaxBytes int   `json:"max_bytes,omitempty"`
 }
 
+type ResultWindow struct {
+	Truncated      bool  `json:"truncated,omitempty"`
+	OriginalBytes  int   `json:"original_bytes,omitempty"`
+	ReturnedBytes  int   `json:"returned_bytes,omitempty"`
+	OriginalChars  int   `json:"original_chars,omitempty"`
+	ReturnedChars  int   `json:"returned_chars,omitempty"`
+	OriginalLines  int   `json:"original_lines,omitempty"`
+	ReturnedLines  int   `json:"returned_lines,omitempty"`
+	HasMore        bool  `json:"has_more,omitempty"`
+	NextOffset     int64 `json:"next_offset,omitempty"`
+	NextLineOffset int   `json:"next_line_offset,omitempty"`
+}
+
+type RawResultHandle struct {
+	Kind   string `json:"kind,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	Reread bool   `json:"reread,omitempty"`
+}
+
 type PTYReadResult struct {
-	HandleID      string `json:"handle_id"`
-	Data          string `json:"data,omitempty"`
-	NextOffset    int64  `json:"next_offset"`
-	OriginalBytes int    `json:"original_bytes,omitempty"`
-	ReturnedBytes int    `json:"returned_bytes,omitempty"`
-	Closed        bool   `json:"closed,omitempty"`
-	ExitCode      int    `json:"exit_code,omitempty"`
-	Status        string `json:"status"`
-	StatusReason  string `json:"status_reason,omitempty"`
-	Truncated     bool   `json:"truncated,omitempty"`
-	HasMore       bool   `json:"has_more,omitempty"`
-	RawRef        string `json:"raw_ref,omitempty"`
+	HandleID      string           `json:"handle_id"`
+	Data          string           `json:"data,omitempty"`
+	Closed        bool             `json:"closed,omitempty"`
+	ExitCode      int              `json:"exit_code,omitempty"`
+	Status        string           `json:"status"`
+	StatusReason  string           `json:"status_reason,omitempty"`
+	Window        *ResultWindow    `json:"window,omitempty"`
+	RawHandle     *RawResultHandle `json:"raw_handle,omitempty"`
+	NextOffset    int64            `json:"next_offset,omitempty"`
+	OriginalBytes int              `json:"original_bytes,omitempty"`
+	ReturnedBytes int              `json:"returned_bytes,omitempty"`
+	Truncated     bool             `json:"truncated,omitempty"`
+	HasMore       bool             `json:"has_more,omitempty"`
+	RawRef        string           `json:"raw_ref,omitempty"`
 }
 
 type PTYResizeRequest struct {
@@ -216,19 +237,34 @@ func (m *PTYManager) Read(_ context.Context, handleID string, req PTYReadRequest
 		status = "closed"
 	}
 
+	window := &ResultWindow{
+		Truncated:     truncated,
+		OriginalBytes: len(session.buffer),
+		ReturnedBytes: end - int(offset),
+		HasMore:       truncated,
+		NextOffset:    int64(end),
+	}
+	rawHandle := &RawResultHandle{
+		Kind:   "pty",
+		Ref:    handleID,
+		Reread: true,
+	}
+
 	return PTYReadResult{
 		HandleID:      handleID,
 		Data:          string(session.buffer[offset:int64(end)]),
-		NextOffset:    int64(end),
-		OriginalBytes: len(session.buffer),
-		ReturnedBytes: end - int(offset),
 		Closed:        session.closed,
 		ExitCode:      session.exitCode,
 		Status:        status,
 		StatusReason:  session.statusReason,
-		Truncated:     truncated,
-		HasMore:       truncated,
-		RawRef:        handleID,
+		Window:        window,
+		RawHandle:     rawHandle,
+		NextOffset:    window.NextOffset,
+		OriginalBytes: window.OriginalBytes,
+		ReturnedBytes: window.ReturnedBytes,
+		Truncated:     window.Truncated,
+		HasMore:       window.HasMore,
+		RawRef:        rawHandle.Ref,
 	}, nil
 }
 

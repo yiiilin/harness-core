@@ -426,7 +426,8 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 		"capability_snapshot_id": snapshotID,
 	}, actionRecord.ActionID, prepared.Attempt.AttemptID)
 
-	actResult = inlineActionResultWithRaw(actResult, s.LoopBudgets.MaxToolOutputChars)
+	outputPolicy := s.outputPolicyForStep(step)
+	actResult = inlineActionResultWithRaw(actResult, outputPolicy.Inline.MaxChars)
 	rawResult := rawPreferredActionResult(actResult)
 	actionRecord.FinishedAt = s.nowMilli()
 	if actErr != nil {
@@ -457,7 +458,11 @@ func (s *Service) executeFanoutPreparedStep(ctx context.Context, workingState se
 			Metadata:   executionFactMetadata(step.Metadata),
 			CreatedAt:  s.nowMilli(),
 		}
-		actResult.RawRef = artifactRecord.ArtifactID
+		actResult.RawHandle = &action.RawResultHandle{
+			Kind:   "artifact",
+			Ref:    artifactRecord.ArtifactID,
+			Reread: true,
+		}
 		artifacts = append(artifacts, artifactRecord)
 	}
 	actionRecord.Result = actResult

@@ -13,6 +13,7 @@ import (
 func TestSequencePlannerSupportsRevisionedReplan(t *testing.T) {
 	opts := harness.Options{}
 	builtins.Register(&opts)
+	opts.RuntimePolicy.Planner.Projection = harness.PlannerProjectionPolicy{Mode: harness.PlannerProjectionRaw}
 	rt := harness.New(opts).WithPlanner(SequencePlanner{})
 
 	sess, err := rt.CreateSession("planner replan", "derive and replan shell work")

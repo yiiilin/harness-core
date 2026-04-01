@@ -25,6 +25,12 @@ type Planner interface {
 	PlanNext(ctx context.Context, state session.State, spec task.Spec, assembled ContextPackage) (plan.StepSpec, error)
 }
 
+// PlannerProjector controls how raw assembled runtime context is projected into
+// planner-facing context when the runtime is configured for custom projection.
+type PlannerProjector interface {
+	ProjectPlannerContext(ctx context.Context, assembled ContextPackage, state session.State, spec task.Spec, policy PlannerPolicy) (ContextPackage, error)
+}
+
 // TargetResolver discovers concrete execution targets for transport-neutral
 // multi-target program nodes such as fanout_all.
 type TargetResolver interface {

@@ -168,22 +168,22 @@ func TestInteractiveViewExposesRecoverablePreviewMetadata(t *testing.T) {
 	if viewed.Data != "hello" {
 		t.Fatalf("expected preview data to be bounded, got %#v", viewed)
 	}
-	if !viewed.Truncated {
+	if viewed.Window == nil || !viewed.Window.Truncated {
 		t.Fatalf("expected truncated preview metadata, got %#v", viewed)
 	}
-	if viewed.OriginalBytes < len("hello world") {
+	if viewed.Window.OriginalBytes < len("hello world") {
 		t.Fatalf("expected original_bytes to reflect full PTY buffer, got %#v", viewed)
 	}
-	if viewed.ReturnedBytes != len("hello") {
+	if viewed.Window.ReturnedBytes != len("hello") {
 		t.Fatalf("expected returned_bytes %d, got %#v", len("hello"), viewed)
 	}
-	if !viewed.HasMore {
+	if !viewed.Window.HasMore {
 		t.Fatalf("expected has_more metadata, got %#v", viewed)
 	}
-	if viewed.NextOffset != int64(len("hello")) {
+	if viewed.Window.NextOffset != int64(len("hello")) {
 		t.Fatalf("expected next_offset %d, got %#v", len("hello"), viewed)
 	}
-	if viewed.RawRef != started.Handle.HandleID {
+	if viewed.RawHandle == nil || viewed.RawHandle.Ref != started.Handle.HandleID {
 		t.Fatalf("expected raw_ref to reuse the PTY handle id %q, got %#v", started.Handle.HandleID, viewed)
 	}
 }
@@ -208,7 +208,7 @@ func TestPTYManagerReadWriteAndCloseLifecycle(t *testing.T) {
 	}
 
 	read := readPTYOutputEventually(t, manager, started.RuntimeHandle.HandleID, 0, "ping")
-	if read.NextOffset <= 0 {
+	if read.Window == nil || read.Window.NextOffset <= 0 {
 		t.Fatalf("expected positive next offset after reading PTY output, got %#v", read)
 	}
 	if read.Closed {
@@ -415,7 +415,7 @@ func TestShellPTYVerifiersSupportExplicitInspector(t *testing.T) {
 				"hdl-exit":   {Status: "closed", Closed: true, ExitCode: 7},
 			},
 			read: map[string]shellmodule.PTYReadResult{
-				"hdl-active": {Status: "active", Data: "remote verifier output", NextOffset: 22},
+				"hdl-active": {Status: "active", Data: "remote verifier output", Window: &shellmodule.ResultWindow{NextOffset: 22}},
 			},
 		},
 	})
@@ -514,7 +514,7 @@ func TestPTYStreamVerifierSupportsRuntimeHandlesSliceAndShellStreamOffset(t *tes
 				"hdl-slice": {Status: "active"},
 			},
 			read: map[string]shellmodule.PTYReadResult{
-				"hdl-slice": {Status: "active", Data: "remote verifier output", NextOffset: 41},
+				"hdl-slice": {Status: "active", Data: "remote verifier output", Window: &shellmodule.ResultWindow{NextOffset: 41}},
 			},
 		},
 	}

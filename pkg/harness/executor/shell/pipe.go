@@ -3,10 +3,12 @@ package shell
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yiiilin/harness-core/pkg/harness/action"
 )
@@ -25,6 +27,10 @@ func (e PipeExecutor) Invoke(ctx context.Context, args map[string]any) (action.R
 		CWD:     func() string { v, _ := args["cwd"].(string); return v }(),
 		TimeoutMS: func() int {
 			v, _ := asInt(args["timeout_ms"])
+			return v
+		}(),
+		MaxOutputBytes: func() int {
+			v, _ := asInt(args["max_output_bytes"])
 			return v
 		}(),
 	}
@@ -85,8 +91,9 @@ func (e PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, 
 
 	stdoutFull := stdout.String()
 	stderrFull := stderr.String()
-	stdoutText, stdoutMeta := truncateOutput(stdoutFull, e.maxOutputBytes())
-	stderrText, stderrMeta := truncateOutput(stderrFull, e.maxOutputBytes())
+	maxOutputBytes := e.maxOutputBytes(req)
+	stdoutText, stdoutMeta := truncateOutput(stdoutFull, maxOutputBytes)
+	stderrText, stderrMeta := truncateOutput(stderrFull, maxOutputBytes)
 	fullMeta := pipeResultMeta(duration, fullOutputMeta(stdoutFull), fullOutputMeta(stderrFull))
 	previewMeta := pipeResultMeta(duration, stdoutMeta, stderrMeta)
 	resultErr := (*action.Error)(nil)
@@ -108,7 +115,7 @@ func (e PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, 
 		Error: resultErr,
 	}
 	if stdoutMeta.truncated || stderrMeta.truncated {
-		result.Raw = &action.ResultPayload{
+		rawPayload := action.ResultPayload{
 			Data: map[string]any{
 				"mode":      "pipe",
 				"command":   command,
@@ -121,12 +128,29 @@ func (e PipeExecutor) Execute(ctx context.Context, req Request) (action.Result, 
 			Meta:  fullMeta,
 			Error: clonePipeActionError(resultErr),
 		}
-		result.WasTrimmed = true
+		inlinePayload := action.ResultPayload{
+			Data:  result.Data,
+			Meta:  result.Meta,
+			Error: clonePipeActionError(resultErr),
+		}
+		result.Raw = &rawPayload
+		result.Window = &action.ResultWindow{
+			Truncated:     true,
+			OriginalBytes: actionPayloadBytes(rawPayload),
+			ReturnedBytes: actionPayloadBytes(inlinePayload),
+			OriginalChars: actionPayloadChars(rawPayload),
+			ReturnedChars: actionPayloadChars(inlinePayload),
+			HasMore:       true,
+			NextOffset:    int64(actionPayloadBytes(inlinePayload)),
+		}
 	}
 	return result, nil
 }
 
-func (e PipeExecutor) maxOutputBytes() int {
+func (e PipeExecutor) maxOutputBytes(req Request) int {
+	if req.MaxOutputBytes > 0 {
+		return req.MaxOutputBytes
+	}
 	if e.MaxOutputBytes > 0 {
 		return e.MaxOutputBytes
 	}
@@ -247,6 +271,27 @@ func truncateOutput(text string, maxBytes int) (string, truncationMeta) {
 	meta.truncated = true
 	meta.returnedBytes = maxBytes
 	return text[:maxBytes], meta
+}
+
+func actionPayloadBytes(payload action.ResultPayload) int {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0
+	}
+	return len(data)
+}
+
+func actionPayloadChars(payload action.ResultPayload) int {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0
+	}
+	return utf8.RuneCount(data)
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func asInt(v any) (int, bool) {

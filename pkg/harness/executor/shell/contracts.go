@@ -7,12 +7,13 @@ import (
 )
 
 type Request struct {
-	Mode      string         `json:"mode,omitempty"`
-	Command   string         `json:"command"`
-	CWD       string         `json:"cwd,omitempty"`
-	Env       map[string]any `json:"env,omitempty"`
-	TimeoutMS int            `json:"timeout_ms,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Mode           string         `json:"mode,omitempty"`
+	Command        string         `json:"command"`
+	CWD            string         `json:"cwd,omitempty"`
+	Env            map[string]any `json:"env,omitempty"`
+	TimeoutMS      int            `json:"timeout_ms,omitempty"`
+	MaxOutputBytes int            `json:"max_output_bytes,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 type Backend interface {

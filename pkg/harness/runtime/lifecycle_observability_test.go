@@ -21,7 +21,7 @@ func TestPlanningLifecycleExportsObservability(t *testing.T) {
 
 	opts := hruntime.Options{}
 	builtins.Register(&opts)
-	rt := hruntime.New(opts).WithPlanner(sequencePlanner{})
+	rt := hruntime.New(withExplicitPlannerProjection(opts)).WithPlanner(sequencePlanner{})
 	rt.MetricsExporter = metricsExporter
 	rt.TraceExporter = traceExporter
 

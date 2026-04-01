@@ -83,6 +83,7 @@ func Run(ctx context.Context) (Results, error) {
 
 func runPlannerScenario(ctx context.Context) (PlannerResult, error) {
 	rt := newRuntimeWithBuiltins(nil).WithPlanner(hruntime.DemoPlanner{})
+	rt.RuntimePolicy.Planner.Projection = hruntime.PlannerProjectionPolicy{Mode: hruntime.PlannerProjectionRaw}
 	sess, _, err := seedSessionAndTask(rt, "planner-pipe", plannerCommand)
 	if err != nil {
 		return PlannerResult{}, err
